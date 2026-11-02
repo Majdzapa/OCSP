@@ -1,0 +1,41 @@
+# ============================================================
+# OCSP Subsystem — .gitignore
+# ============================================================
+
+# Maven build output
+target/
+*.class
+*.jar
+!**/src/main/resources/*.jar
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+.DS_Store
+
+# Spring Boot DevTools
+spring-boot-devtools.properties
+
+# Environment / secrets — NEVER commit these
+*.env
+.env*
+*.jks
+*.p12
+*.pem
+*.key
+*.crt
+
+# Node / React
+ocsp-console/node_modules/
+ocsp-console/dist/
+ocsp-console/.oxlintrc.json
+
+# Docker volumes
+mariadb-data/
+rabbitmq-data/
+
+# Logs
+*.log
+logs/

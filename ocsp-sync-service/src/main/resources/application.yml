@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: ocsp-sync-service
+
+  datasource:
+    url: jdbc:mariadb://${MARIADB_HOST:127.0.0.1}:${MARIADB_PORT:3307}/${MARIADB_DB:ocsp}
+    username: ${MARIADB_USER:ocsp_writer}
+    password: ${MARIADB_PASSWORD:changeme}
+    driver-class-name: org.mariadb.jdbc.Driver
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, metrics
+
+ocsp:
+  rabbitmq:
+    cert-events-exchange: cert.events
+    status-sync-queue: ocsp.status.sync
+    status-sync-dlq: ocsp.status.sync.dlq
+    cache-invalidation-exchange: ocsp.internal
+    cache-invalidation-queue: ocsp.cache.invalidate
+
+  kms:
+    reconciliation-api-url: ${KMS_RECONCILIATION_API_URL:http://kms-internal:8443/api/v1/ocsp/reconciliation}
+
+  reconciliation:
+    cron: "0 0 * * * *"   # Hourly
+
+# ---- KMS declarative HTTP client (Spring @HttpExchange) ----
+# base-url: the KMS host (http or https with mTLS below)
+# truststore: PKCS12 file containing the CA cert that issued the KMS server cert
+# keystore:   PKCS12 file containing the client cert presented to KMS for mTLS
+kms:
+  base-url: ${KMS_BASE_URL:http://localhost:8085}
+  # Set to true in production and provide truststore/keystore PKCS12 files
+  mtls:
+    enabled: ${KMS_MTLS_ENABLED:false}
+  truststore:
+    path: ${KMS_TRUSTSTORE_PATH:file:/opt/ocsp/kms/truststore.p12}
+    password: ${KMS_TRUSTSTORE_PASSWORD:changeme}
+  keystore:
+    path: ${KMS_KEYSTORE_PATH:file:/opt/ocsp/kms/keystore.p12}
+    password: ${KMS_KEYSTORE_PASSWORD:changeme}
+
+
+logging:
+  level:
+    com.company.ocsp: INFO

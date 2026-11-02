@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: ocsp-auth
+
+server:
+  port: 9000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+
+logging:
+  level:
+    com.company.ocsp.auth: DEBUG
+    org.springframework.security: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{30} - %msg%n"
