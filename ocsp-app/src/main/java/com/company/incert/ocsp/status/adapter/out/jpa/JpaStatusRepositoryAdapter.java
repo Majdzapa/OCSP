@@ -76,6 +76,8 @@ public class JpaStatusRepositoryAdapter implements StatusLookup, StatusWriter, c
             java.util.HexFormat hex = java.util.HexFormat.of();
             java.util.Map<String, String> map = new java.util.HashMap<>();
             map.put("serialHex", hex.formatHex(e.getSerialNumber()));
+            map.put("issuerNameHashHex", hex.formatHex(e.getIssuerNameHash()));
+            map.put("issuerKeyHashHex", hex.formatHex(e.getIssuerKeyHash()));
             map.put("status", e.getStatus().name());
             map.put("revocationTime", e.getRevocationTime() != null ? e.getRevocationTime().toString() : "");
             map.put("revocationReason", e.getRevocationReason() != null ? e.getRevocationReason() : "");

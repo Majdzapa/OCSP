@@ -39,5 +39,20 @@ public class CertCheckController {
             Boolean.TRUE.equals(m.get("renewalAvailable"))
         ));
     }
+
+    public record OcspTestPayload(
+        String serialHex,
+        boolean includeNonce,
+        String method
+    ) {}
+
+    @PostMapping("/test-request")
+    public ResponseEntity<java.util.Map<String, Object>> testOcspRequest(@RequestBody OcspTestPayload payload) {
+        return ResponseEntity.ok(adminDashboardService.simulateOcspRequest(
+            payload.serialHex(),
+            payload.includeNonce(),
+            payload.method()
+        ));
+    }
 }
 

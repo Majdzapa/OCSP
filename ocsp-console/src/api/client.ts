@@ -7,6 +7,7 @@ import type {
   CertStatusResponse,
   RenewRequestResponse,
   KmsCertificate,
+  OcspTestResult,
 } from '../types/api'
 
 const api = axios.create({
@@ -87,6 +88,13 @@ export const checkCertStatus = (serialHex: string): Promise<CertStatusResponse> 
 
 export const requestCertRenewal = (serialHex: string, reason: string): Promise<RenewRequestResponse> =>
   api.post(`/cert-check/${serialHex}/renew-request`, { reason }).then((r) => r.data)
+
+export const testOcspRequest = (
+  serialHex: string,
+  includeNonce: boolean,
+  method: 'POST' | 'GET' = 'POST'
+): Promise<OcspTestResult> =>
+  api.post('/cert-check/test-request', { serialHex, includeNonce, method }).then((r) => r.data)
 
 // ---- KMS Simulator (Certificate Inventory & Lifecycle) ----
 const kmsApi = axios.create({

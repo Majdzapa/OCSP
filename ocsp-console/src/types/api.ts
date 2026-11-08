@@ -85,3 +85,24 @@ export interface KmsCertificate {
   pemEncoded: string
   sequence: number
 }
+
+export interface OcspTestResult {
+  serialHex: string
+  method: string
+  includeNonce: boolean
+  nonceSent: string
+  nonceEchoed: string
+  nonceMatched: boolean
+  cacheVerdict: string
+  l2Hit: boolean
+  latencyMs: number
+  certStatus: 'GOOD' | 'REVOKED' | 'UNKNOWN'
+  revocationTime: string
+  revocationReason: string
+  thisUpdate: string
+  nextUpdate: string
+  responseSizeBytes: number
+  base64UrlPath: string
+  opensslCommand: string
+  error?: string
+}
