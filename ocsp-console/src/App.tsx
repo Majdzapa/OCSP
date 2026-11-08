@@ -10,6 +10,7 @@ import {
   ReceiptLongOutlined,
   VerifiedUserOutlined,
   ManageSearchOutlined,
+  KeyOutlined,
   Circle,
 } from '@mui/icons-material'
 import { DashboardPage }  from './pages/DashboardPage'
@@ -17,17 +18,19 @@ import { CacheExplorer }  from './pages/CacheExplorer'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertPage } from './pages/SigningCertPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
+import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
 import { useDashboardStats } from './hooks/useDashboardStats'
 
 const DRAWER_WIDTH = 240
 
 const navItems = [
-  { label: 'Dashboard',     path: '/dashboard',     icon: <DashboardOutlined /> },
-  { label: 'Revocations',   path: '/revocations',   icon: <GppBadOutlined /> },
-  { label: 'Cache',         path: '/cache',         icon: <StorageOutlined /> },
-  { label: 'Signing Cert',  path: '/signing-cert',  icon: <VerifiedUserOutlined /> },
-  { label: 'Cert Checker',  path: '/cert-checker',  icon: <ManageSearchOutlined /> },
-  { label: 'Audit Log',     path: '/audit',         icon: <ReceiptLongOutlined /> },
+  { label: 'Dashboard',       path: '/dashboard',        icon: <DashboardOutlined /> },
+  { label: 'KMS Inventory',   path: '/kms-certificates', icon: <KeyOutlined /> },
+  { label: 'Revocations',     path: '/revocations',      icon: <GppBadOutlined /> },
+  { label: 'Cache',           path: '/cache',            icon: <StorageOutlined /> },
+  { label: 'Signing Cert',    path: '/signing-cert',     icon: <VerifiedUserOutlined /> },
+  { label: 'Cert Checker',    path: '/cert-checker',     icon: <ManageSearchOutlined /> },
+  { label: 'Audit Log',       path: '/audit',            icon: <ReceiptLongOutlined /> },
 ]
 
 export default function App() {
@@ -158,13 +161,14 @@ export default function App() {
       {/* ---- Main content ---- */}
       <Box component="main" sx={{ flex: 1, overflow: 'auto', p: 3 }}>
         <Routes>
-          <Route path="/"             element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"    element={<DashboardPage />} />
-          <Route path="/revocations"  element={<RevocationFeed />} />
-          <Route path="/cache"        element={<CacheExplorer />} />
-          <Route path="/signing-cert" element={<SigningCertPage />} />
-          <Route path="/cert-checker" element={<CertCheckerPage />} />
-          <Route path="/audit"        element={<RevocationFeed />} />
+          <Route path="/"                 element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard"        element={<DashboardPage />} />
+          <Route path="/kms-certificates" element={<KmsCertificatesPage />} />
+          <Route path="/revocations"      element={<RevocationFeed />} />
+          <Route path="/cache"            element={<CacheExplorer />} />
+          <Route path="/signing-cert"     element={<SigningCertPage />} />
+          <Route path="/cert-checker"     element={<CertCheckerPage />} />
+          <Route path="/audit"            element={<RevocationFeed />} />
         </Routes>
       </Box>
     </Box>

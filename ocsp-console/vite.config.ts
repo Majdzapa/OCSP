@@ -25,11 +25,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:8082',
+      '/api/kms': {
+        target: process.env.VITE_KMS_BASE_URL || 'http://localhost:8090',
         changeOrigin: true,
-        // Rewrite the path if needed (uncomment if the API is behind a prefix)
-        // rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/api\/kms/, '/kms'),
+      },
+      '/api': {
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:8080',
+        changeOrigin: true,
       },
       // Dev token endpoint (local ocsp-auth). Used by src/api/client.ts in dev mode only.
       '/oauth2': {

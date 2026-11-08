@@ -58,3 +58,30 @@ export interface RenewRequestResponse {
   newNotAfter: string
   submittedAt: string
 }
+
+export type KmsRevocationReason =
+  | 'UNSPECIFIED'
+  | 'KEY_COMPROMISE'
+  | 'CA_COMPROMISE'
+  | 'AFFILIATION_CHANGED'
+  | 'SUPERSEDED'
+  | 'CESSATION_OF_OPERATION'
+  | 'CERTIFICATE_HOLD'
+  | 'REMOVE_FROM_CRL'
+  | 'PRIVILEGE_WITHDRAWN'
+  | 'AA_COMPROMISE'
+
+export interface KmsCertificate {
+  serialNumberHex: string
+  issuerDn: string
+  issuerKeyHashHex: string
+  issuerNameHashHex: string
+  subjectDn: string
+  notBefore: string
+  notAfter: string
+  status: 'GOOD' | 'REVOKED'
+  revocationTime: string | null
+  revocationReason: KmsRevocationReason | string | null
+  pemEncoded: string
+  sequence: number
+}

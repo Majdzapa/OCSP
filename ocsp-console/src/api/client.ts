@@ -1,5 +1,13 @@
 import axios from 'axios'
-import type { DashboardStats, CacheEntry, RevocationEvent, Page, CertStatusResponse, RenewRequestResponse } from '../types/api'
+import type {
+  DashboardStats,
+  CacheEntry,
+  RevocationEvent,
+  Page,
+  CertStatusResponse,
+  RenewRequestResponse,
+  KmsCertificate,
+} from '../types/api'
 
 const api = axios.create({
   baseURL: '/api/v1/admin',
@@ -79,4 +87,26 @@ export const checkCertStatus = (serialHex: string): Promise<CertStatusResponse> 
 
 export const requestCertRenewal = (serialHex: string, reason: string): Promise<RenewRequestResponse> =>
   api.post(`/cert-check/${serialHex}/renew-request`, { reason }).then((r) => r.data)
+
+// ---- KMS Simulator (Certificate Inventory & Lifecycle) ----
+const kmsApi = axios.create({
+  baseURL: '/api/kms',
+  headers: { 'Content-Type': 'application/json' },
+})
+
+export const getKmsCertificates = (): Promise<KmsCertificate[]> =>
+  kmsApi.get('/certificates').then((r) => r.data)
+
+export const revokeKmsCertificate = (
+  serialHex: string,
+  reason: string = 'KEY_COMPROMISE'
+): Promise<KmsCertificate> =>
+  kmsApi.post(`/certificates/${serialHex}/revoke`, null, { params: { reason } }).then((r) => r.data)
+
+export const unrevokeKmsCertificate = (serialHex: string): Promise<KmsCertificate> =>
+  kmsApi.post(`/certificates/${serialHex}/unrevoke`).then((r) => r.data)
+
+export const triggerKmsRevocationJob = (): Promise<{ status: string }> =>
+  kmsApi.post('/jobs/revocation/run').then((r) => r.data)
+
 
