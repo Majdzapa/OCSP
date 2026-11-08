@@ -70,6 +70,7 @@ graph TB
     STATUS <--> OCSP_DB
     OPS --> CONSOLE
     CONSOLE -- "Reverse Proxy /api/v1/admin" --> ADMIN
+    CONSOLE -- "Reverse Proxy /api/kms" --> KMS
 ```
 
 ---
@@ -216,6 +217,17 @@ Because the OCSP responder and sync worker are merged into a single modular mono
 | is_active           BOOLEAN NOT NULL DEFAULT TRUE         |
 | hsm_key_label       VARCHAR(128)                          |
 | created_at          DATETIME(3)                           |
++-----------------------------------------------------------+
+
++-----------------------------------------------------------+
+|                   ocsp_response_cache (L2)                |
++-----------------------------------------------------------+
+| cache_key           VARCHAR(128) PK (hex issuerKeyHash:sn)|
+| der_response        LONGBLOB NOT NULL (pre-signed response|
+| this_update         DATETIME(3)                           |
+| next_update         DATETIME(3)                           |
+| created_at          DATETIME(3)                           |
+| INDEX idx_next_update (next_update)                       |
 +-----------------------------------------------------------+
 ```
 
