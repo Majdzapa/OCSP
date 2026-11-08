@@ -1,0 +1,24 @@
+@startuml
+set separator none
+title Responder
+
+top to bottom direction
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+Container_Boundary("OcspApplication.OcspApplication_boundary", "OcspApplication", $tags="") {
+  Component(OcspApplication.OcspApplication.Shared, "Shared", $techn="Module", $descr="", $tags="", $link="")
+  Component(OcspApplication.OcspApplication.Responder, "Responder", $techn="Module", $descr="", $tags="", $link="")
+  Component(OcspApplication.OcspApplication.Signing, "Signing", $techn="Module", $descr="", $tags="", $link="")
+  Component(OcspApplication.OcspApplication.Status, "Status", $techn="Module", $descr="", $tags="", $link="")
+}
+
+Rel(OcspApplication.OcspApplication.Status, OcspApplication.OcspApplication.Shared, "depends on", $techn="", $tags="", $link="")
+Rel(OcspApplication.OcspApplication.Responder, OcspApplication.OcspApplication.Status, "depends on", $techn="", $tags="", $link="")
+Rel(OcspApplication.OcspApplication.Responder, OcspApplication.OcspApplication.Signing, "depends on", $techn="", $tags="", $link="")
+Rel(OcspApplication.OcspApplication.Responder, OcspApplication.OcspApplication.Shared, "depends on", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+@enduml

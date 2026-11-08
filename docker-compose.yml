@@ -1,35 +1,16 @@
-
-
 # =============================================================================
-# OCSP Subsystem — Full-stack Docker Compose
+# Incert OCSP Subsystem — Re-architected Full-stack Docker Compose
+# Architecture: Kafka (KRaft) + Spring Modulith (ocsp-app) + SoftHSM2 (PKCS#11) + KMS Simulator
 # =============================================================================
 # One-click startup:
-#   docker compose up --build
+#   docker compose up --build -d
 #
-# Services:
-#   Infrastructure:
-#     mariadb          MariaDB 10.11                  (internal 3306, host 3307)
-#     rabbitmq         RabbitMQ 3.13 + management UI  (host 5672, 15672)
-#   Application:
-#     kms-mock         Mock Key Management Service     (internal 8085)
-#     ocsp-auth        Spring Authorization Server     (internal 9000)
-#     ocsp-sync        Sync / reconciliation worker    (internal 8081)
-#     ocsp-responder   RFC 6960 OCSP endpoint          (host 8080)
-#     ocsp-admin-api   Admin REST API                  (host 8082)
-#     ocsp-console     React admin dashboard           (host 3000)
-#
-# Ports exposed to the host:
-#   3000  → Admin Console (Nginx serving built React SPA + reverse proxy)
-#   8080  → OCSP Responder  (for PKI clients)
-#   8082  → Admin API       (direct API access)
-#   15672 → RabbitMQ UI     (guest / guest)
-#   3307  → MariaDB         (for DB tools like DBeaver)
-#
-# Credentials (dev-only):
-#   MariaDB root:    rootpassword
-#   MariaDB app:     ocsp_* / changeme
-#   RabbitMQ:        guest / guest
-#   OIDC client:     ocsp-console / secret
+# Services (5 services total):
+#   mariadb          MariaDB 10.11 (schemas: ocsp, kms) (host 3307, internal 3306)
+#   kafka            Apache Kafka 3.8 / KRaft mode      (host 9092, internal 9092)
+#   kms-simulator    KMS & CA simulator + event outbox  (host 8090, internal 8090)
+#   ocsp-app         Modular OCSP responder (Modulith)  (host 8080, internal 8080)
+#   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3000)
 # =============================================================================
 
 networks:
@@ -38,25 +19,7 @@ networks:
 
 volumes:
   mariadb-data:
-  rabbitmq-data:
-
-# ---------------------------------------------------------------------------
-# Shared environment fragments (YAML anchors)
-# ---------------------------------------------------------------------------
-x-db-env: &db-env
-  MARIADB_HOST: mariadb
-  MARIADB_PORT: 3306
-  MARIADB_DB:   ocsp
-
-x-rabbitmq-env: &rabbitmq-env
-  RABBITMQ_HOST:     rabbitmq
-  RABBITMQ_PORT:     5672
-  RABBITMQ_USER:     guest
-  RABBITMQ_PASSWORD: guest
-
-x-kms-env: &kms-env
-  KMS_BASE_URL:      http://kms-mock:8085
-  KMS_MTLS_ENABLED:  "false"
+  pki-data:
 
 x-spring-opts: &spring-opts
   JAVA_OPTS: >-
@@ -67,9 +30,8 @@ x-spring-opts: &spring-opts
 services:
 
   # ============================================================
-  # Infrastructure
+  # MariaDB 10.11 (Schemas: ocsp, kms)
   # ============================================================
-
   mariadb:
     image: mariadb:10.11
     container_name: ocsp-mariadb
@@ -78,12 +40,10 @@ services:
     environment:
       MARIADB_ROOT_PASSWORD: rootpassword
       MARIADB_DATABASE:      ocsp
-      # Flyway / init scripts create the fine-grained users (ocsp_reader etc.)
-      # This user is the bootstrap owner used only by init SQL scripts
-      MARIADB_USER:     ocsp_app
-      MARIADB_PASSWORD: changeme
+      MARIADB_USER:          ocsp_app
+      MARIADB_PASSWORD:      changeme
     ports:
-      - "3307:3306"    # expose to host for DB tools
+      - "3307:3306"
     volumes:
       - mariadb-data:/var/lib/mysql
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -94,195 +54,146 @@ services:
       timeout: 5s
       retries: 6
 
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    container_name: ocsp-rabbitmq
+  # ============================================================
+  # Kafka in KRaft mode (No ZooKeeper)
+  # ============================================================
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: ocsp-kafka
     restart: unless-stopped
     networks: [ocsp-net]
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672"
-      - "15672:15672"   # Management UI → http://localhost:15672
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 15s
-      timeout: 10s
-      retries: 6
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9092' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # ============================================================
-  # KMS Mock  (must start before all Spring Boot services)
+  # KMS Simulator (Event Source & Test PKI Generator)
   # ============================================================
-
-  kms-mock:
+  kms-simulator:
     build:
-      context: .               # repo root — needed for parent pom.xml
-      dockerfile: KMS/Dockerfile
-    image: ocsp/kms-mock:local
+      context: .
+      dockerfile: kms-simulator/Dockerfile
+    image: ocsp/kms-simulator:local
     container_name: ocsp-kms
     restart: unless-stopped
     networks: [ocsp-net]
-    environment:
-      <<: *spring-opts
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8085/actuator/health || exit 1"]
-      start_period: 30s
-      interval: 15s
-      timeout: 5s
-      retries: 5
-
-  # ============================================================
-  # OCSP Auth Server (Spring Authorization Server)
-  # Issues JWT tokens consumed by the admin console + admin API
-  # ============================================================
-
-  ocsp-auth:
-    build:
-      context: .
-      dockerfile: ocsp-auth/Dockerfile
-    image: ocsp/auth:local
-    container_name: ocsp-auth
-    restart: unless-stopped
-    networks: [ocsp-net]
-    environment:
-      <<: *spring-opts
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9000/actuator/health || exit 1"]
-      start_period: 30s
-      interval: 15s
-      timeout: 5s
-      retries: 5
-
-  # ============================================================
-  # OCSP Sync Service  (RabbitMQ consumer + reconciliation job)
-  # ============================================================
-
-  ocsp-sync:
-    build:
-      context: .
-      dockerfile: ocsp-sync-service/Dockerfile
-    image: ocsp/sync:local
-    container_name: ocsp-sync
-    restart: unless-stopped
-    networks: [ocsp-net]
     depends_on:
       mariadb:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      kms-mock:
+      kafka:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "8090:8090"
     environment:
-      <<: [*db-env, *rabbitmq-env, *kms-env, *spring-opts]
-      MARIADB_USER:     ocsp_writer
-      MARIADB_PASSWORD: changeme
+      <<: *spring-opts
+      MARIADB_HOST: mariadb
+      MARIADB_PORT: 3306
+      MARIADB_KMS_DB: kms
+      MARIADB_KMS_USER: kms_app
+      MARIADB_KMS_PASSWORD: changeme
+      FLYWAY_USER: root
+      FLYWAY_PASSWORD: rootpassword
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KMS_PORT: 8090
+      KMS_JOB_REVOCATION_ENABLED: "false"
+    volumes:
+      - pki-data:/data/pki
+      - ./data/pki:/app/data/pki
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8081/actuator/health || exit 1"]
-      start_period: 45s
-      interval: 20s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/actuator/health || exit 1"]
+      start_period: 30s
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
 
   # ============================================================
-  # OCSP Responder  (RFC 6960 public endpoint)
+  # OCSP App (Modular Monolith with Spring Modulith & SoftHSM2)
   # ============================================================
-
-  ocsp-responder:
+  ocsp-app:
     build:
       context: .
-      dockerfile: ocsp-responder/Dockerfile
-    image: ocsp/responder:local
-    container_name: ocsp-responder
+      dockerfile: ocsp-app/Dockerfile
+    image: ocsp/app:local
+    container_name: ocsp-app
     restart: unless-stopped
     networks: [ocsp-net]
     depends_on:
       mariadb:
         condition: service_healthy
-      rabbitmq:
+      kafka:
         condition: service_healthy
-      kms-mock:
+      kms-simulator:
         condition: service_healthy
     ports:
       - "8080:8080"
     environment:
-      <<: [*db-env, *rabbitmq-env, *kms-env, *spring-opts]
-      MARIADB_USER:       ocsp_reader
-      MARIADB_PASSWORD:   changeme
-      KMS_OCSP_KEY_REF:   ocsp-signing-key-01
+      <<: *spring-opts
+      MARIADB_HOST: mariadb
+      MARIADB_PORT: 3306
+      MARIADB_DB: ocsp
+      MARIADB_USER: ocsp_app
+      MARIADB_PASSWORD: changeme
+      FLYWAY_USER: root
+      FLYWAY_PASSWORD: rootpassword
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      HSM_ENABLED: "true"
+      HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
+      HSM_TOKEN_LABEL: ocsp-signing
+      HSM_PIN: "1234"
+      HSM_KEY_LABEL: ocsp-signing-key
+      PKI_DIR: /data/pki
+    volumes:
+      - pki-data:/data/pki
+      - ./data/pki:/app/data/pki
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
-      start_period: 45s
-      interval: 20s
+      start_period: 40s
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
 
   # ============================================================
-  # OCSP Admin API  (management REST API)
+  # OCSP Admin Console (React 18 SPA via Nginx)
   # ============================================================
-
-  ocsp-admin-api:
-    build:
-      context: .
-      dockerfile: ocsp-admin-api/Dockerfile
-    image: ocsp/admin-api:local
-    container_name: ocsp-admin-api
-    restart: unless-stopped
-    networks: [ocsp-net]
-    depends_on:
-      mariadb:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      kms-mock:
-        condition: service_healthy
-      ocsp-auth:
-        condition: service_healthy
-    ports:
-      - "8082:8082"
-    environment:
-      <<: [*db-env, *rabbitmq-env, *kms-env, *spring-opts]
-      MARIADB_USER:        ocsp_admin
-      MARIADB_PASSWORD:    changeme
-      # OIDC issuer: must be reachable from the browser AND from this container.
-      # In Docker, the console proxies /oauth2 → ocsp-auth:9000, so the
-      # issuer-uri the admin-api validates against must match what the token says.
-      OIDC_ISSUER_URI:     http://localhost:9000
-      # Allow requests from the admin console (Nginx on port 3000)
-      CORS_ALLOWED_ORIGINS: http://localhost:3000
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
-      start_period: 45s
-      interval: 20s
-      timeout: 5s
-      retries: 5
-
-  # ============================================================
-  # OCSP Console  (React 18 SPA served by Nginx on port 3000)
-  # Nginx also reverse-proxies /api → admin-api and /oauth2 → ocsp-auth
-  # ============================================================
-
   ocsp-console:
     build:
       context: ./ocsp-console
       dockerfile: Dockerfile
       args:
-        # Baked into the React bundle at build time.
-        # /api and /oauth2 routes are relative — Nginx handles the proxy.
-        VITE_API_BASE_URL:  ""
+        VITE_API_BASE_URL: ""
         VITE_AUTH_BASE_URL: ""
     image: ocsp/console:local
     container_name: ocsp-console
     restart: unless-stopped
     networks: [ocsp-net]
     depends_on:
-      ocsp-admin-api:
-        condition: service_healthy
-      ocsp-auth:
+      ocsp-app:
         condition: service_healthy
     ports:
-      - "3000:80"    # ← Admin Console at http://localhost:3000
+      - "3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/ || exit 1"]
+      start_period: 15s
+      interval: 10s
+      timeout: 5s
+      retries: 4

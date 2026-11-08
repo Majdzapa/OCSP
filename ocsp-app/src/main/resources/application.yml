@@ -1,0 +1,92 @@
+spring:
+  application:
+    name: ocsp-app
+  profiles:
+    active: dev
+
+  datasource:
+    url: jdbc:mariadb://${MARIADB_HOST:localhost}:${MARIADB_PORT:3307}/${MARIADB_DB:ocsp}
+    username: ${MARIADB_USER:ocsp_app}
+    password: ${MARIADB_PASSWORD:changeme}
+    driver-class-name: org.mariadb.jdbc.Driver
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 2
+      connection-timeout: 3000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    user: ${FLYWAY_USER:${spring.datasource.username}}
+    password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    consumer:
+      group-id: ocsp-sync
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:9000/oauth2/jwks}
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:9000}
+
+server:
+  port: 8080
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, metrics, info
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+ocsp:
+  cache:
+    l1:
+      max-size: 10000
+      expire-after-write-minutes: 60
+  kafka:
+    topic: incert.certificate.status.v1
+    consumer-group: ocsp-sync
+
+hsm:
+  enabled: ${HSM_ENABLED:true}
+  pkcs11-library: ${HSM_PKCS11_LIBRARY:/usr/lib/softhsm/libsofthsm2.so}
+  token-label: ${HSM_TOKEN_LABEL:ocsp-signing}
+  pin: ${HSM_PIN:1234}
+  key-label: ${HSM_KEY_LABEL:ocsp-signing-key}
+
+logging:
+  level:
+    com.company.incert.ocsp: INFO
+    org.springframework.kafka: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+

@@ -213,7 +213,7 @@ export function DashboardPage() {
                     <Chip label="OCSP Responder ✓" color="success" size="small" />
                     <Chip label="Sync Service ✓" color="success" size="small" />
                     <Chip label="MariaDB ✓" color="success" size="small" />
-                    <Chip label="RabbitMQ ✓" color="success" size="small" />
+                    <Chip label="Kafka ✓" color="success" size="small" />
                     <Chip
                       label={`Reconciliation ${stats?.lastReconciliationOk ? '✓ OK' : '✗ FAILED'}`}
                       color={stats?.lastReconciliationOk ? 'success' : 'error'}

@@ -1,37 +1,40 @@
-# OCSP Subsystem — Incert Private CA
+# Incert OCSP Subsystem (v2.0)
 
-> RFC 6960-compliant OCSP Responder for the company's private Certificate Authority (Incert).
-> Spring Boot 3 · RabbitMQ 3.13 · MariaDB 10.11 · React 18 + TypeScript
+> RFC 6960-compliant OCSP Responder for Incert Private CA.
+> Re-architected with **Kafka (KRaft)**, **Spring Modulith**, **SoftHSM2 (PKCS#11)**, and **Transactional Outbox**.
+> Stack: Java 21 · Spring Boot 3.3 · Spring Modulith 1.2 · Apache Kafka 3.8 · MariaDB 10.11 · React 18
 
 ---
 
-## Quick Start (local dev — no backend needed)
+## Quick Start
 
+### 1. Build backend modules
 ```bash
-# Start the React admin console with mock API
-cd ocsp-console
-npm install
-npm run dev
-# → http://localhost:5173
-
-# To use the real Spring Boot backend instead:
-VITE_USE_REAL_API=true npm run dev
+mvn clean verify
 ```
 
-## Full stack with Docker Compose
-
+### 2. Run with Docker Compose
 ```bash
-docker-compose up --build
+docker compose up --build -d
 ```
 
-| Service | URL | Notes |
+### 3. Run End-to-End Test Suite
+```bash
+./scripts/e2e-test.sh
+```
+
+---
+
+## Exposed Ports
+
+| Service | Port | Endpoint / Description |
 |---|---|---|
-| OCSP endpoint | http://localhost:8080/ocsp | `POST` DER · `GET /{b64url}` |
-| Sync service health | http://localhost:8081/actuator/health | |
-| Admin API | http://localhost:8082/api/v1/admin | OAuth2/OIDC required |
-| React console | http://localhost:3000 | |
-| RabbitMQ UI | http://localhost:15672 | guest / guest |
-| MariaDB | localhost:3307 | DB: `ocsp` |
+| **Admin Console** | `3000` | http://localhost:3000 (React 18 SPA + Nginx reverse proxy) |
+| **OCSP Responder** | `8080` | http://localhost:8080/ocsp (`POST` DER · `GET /{b64url}`) |
+| **Admin API** | `8080` | http://localhost:8080/api/v1/admin (Dashboard, Cache, Revocation Feed) |
+| **KMS Simulator** | `8090` | http://localhost:8090/kms (Cert inventory, manual revoke/unrevoke, job triggers) |
+| **Kafka Broker** | `9092` | localhost:9092 (KRaft mode; no ZooKeeper) |
+| **MariaDB** | `3307` | localhost:3307 (Schemas: `ocsp`, `kms`) |
 
 ---
 
@@ -39,54 +42,51 @@ docker-compose up --build
 
 | Module | Description |
 |---|---|
-| [`ocsp-responder`](./ocsp-responder) | Public `POST/GET /ocsp` endpoint, Caffeine L1 + MariaDB L2 cache, KMS signing delegation |
-| [`ocsp-sync-service`](./ocsp-sync-service) | RabbitMQ consumer, idempotent revocation upsert, cache-invalidation publisher, reconciliation job |
-| [`ocsp-admin-api`](./ocsp-admin-api) | Internal REST API (OAuth2/OIDC) — dashboard stats, cache explorer, revocation feed |
-| [`ocsp-console`](./ocsp-console) | React 18 + MUI admin dashboard |
+| [`kms-simulator`](./kms-simulator) | Source of truth for certificates. Test PKI generator, transactional outbox pattern, scheduled revocation job, Kafka event publisher. |
+| [`ocsp-app`](./ocsp-app) | Unified Spring Modulith application. Modules: `responder` (RFC 6960), `status` (Caffeine L1 + DB), `signing` (SoftHSM2 PKCS#11), `sync` (Kafka consumer), `admin` (management REST API). |
+| [`ocsp-console`](./ocsp-console) | React 18 + TypeScript + MUI admin interface. Points to `ocsp-app` via Nginx reverse proxy. |
 
 ---
 
-## Documentation
+## Key Design Decisions & ADRs
 
-- 📐 **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Full sequence diagrams, ERD, RabbitMQ topology, deployment blueprint, security boundaries
-
----
-
-## Database
-
-Flyway migrations in [`db/migrations/`](./db/migrations/):
-
-| Migration | Description |
-|---|---|
-| `V1__initial_schema.sql` | 4 tables: `revocation_status`, `ocsp_response_cache`, `cert_event_audit`, `ocsp_signing_cert` |
-| `V2__db_users.sql` | Least-privilege DB users per service (`ocsp_reader`, `ocsp_writer`, `ocsp_admin`) |
-
----
-
-## Key Design Decisions
-
-| Decision | Rationale |
-|---|---|
-| Two-layer cache (Caffeine L1 + MariaDB L2) | Sub-ms hot path without a Redis dependency; L2 shared across the fleet |
-| Event-driven sync (RabbitMQ) | OCSP read path never blocks on KMS transactional writes |
-| Delegated OCSP signing cert | CA key stays in HSM; short-lived cert with `id-pkix-ocsp-nocheck` |
-| Idempotent upsert via `source_event_id` | Safe RabbitMQ redelivery — no duplicate status changes |
-| Stateless responder nodes | Any node serves any request; HPA scales on CPU/RPS |
+| Decision | Summary | ADR Reference |
+|---|---|---|
+| **Kafka over RabbitMQ** | Key-ordered partitions (`issuerKeyHash:serial`) guarantee strict chronological order per certificate. Replay from offset eliminates external sync APIs. | [ADR-001](./docs/adr/ADR-001-kafka-over-rabbitmq.md) |
+| **Spring Modulith** | Single container deployable unit. In-process cache invalidation replaces network messaging. Enforced via `verify()` and ArchUnit tests. | [ADR-002](./docs/adr/ADR-002-modulith-over-microservices.md) |
+| **SoftHSM2 (PKCS#11)** | Cryptographic signing executed inside HSM token via SunPKCS11. Private key is non-extractable; zero private key material stored in container filesystem. | [ADR-003](./docs/adr/ADR-003-softhsm-pkcs11-signing.md) |
+| **Transactional Outbox** | Status mutations and outbox events committed in the same MariaDB transaction, relayed to Kafka asynchronously with `enable.idempotence=true`. | [ADR-004](./docs/adr/ADR-004-transactional-outbox-pattern.md) |
 
 ---
 
 ## Environment Variables
 
-All services are fully configured via environment variables — see each module's `application.yml`.
+| Variable | Default | Component | Description |
+|---|---|---|---|
+| `MARIADB_HOST` | `mariadb` | all | MariaDB host |
+| `MARIADB_PORT` | `3306` | all | MariaDB port |
+| `MARIADB_DB` | `ocsp` | `ocsp-app` | OCSP schema name |
+| `MARIADB_KMS_DB` | `kms` | `kms-simulator` | KMS schema name |
+| `MARIADB_USER` | `ocsp_app` | `ocsp-app` | OCSP database user |
+| `MARIADB_KMS_USER` | `kms_app` | `kms-simulator` | KMS database user |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:29092` | all | Kafka cluster bootstrap servers |
+| `HSM_ENABLED` | `true` | `ocsp-app` | Enable PKCS#11 signing (`false` falls back to software signer) |
+| `HSM_PKCS11_LIBRARY` | `/usr/lib/softhsm/libsofthsm2.so` | `ocsp-app` | PKCS#11 shared object path |
+| `HSM_TOKEN_LABEL` | `ocsp-signing` | `ocsp-app` | SoftHSM2 token label |
+| `HSM_KEY_LABEL` | `ocsp-signing-key` | `ocsp-app` | Key pair label inside token |
+| `HSM_PIN` | `1234` | `ocsp-app` | User PIN for token authentication |
+| `PKI_DIR` | `/data/pki` | all | Shared volume path for test PKI exports |
+| `KMS_JOB_REVOCATION_ENABLED`| `false` | `kms-simulator` | Background random revocation simulation job |
+| `KMS_JOB_REVOCATION_CRON` | `0/30 * * * * *` | `kms-simulator` | Revocation simulation frequency |
 
-| Variable | Default | Used by |
-|---|---|---|
-| `MARIADB_HOST` | `localhost` | all Spring services |
-| `MARIADB_DB` | `ocsp` | all |
-| `MARIADB_PASSWORD` | `changeme` | all |
-| `RABBITMQ_HOST` | `localhost` | all |
-| `KMS_SIGNING_API_URL` | `http://kms-internal:8443/api/v1/sign` | ocsp-responder |
-| `KMS_OCSP_KEY_REF` | `ocsp-signing-key-01` | ocsp-responder |
-| `OIDC_ISSUER_URI` | `https://sso.company.internal/realms/company` | ocsp-admin-api |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | ocsp-admin-api |
-| `VITE_USE_REAL_API` | _(unset = mock mode)_ | ocsp-console |
+---
+
+## Testing
+
+```bash
+# 1. Unit & Modulith verification tests
+mvn test
+
+# 2. End-to-end integration test (with live containers)
+./scripts/e2e-test.sh
+```

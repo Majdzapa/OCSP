@@ -34,7 +34,7 @@ ocsp-console/.oxlintrc.json
 
 # Docker volumes
 mariadb-data/
-rabbitmq-data/
+data/pki/
 
 # Logs
 *.log

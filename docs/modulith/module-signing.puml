@@ -1,0 +1,17 @@
+@startuml
+set separator none
+title Signing
+
+top to bottom direction
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+Container_Boundary("OcspApplication.OcspApplication_boundary", "OcspApplication", $tags="") {
+  Component(OcspApplication.OcspApplication.Signing, "Signing", $techn="Module", $descr="", $tags="", $link="")
+}
+
+
+SHOW_LEGEND(true)
+@enduml
