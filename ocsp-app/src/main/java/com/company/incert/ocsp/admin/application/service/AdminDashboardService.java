@@ -16,9 +16,10 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
     private final OcspSigner ocspSigner;
     private final OcspResponseCachePort responseCachePort;
     private final com.company.incert.ocsp.responder.application.port.in.HandleOcspRequestUseCase handleOcspRequestUseCase;
+    private final com.company.incert.ocsp.sync.application.port.in.ReconciliationUseCase reconciliationUseCase;
 
     public AdminDashboardService(StatusStatsPort statusStatsPort, OcspSigner ocspSigner) {
-        this(statusStatsPort, ocspSigner, OcspResponseCachePort.NOOP, null);
+        this(statusStatsPort, ocspSigner, OcspResponseCachePort.NOOP, null, null);
     }
 
     public AdminDashboardService(
@@ -26,10 +27,20 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
             OcspSigner ocspSigner,
             OcspResponseCachePort responseCachePort,
             com.company.incert.ocsp.responder.application.port.in.HandleOcspRequestUseCase handleOcspRequestUseCase) {
+        this(statusStatsPort, ocspSigner, responseCachePort, handleOcspRequestUseCase, null);
+    }
+
+    public AdminDashboardService(
+            StatusStatsPort statusStatsPort,
+            OcspSigner ocspSigner,
+            OcspResponseCachePort responseCachePort,
+            com.company.incert.ocsp.responder.application.port.in.HandleOcspRequestUseCase handleOcspRequestUseCase,
+            com.company.incert.ocsp.sync.application.port.in.ReconciliationUseCase reconciliationUseCase) {
         this.statusStatsPort = statusStatsPort;
         this.ocspSigner = ocspSigner;
         this.responseCachePort = responseCachePort != null ? responseCachePort : OcspResponseCachePort.NOOP;
         this.handleOcspRequestUseCase = handleOcspRequestUseCase;
+        this.reconciliationUseCase = reconciliationUseCase;
     }
 
     @Override
@@ -52,11 +63,29 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
             Map.entry("errorRate", 0.0),
             Map.entry("activeCacheEntries", cachedResponses),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft),
-            Map.entry("lastReconciliationOk", true)
+            Map.entry("lastReconciliationOk", reconciliationUseCase != null ? reconciliationUseCase.isLastReconciliationOk() : true),
+            Map.entry("lastReconciliationTime", reconciliationUseCase != null && reconciliationUseCase.getLastReconciliationTime() != null ? reconciliationUseCase.getLastReconciliationTime().toString() : "")
         );
     }
 
     @Override
+    public Map<String, Object> runReconciliation() {
+        if (reconciliationUseCase == null) {
+            return Map.of("status", "UNAVAILABLE", "message", "ReconciliationUseCase is not configured");
+        }
+        return reconciliationUseCase.runReconciliation();
+    }
+
+    public Map<String, Object> getReconciliationStatus() {
+        if (reconciliationUseCase == null) {
+            return Map.of("status", "UNAVAILABLE");
+        }
+        return Map.of(
+            "lastOk", reconciliationUseCase.isLastReconciliationOk(),
+            "lastTime", reconciliationUseCase.getLastReconciliationTime() != null ? reconciliationUseCase.getLastReconciliationTime().toString() : ""
+        );
+    }
+
     public List<Map<String, String>> getRevoked(int page, int size) {
         return statusStatsPort.getRevokedPage(page, size);
     }
