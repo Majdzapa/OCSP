@@ -40,6 +40,18 @@ public record CertId(
                hex.formatHex(serialNumber);
     }
 
+    public String toSha1CacheKey() {
+        try {
+            java.security.MessageDigest sha1 = java.security.MessageDigest.getInstance("SHA-1");
+            sha1.update(issuerNameHash);
+            sha1.update(issuerKeyHash);
+            sha1.update(serialNumber);
+            return HexFormat.of().formatHex(sha1.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-1 not available", e);
+        }
+    }
+
     public String issuerKeyHashHex() {
         return HexFormat.of().formatHex(issuerKeyHash);
     }

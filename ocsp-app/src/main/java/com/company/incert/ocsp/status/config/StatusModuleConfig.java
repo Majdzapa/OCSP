@@ -1,5 +1,8 @@
 package com.company.incert.ocsp.status.config;
 
+import com.company.incert.ocsp.status.adapter.out.jpa.JpaOcspResponseCacheAdapter;
+import com.company.incert.ocsp.status.adapter.out.jpa.SpringDataOcspResponseCacheRepository;
+import com.company.incert.ocsp.status.application.port.out.OcspResponseCachePort;
 import com.company.incert.ocsp.status.adapter.out.cache.CaffeineStatusCacheAdapter;
 import com.company.incert.ocsp.status.adapter.out.jpa.JpaStatusRepositoryAdapter;
 import com.company.incert.ocsp.status.adapter.out.jpa.SpringDataRevocationStatusRepository;
@@ -64,7 +67,26 @@ public class StatusModuleConfig {
     }
 
     @Bean
-    public CacheEvictor cacheEvictor(CaffeineStatusCacheAdapter cacheAdapter) {
-        return cacheAdapter;
+    public OcspResponseCachePort ocspResponseCachePort(SpringDataOcspResponseCacheRepository repo) {
+        return new JpaOcspResponseCacheAdapter(repo);
+    }
+
+    @Bean
+    public CacheEvictor cacheEvictor(
+            CaffeineStatusCacheAdapter cacheAdapter,
+            OcspResponseCachePort responseCachePort) {
+        return new CacheEvictor() {
+            @Override
+            public void evict(com.company.incert.ocsp.shared.domain.CertId certId) {
+                cacheAdapter.evict(certId);
+                responseCachePort.evict(certId.toSha1CacheKey());
+            }
+
+            @Override
+            public void evictAll() {
+                cacheAdapter.evictAll();
+                responseCachePort.evictAll();
+            }
+        };
     }
 }

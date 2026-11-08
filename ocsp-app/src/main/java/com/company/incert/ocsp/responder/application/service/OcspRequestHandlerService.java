@@ -6,6 +6,7 @@ import com.company.incert.ocsp.shared.domain.CertificateStatus;
 import com.company.incert.ocsp.shared.domain.RevocationReason;
 import com.company.incert.ocsp.signing.application.port.out.OcspSigner;
 import com.company.incert.ocsp.status.application.port.in.LookupStatusUseCase;
+import com.company.incert.ocsp.status.application.port.out.OcspResponseCachePort;
 import com.company.incert.ocsp.shared.CertificateStatusRecord;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -30,7 +31,6 @@ import java.util.Optional;
  * No adapters, no Spring MVC, no JPA here.
  */
 @Slf4j
-@RequiredArgsConstructor
 public class OcspRequestHandlerService implements HandleOcspRequestUseCase {
 
     private static final Duration NEXT_UPDATE_WINDOW = Duration.ofHours(1);
@@ -38,6 +38,25 @@ public class OcspRequestHandlerService implements HandleOcspRequestUseCase {
     private final LookupStatusUseCase statusLookup;
     private final OcspSigner signer;
     private final MeterRegistry meterRegistry;
+    private final OcspResponseCachePort responseCachePort;
+
+    public OcspRequestHandlerService(
+            LookupStatusUseCase statusLookup,
+            OcspSigner signer,
+            MeterRegistry meterRegistry) {
+        this(statusLookup, signer, meterRegistry, OcspResponseCachePort.NOOP);
+    }
+
+    public OcspRequestHandlerService(
+            LookupStatusUseCase statusLookup,
+            OcspSigner signer,
+            MeterRegistry meterRegistry,
+            OcspResponseCachePort responseCachePort) {
+        this.statusLookup = statusLookup;
+        this.signer = signer;
+        this.meterRegistry = meterRegistry;
+        this.responseCachePort = responseCachePort != null ? responseCachePort : OcspResponseCachePort.NOOP;
+    }
 
     @Override
     public byte[] handle(byte[] derRequest) {
@@ -75,6 +94,17 @@ public class OcspRequestHandlerService implements HandleOcspRequestUseCase {
             certId.getIssuerKeyHash(),
             certId.getSerialNumber().toByteArray()
         );
+
+        // Check L2 response cache when no nonce is present
+        String cacheKey = domainCertId.toSha1CacheKey();
+        if (nonce == null) {
+            Optional<byte[]> cached = responseCachePort.getResponse(cacheKey);
+            if (cached.isPresent()) {
+                meterRegistry.counter("ocsp.response.cache.hit").increment();
+                log.debug("Served OCSP response from L2 cache for key={}", cacheKey);
+                return cached.get();
+            }
+        }
 
         // 3. Look up status (cache → DB)
         Optional<CertificateStatusRecord> statusOpt = statusLookup.lookup(domainCertId);
@@ -122,7 +152,14 @@ public class OcspRequestHandlerService implements HandleOcspRequestUseCase {
         OCSPRespBuilder respBuilder = new OCSPRespBuilder();
         OCSPResp ocspResp = respBuilder.build(OCSPRespBuilder.SUCCESSFUL, basicResp);
 
-        return ocspResp.getEncoded();
+        byte[] encodedResponse = ocspResp.getEncoded();
+
+        // 6. Save to response cache if no nonce
+        if (nonce == null) {
+            responseCachePort.saveResponse(cacheKey, encodedResponse, now, nextUpdate);
+        }
+
+        return encodedResponse;
     }
 
     private OCSPReq parseRequest(byte[] der) throws MalformedRequestException {
