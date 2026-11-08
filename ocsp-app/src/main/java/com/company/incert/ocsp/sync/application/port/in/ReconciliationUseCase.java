@@ -11,3 +11,4 @@ public interface ReconciliationUseCase {
     boolean isLastReconciliationOk();
     Instant getLastReconciliationTime();
 }
+
