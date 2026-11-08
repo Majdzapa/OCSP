@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -41,13 +42,48 @@ public class JpaStatusRepositoryAdapter implements StatusLookup, StatusWriter, c
             .filter(e -> e.getStatus() == com.company.incert.ocsp.shared.domain.CertificateStatus.REVOKED)
             .toList();
         java.util.HexFormat hex = java.util.HexFormat.of();
-        return list.stream().map(e -> java.util.Map.of(
-            "serialNumber", hex.formatHex(e.getSerialNumber()),
-            "issuerKeyHash", hex.formatHex(e.getIssuerKeyHash()),
-            "revocationTime", e.getRevocationTime() != null ? e.getRevocationTime().toString() : "",
-            "revocationReason", e.getRevocationReason() != null ? e.getRevocationReason() : "UNSPECIFIED",
-            "thisUpdate", e.getThisUpdate().toString()
-        )).toList();
+        return list.stream().map(e -> {
+            String serialHex = hex.formatHex(e.getSerialNumber());
+            String eventId = e.getSourceEventId() != null ? e.getSourceEventId() : "evt-" + e.getId();
+            String revTime = e.getRevocationTime() != null ? e.getRevocationTime().toString() : "";
+            String revReason = e.getRevocationReason() != null ? e.getRevocationReason() : "UNSPECIFIED";
+            String recAt = e.getUpdatedAt() != null ? e.getUpdatedAt().toString() : e.getThisUpdate().toString();
+            java.util.Map<String, String> map = new java.util.HashMap<>();
+            map.put("eventId", eventId);
+            map.put("eventType", "CertificateRevoked");
+            map.put("serialNumberHex", serialHex);
+            map.put("serialNumber", serialHex);
+            map.put("issuerKeyHash", hex.formatHex(e.getIssuerKeyHash()));
+            map.put("revocationTime", revTime);
+            map.put("revocationReason", revReason);
+            map.put("receivedAt", recAt);
+            map.put("processedAt", recAt);
+            map.put("status", "PROCESSED");
+            map.put("thisUpdate", e.getThisUpdate().toString());
+            return map;
+        }).toList();
+    }
+
+    @Override
+    public Optional<Map<String, String>> findBySerial(String serialHex) {
+        try {
+            byte[] bytes = java.util.HexFormat.of().parseHex(serialHex.toLowerCase().replaceAll("[^0-9a-f]", ""));
+            var list = repo.findBySerialNumber(bytes);
+            if (list.isEmpty()) {
+                return Optional.empty();
+            }
+            var e = list.get(0);
+            java.util.HexFormat hex = java.util.HexFormat.of();
+            java.util.Map<String, String> map = new java.util.HashMap<>();
+            map.put("serialHex", hex.formatHex(e.getSerialNumber()));
+            map.put("status", e.getStatus().name());
+            map.put("revocationTime", e.getRevocationTime() != null ? e.getRevocationTime().toString() : "");
+            map.put("revocationReason", e.getRevocationReason() != null ? e.getRevocationReason() : "");
+            map.put("renewalAvailable", String.valueOf(e.getStatus() == com.company.incert.ocsp.shared.domain.CertificateStatus.REVOKED));
+            return Optional.of(map);
+        } catch (Exception ex) {
+            return Optional.empty();
+        }
     }
 
     @Override

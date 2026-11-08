@@ -22,14 +22,17 @@ export interface CacheEntry {
 
 export interface RevocationEvent {
   eventId: string
-  eventType: 'CertificateIssued' | 'CertificateRevoked' | 'CertificateHeld' | 'CertificateUnrevoked'
-  serialNumberHex: string
-  revocationReason: string | null
-  revocationTime: string | null
-  receivedAt: string
-  processedAt: string | null
-  status: 'RECEIVED' | 'PROCESSED' | 'FAILED'
-  errorMessage: string | null
+  eventType: 'CertificateIssued' | 'CertificateRevoked' | 'CertificateHeld' | 'CertificateUnrevoked' | string
+  serialNumberHex?: string
+  serialNumber?: string
+  revocationReason?: string | null
+  revocationTime?: string | null
+  receivedAt?: string
+  processedAt?: string | null
+  thisUpdate?: string
+  updatedAt?: string
+  status?: 'RECEIVED' | 'PROCESSED' | 'FAILED' | string
+  errorMessage?: string | null
 }
 
 export interface Page<T> {

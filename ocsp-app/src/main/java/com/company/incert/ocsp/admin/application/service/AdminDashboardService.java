@@ -42,4 +42,14 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
     public List<Map<String, String>> getRevoked(int page, int size) {
         return statusStatsPort.getRevokedPage(page, size);
     }
+
+    public java.util.Optional<Map<String, Object>> checkSerialStatus(String serialHex) {
+        return statusStatsPort.findBySerial(serialHex).map(m -> Map.of(
+            "serialHex", m.get("serialHex"),
+            "status", m.get("status"),
+            "revocationTime", m.get("revocationTime") != null ? m.get("revocationTime") : "",
+            "revocationReason", m.get("revocationReason") != null ? m.get("revocationReason") : "",
+            "renewalAvailable", "true".equals(m.get("renewalAvailable"))
+        ));
+    }
 }

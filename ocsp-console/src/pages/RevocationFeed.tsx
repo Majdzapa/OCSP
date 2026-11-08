@@ -87,12 +87,15 @@ export function RevocationFeed() {
                     </TableRow>
                   ))
                 : (data?.content ?? []).map((ev) => {
-                    const m = meta(ev.eventType)
-                    const lag = ev.processedAt
-                      ? dayjs(ev.processedAt).diff(dayjs(ev.receivedAt), 'ms')
-                      : null
+                    const eventType = ev.eventType || (ev.revocationTime ? 'CertificateRevoked' : 'CertificateIssued')
+                    const m = meta(eventType)
+                    const serial = (ev.serialNumberHex || ev.serialNumber || '').toUpperCase()
+                    const receivedAt = ev.receivedAt || ev.thisUpdate || ev.updatedAt || new Date().toISOString()
+                    const processedAt = ev.processedAt || ev.thisUpdate || ev.updatedAt
+                    const lag = processedAt ? dayjs(processedAt).diff(dayjs(receivedAt), 'ms') : null
+                    const eventId = ev.eventId || serial || Math.random().toString()
                     return (
-                      <TableRow key={ev.eventId} hover>
+                      <TableRow key={eventId} hover>
                         <TableCell>
                           <Stack direction="row" spacing={0.5} alignItems="center">
                             <Box sx={{ color: `${m.color}.main`, display: 'flex' }}>{m.icon}</Box>
@@ -101,7 +104,7 @@ export function RevocationFeed() {
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption" sx={{ fontFamily: 'JetBrains Mono, monospace', color: '#a5b4fc' }}>
-                            {ev.serialNumberHex.toUpperCase()}
+                            {serial || '—'}
                           </Typography>
                         </TableCell>
                         <TableCell>
@@ -115,8 +118,8 @@ export function RevocationFeed() {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Tooltip title={dayjs(ev.receivedAt).format('YYYY-MM-DD HH:mm:ss.SSS')}>
-                            <Typography variant="caption">{dayjs(ev.receivedAt).fromNow()}</Typography>
+                          <Tooltip title={dayjs(receivedAt).format('YYYY-MM-DD HH:mm:ss.SSS')}>
+                            <Typography variant="caption">{dayjs(receivedAt).fromNow()}</Typography>
                           </Tooltip>
                         </TableCell>
                         <TableCell>
@@ -131,9 +134,9 @@ export function RevocationFeed() {
                         </TableCell>
                         <TableCell>
                           <Chip
-                            label={ev.status}
+                            label={ev.status || 'PROCESSED'}
                             size="small"
-                            color={ev.status === 'PROCESSED' ? 'success' : ev.status === 'FAILED' ? 'error' : 'default'}
+                            color={ev.status === 'FAILED' ? 'error' : 'success'}
                             sx={{ fontSize: '0.65rem', height: 20 }}
                           />
                         </TableCell>

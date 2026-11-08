@@ -16,6 +16,8 @@ public interface SpringDataRevocationStatusRepository extends JpaRepository<Revo
         @Param("keyHash") byte[] issuerKeyHash,
         @Param("serial") byte[] serialNumber);
 
+    java.util.List<RevocationStatusJpaEntity> findBySerialNumber(byte[] serialNumber);
+
     long countByStatus(CertificateStatus status);
 }
 

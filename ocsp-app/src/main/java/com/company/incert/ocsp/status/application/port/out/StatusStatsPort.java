@@ -8,4 +8,5 @@ public interface StatusStatsPort {
     long countRevoked();
     long countGood();
     List<Map<String, String>> getRevokedPage(int page, int size);
+    java.util.Optional<Map<String, String>> findBySerial(String serialHex);
 }
