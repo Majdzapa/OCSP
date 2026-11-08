@@ -176,6 +176,7 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
 
             return Map.ofEntries(
                 Map.entry("serialHex", serialHex),
+                Map.entry("cacheKey", cacheKey),
                 Map.entry("method", method != null ? method : "POST"),
                 Map.entry("includeNonce", includeNonce),
                 Map.entry("nonceSent", nonceHex != null ? nonceHex : ""),

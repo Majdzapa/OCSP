@@ -37,7 +37,13 @@ export function CacheExplorer() {
     }
   }, [])
 
-  useEffect(() => { load(page) }, [page, load])
+  useEffect(() => {
+    load(page)
+    const interval = setInterval(() => {
+      load(page)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [page, load])
 
   const handleEvict = async (cacheKey: string) => {
     if (!window.confirm(`Invalidate cache entry\n${cacheKey}?`)) return

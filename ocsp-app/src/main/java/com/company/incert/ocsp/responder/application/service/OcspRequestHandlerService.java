@@ -33,7 +33,7 @@ import java.util.Optional;
 @Slf4j
 public class OcspRequestHandlerService implements HandleOcspRequestUseCase {
 
-    private static final Duration NEXT_UPDATE_WINDOW = Duration.ofHours(1);
+    private static final Duration NEXT_UPDATE_WINDOW = Duration.ofHours(24);
 
     private final LookupStatusUseCase statusLookup;
     private final OcspSigner signer;

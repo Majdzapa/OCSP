@@ -34,6 +34,10 @@ export default defineConfig({
         target: process.env.VITE_API_BASE_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/ocsp': {
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:8080',
+        changeOrigin: true,
+      },
       // Dev token endpoint (local ocsp-auth). Used by src/api/client.ts in dev mode only.
       '/oauth2': {
         target: process.env.VITE_AUTH_BASE_URL || 'http://localhost:9000',

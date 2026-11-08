@@ -408,6 +408,9 @@ export function CertCheckerPage() {
                 {testResult.nonceEchoed && (
                   <Row label="Nonce Echoed" value={`0x${testResult.nonceEchoed}`} mono />
                 )}
+                {testResult.cacheKey && (
+                  <Row label="L2 Cache Key" value={testResult.cacheKey} mono />
+                )}
                 <Row label="Cache Explanation" value={testResult.cacheVerdict} />
 
                 {/* Terminal commands box */}

@@ -88,6 +88,7 @@ export interface KmsCertificate {
 
 export interface OcspTestResult {
   serialHex: string
+  cacheKey?: string
   method: string
   includeNonce: boolean
   nonceSent: string
