@@ -28,3 +28,4 @@ public interface OcspResponseCachePort {
         @Override public long count() { return 0; }
     };
 }
+

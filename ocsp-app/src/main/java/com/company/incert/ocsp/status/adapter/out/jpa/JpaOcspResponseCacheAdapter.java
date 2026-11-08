@@ -68,3 +68,4 @@ public class JpaOcspResponseCacheAdapter implements OcspResponseCachePort {
         return repo.count();
     }
 }
+
