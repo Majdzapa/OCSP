@@ -46,8 +46,8 @@ public class RabbitMqOutboxRelayAdapter {
                 rabbitTemplate.convertAndSend(exchange, routingKey, event.getPayload(), message -> {
                     message.getMessageProperties().setMessageId(event.getEventId());
                     message.getMessageProperties().setContentType("application/json");
-                    if (event.getKafkaKey() != null) {
-                        message.getMessageProperties().setHeader("partitionKey", event.getKafkaKey());
+                    if (event.getEventKey() != null) {
+                        message.getMessageProperties().setHeader("partitionKey", event.getEventKey());
                     }
                     return message;
                 });

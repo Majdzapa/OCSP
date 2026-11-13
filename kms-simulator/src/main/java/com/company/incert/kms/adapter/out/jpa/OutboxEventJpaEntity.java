@@ -21,8 +21,8 @@ public class OutboxEventJpaEntity {
     @Column(name = "topic", nullable = false, length = 128)
     private String topic;
 
-    @Column(name = "kafka_key", nullable = false, length = 256)
-    private String kafkaKey;
+    @Column(name = "event_key", nullable = false, length = 256)
+    private String eventKey;
 
     @Column(name = "payload", columnDefinition = "TEXT NOT NULL")
     private String payload;

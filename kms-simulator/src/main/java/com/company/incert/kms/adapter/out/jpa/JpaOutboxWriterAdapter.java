@@ -22,17 +22,17 @@ public class JpaOutboxWriterAdapter implements OutboxWriter {
     public void write(CertificateStatusChangedEvent event) {
         try {
             String payload = objectMapper.writeValueAsString(event);
-            String kafkaKey = event.issuerKeyHashHex() + ":" + event.serialNumberHex();
+            String eventKey = event.issuerKeyHashHex() + ":" + event.serialNumberHex();
             OutboxEventJpaEntity entity = OutboxEventJpaEntity.builder()
                     .eventId(event.eventId())
                     .topic(TOPIC)
-                    .kafkaKey(kafkaKey)
+                    .eventKey(eventKey)
                     .payload(payload)
                     .createdAt(Instant.now())
                     .sent(false)
                     .build();
             outboxRepo.save(entity);
-            log.debug("Outbox event written: id={} key={}", event.eventId(), kafkaKey);
+            log.debug("Outbox event written: id={} key={}", event.eventId(), eventKey);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }

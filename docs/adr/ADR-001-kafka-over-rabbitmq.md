@@ -1,7 +1,7 @@
 # ADR-001: Apache Kafka over RabbitMQ for Certificate Status Streaming
 
 ## Status
-Accepted
+Superseded by ADR-005: RabbitMQ Broker and Pure Asynchronous Event Synchronization
 
 ## Context
 The legacy architecture relied on RabbitMQ to distribute certificate issuance and revocation events from KMS to `ocsp-sync-service`, and to publish cache-invalidation messages between microservices.

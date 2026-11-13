@@ -275,7 +275,7 @@ erDiagram
     KMS_OUTBOX_EVENT {
         VARCHAR(36) id PK
         VARCHAR(64) event_type
-        VARCHAR(256) kafka_key
+        VARCHAR(256) event_key
         LONGTEXT payload
         DATETIME created_at
         TINYINT sent

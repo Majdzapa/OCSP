@@ -4,7 +4,7 @@ import java.time.Instant;
 
 /**
  * Pure domain record representing a certificate in the KMS inventory.
- * No JPA, Spring, or Kafka imports — this is the core domain model.
+ * Pure POJO domain model independent of JPA, Spring, or messaging broker.
  */
 public record Certificate(
         String serialNumberHex,

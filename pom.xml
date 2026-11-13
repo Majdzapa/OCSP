@@ -10,7 +10,7 @@
     <version>2.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Incert OCSP Parent</name>
-    <description>Parent POM for the Incert OCSP subsystem (Kafka + Modulith + SoftHSM re-arch)</description>
+    <description>Parent POM for the Incert OCSP subsystem (RabbitMQ + SoftHSM PKCS#11 + Standalone Apps)</description>
 
     <modules>
         <module>kms-simulator</module>
