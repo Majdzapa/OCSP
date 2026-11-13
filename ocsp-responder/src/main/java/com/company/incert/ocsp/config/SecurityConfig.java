@@ -116,6 +116,9 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             );
 
+        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass admin fallback in KEYCLOCK)
+        http.httpBasic(Customizer.withDefaults());
+
         if (mode.isKeycloak()) {
             log.info("Activating KEYCLOCK OAuth2 Resource Server filter chain");
             http.oauth2ResourceServer(oauth2 -> oauth2
@@ -124,9 +127,6 @@ public class SecurityConfig {
                     .jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())
                 )
             );
-        } else {
-            log.info("Activating SELF_MANAGED HTTP Basic Auth filter chain");
-            http.httpBasic(Customizer.withDefaults());
         }
 
         return http.build();

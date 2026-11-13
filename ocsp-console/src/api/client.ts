@@ -79,6 +79,26 @@ export const loginWithBearerToken = async (token: string): Promise<LoginResponse
   return res.data
 }
 
+export const exchangeKeycloakCredentials = async (
+  authServerUrl: string,
+  realm: string,
+  clientId: string,
+  username: string,
+  password: string
+): Promise<string> => {
+  const tokenUrl = `${authServerUrl}/realms/${realm}/protocol/openid-connect/token`
+  const params = new URLSearchParams()
+  params.append('client_id', clientId)
+  params.append('grant_type', 'password')
+  params.append('username', username)
+  params.append('password', password)
+
+  const response = await axios.post<{ access_token: string }>(tokenUrl, params, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  })
+  return response.data.access_token
+}
+
 export const getAuthMe = async (): Promise<AuthUser> => {
   const token = localStorage.getItem('ocsp_bearer_token')
   const apiKey = localStorage.getItem('ocsp_api_key')

@@ -4,6 +4,7 @@ import {
   loginWithCredentials,
   loginWithApiKey,
   loginWithBearerToken,
+  exchangeKeycloakCredentials,
   getAuthMe,
   getAuthConfig,
 } from '../api/client'
@@ -16,6 +17,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>
   loginWithKey: (apiKey: string) => Promise<void>
   loginWithToken: (token: string) => Promise<void>
+  loginWithKeycloakCredentials: (username: string, password: string) => Promise<void>
   logout: () => void
   refreshAuthConfig: () => Promise<AuthConfig | null>
 }
@@ -162,6 +164,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
   }
 
+  const loginWithKeycloakCredentials = async (kcUsername: string, kcPassword: string) => {
+    const serverUrl = authConfig?.keycloak?.authServerUrl || 'http://localhost:8081'
+    const realm = authConfig?.keycloak?.realm || 'incert'
+    const clientId = authConfig?.keycloak?.clientId || 'ocsp-console'
+
+    const token = await exchangeKeycloakCredentials(serverUrl, realm, clientId, kcUsername, kcPassword)
+    await loginWithToken(token)
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -172,6 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         loginWithKey,
         loginWithToken,
+        loginWithKeycloakCredentials,
         logout,
         refreshAuthConfig,
       }}

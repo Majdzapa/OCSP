@@ -13,11 +13,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Extracts and maps roles from Keycloak JWT tokens into Spring Security GrantedAuthorities.
+ * Extracts and maps roles and groups from Keycloak JWT tokens into Spring Security GrantedAuthorities.
  * Supports:
  * <ul>
  *   <li>{@code realm_access.roles}</li>
  *   <li>{@code resource_access.<client>.roles}</li>
+ *   <li>{@code groups} (e.g. /ocsp-administrators -> ROLE_ADMIN)</li>
  *   <li>Direct {@code roles} claim</li>
  * </ul>
  */
@@ -27,11 +28,21 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
 
+        // Helper to format role names cleanly
+        java.util.function.Consumer<String> addRole = r -> {
+            if (r == null || r.isBlank()) return;
+            String normalized = r.trim().toUpperCase();
+            if (!normalized.startsWith("ROLE_")) {
+                normalized = "ROLE_" + normalized;
+            }
+            authorities.add(new SimpleGrantedAuthority(normalized));
+        };
+
         // 1. Extract realm_access.roles
         Map<String, Object> realmAccess = jwt.getClaim("realm_access");
         if (realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles) {
             for (Object role : roles) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toString().toUpperCase()));
+                addRole.accept(role.toString());
             }
         }
 
@@ -41,7 +52,7 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
             for (Object clientObj : resourceAccess.values()) {
                 if (clientObj instanceof Map<?, ?> clientMap && clientMap.get("roles") instanceof Collection<?> roles) {
                     for (Object role : roles) {
-                        authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toString().toUpperCase()));
+                        addRole.accept(role.toString());
                     }
                 }
             }
@@ -50,11 +61,28 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
         // 3. Extract direct roles claim if present
         if (jwt.getClaim("roles") instanceof Collection<?> roles) {
             for (Object role : roles) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toString().toUpperCase()));
+                addRole.accept(role.toString());
             }
         }
 
-        // 4. Default to ROLE_ADMIN if username or subject is "admin"
+        // 4. Extract groups claim (e.g. ["/ocsp-administrators", "/ocsp-operators"])
+        if (jwt.getClaim("groups") instanceof Collection<?> groups) {
+            for (Object grp : groups) {
+                String groupName = grp.toString().toLowerCase().replace("/", "").trim();
+                if (groupName.contains("admin")) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                }
+                if (groupName.contains("operator")) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_OPERATOR"));
+                    authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                }
+                if (groupName.contains("auditor")) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_AUDITOR"));
+                }
+            }
+        }
+
+        // 5. Default fallback if username or subject is "admin"
         String username = jwt.getClaimAsString("preferred_username");
         if (username == null) {
             username = jwt.getSubject();
@@ -66,4 +94,3 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
         return new JwtAuthenticationToken(jwt, authorities, username);
     }
 }
-
