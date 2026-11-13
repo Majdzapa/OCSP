@@ -11,8 +11,8 @@ set -euo pipefail
 #   d. Query unknown serial → expect unknown status
 #   e. Test both POST (DER) and GET (base64url) and nonce echo
 #   f. Verify PKCS#11 signer in use & assert no private key in app container
-#   g. Restart kafka & ocsp-app → confirm no event loss & offsets resume
-#   h. Send poison message to topic → verify DLT routing & consumer survival
+#   g. Restart rabbitmq & ocsp-app → confirm no event loss & queue recovers
+#   h. Send poison message to exchange → verify DLQ routing & consumer survival
 # =============================================================================
 
 RED='\033[0;31m'
@@ -166,10 +166,10 @@ fi
 pass "Test f: Response signed with PKCS#11 and zero private key material stored in container"
 
 # -----------------------------------------------------------------------------
-# Test g: Restart Kafka & ocsp-app (resume without event loss or duplicates)
+# Test g: Restart RabbitMQ & ocsp-app (resume without event loss or duplicates)
 # -----------------------------------------------------------------------------
-info "Test g: Testing container restart (Kafka and ocsp-app) and offset recovery..."
-docker compose restart kafka ocsp-app
+info "Test g: Testing container restart (RabbitMQ and ocsp-app)..."
+docker compose restart rabbitmq ocsp-app
 info "Waiting for services to become healthy..."
 sleep 15
 for i in {1..30}; do
@@ -183,23 +183,20 @@ openssl ocsp -issuer "${CA_CERT}" -cert "${EE_CERT}" -url "${OCSP_URL}" -CAfile 
 pass "Test g: Restart succeeded without event loss, services healthy"
 
 # -----------------------------------------------------------------------------
-# Test h: Poison pill to DLT
+# Test h: Poison pill to DLQ
 # -----------------------------------------------------------------------------
-info "Test h: Injecting poison pill message to verify DLT routing..."
-docker exec -i ocsp-kafka kafka-console-producer \
-    --bootstrap-server kafka:29092 \
-    --topic incert.certificate.status.v1 <<< '{"malformed": "poison pill payload'
+info "Test h: Injecting poison pill message to verify DLQ routing..."
+docker exec -i ocsp-rabbitmq rabbitmqadmin publish \
+    exchange=incert.certificate.status \
+    routing_key=incert.certificate.status.v1 \
+    payload='{"malformed": "poison pill payload' || true
 
-# Verify poison pill reached DLT
-info "Polling DLT topic for poison message..."
+# Verify poison pill reached DLQ
+info "Polling DLQ for poison message..."
 FOUND_POISON=0
 for i in {1..10}; do
-    DLT_OUT=$(docker exec ocsp-kafka kafka-console-consumer \
-        --bootstrap-server kafka:29092 \
-        --topic incert.certificate.status.v1.dlt \
-        --from-beginning \
-        --timeout-ms 5000 2>&1 || true)
-    if echo "${DLT_OUT}" | grep -q "poison pill payload"; then
+    DLQ_OUT=$(docker exec ocsp-rabbitmq rabbitmqadmin get queue=ocsp.certificate.status.dlq count=1 ackmode=ack_requeue_false 2>&1 || true)
+    if echo "${DLQ_OUT}" | grep -q "poison pill payload"; then
         FOUND_POISON=1
         break
     fi
@@ -207,12 +204,12 @@ for i in {1..10}; do
 done
 
 if [ "${FOUND_POISON}" -ne 1 ]; then
-    fail "Test h: Poison message not found in DLT topic!"
+    fail "Test h: Poison message not found in DLQ queue!"
 fi
 
 # Verify ocsp-app is still running and healthy
 curl -sf "${OCSP_URL%/*}/actuator/health" > /dev/null || fail "Test h: ocsp-app crashed after poison pill!"
-pass "Test h: Poison pill routed to DLT topic and consumer remained healthy"
+pass "Test h: Poison pill routed to DLQ queue and consumer remained healthy"
 
 info "========================================================================="
 echo -e "${GREEN}ALL END-TO-END TESTS PASSED SUCCESSFULLY!${NC}"

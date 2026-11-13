@@ -27,15 +27,11 @@ spring:
     user: ${FLYWAY_USER:${spring.datasource.username}}
     password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all
-      retries: 3
-      properties:
-        enable.idempotence: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 server:
   port: ${KMS_PORT:8090}
@@ -54,6 +50,12 @@ management:
         enabled: true
 
 kms:
+  rabbitmq:
+    exchange: incert.certificate.status
+    queue: ocsp.certificate.status
+    routing-key: incert.certificate.status.v1
+    dead-letter-exchange: incert.certificate.status.dlx
+    dead-letter-queue: ocsp.certificate.status.dlq
   outbox:
     relay-delay-ms: 500
   job:
@@ -65,5 +67,6 @@ kms:
 logging:
   level:
     com.company.incert.kms: INFO
+    org.springframework.amqp: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

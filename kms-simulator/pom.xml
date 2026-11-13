@@ -16,7 +16,7 @@
     <name>KMS Simulator</name>
     <description>
         Event-publishing KMS simulator — source of truth for certificates.
-        Generates a test PKI, publishes CertificateStatusChanged events to Kafka
+        Generates a test PKI, publishes CertificateStatusChanged events to RabbitMQ
         via the transactional outbox pattern. NOT for production use.
     </description>
 
@@ -27,7 +27,7 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Data / JPA -->
+        <!-- JPA / MariaDB -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -47,10 +47,10 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
-        <!-- Kafka -->
+        <!-- RabbitMQ / AMQP -->
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <!-- Scheduling -->
@@ -101,8 +101,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka-test</artifactId>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -113,11 +113,6 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mariadb</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>kafka</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -136,4 +131,3 @@
         </plugins>
     </build>
 </project>
-

@@ -17,7 +17,7 @@ class ArchitectureTest {
         noClasses()
                 .that().resideInAPackage("..kms.domain..")
                 .should().dependOnClassesThat().resideInAnyPackage(
-                        "org.springframework..", "jakarta.persistence..", "org.apache.kafka..")
+                        "org.springframework..", "jakarta.persistence..", "org.springframework.amqp..")
                 .check(classes);
     }
 

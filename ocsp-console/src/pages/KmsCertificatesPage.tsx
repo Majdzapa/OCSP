@@ -256,7 +256,7 @@ export function KmsCertificatesPage() {
       await revokeKmsCertificate(targetCert.serialNumberHex, revokeReason)
       setAlert({
         type: 'success',
-        message: `Certificate ${truncateSerial(targetCert.serialNumberHex)} revoked (${revokeReason}). Event published to Kafka!`,
+        message: `Certificate ${truncateSerial(targetCert.serialNumberHex)} revoked (${revokeReason}). Event published to RabbitMQ!`,
       })
       setRevokeDialogOpen(false)
       fetchCertificates()
@@ -297,9 +297,9 @@ export function KmsCertificatesPage() {
       await triggerKmsRevocationJob()
       setAlert({
         type: 'info',
-        message: 'KMS Simulator job executed: random GOOD certs revoked / HOLD certs unrevoked. Kafka events published.',
+        message: 'KMS Simulator job executed: random GOOD certs revoked / HOLD certs unrevoked. RabbitMQ events published.',
       })
-      // Give Kafka / DB 500ms to process
+      // Give RabbitMQ / DB 500ms to process
       setTimeout(() => {
         fetchCertificates()
         setJobTriggerLoading(false)
@@ -847,7 +847,7 @@ export function KmsCertificatesPage() {
 
               <Alert severity="warning" icon={<WarningAmberOutlined />} sx={{ mt: 1 }}>
                 Revoking immediately creates a Transactional Outbox record in the KMS database and relays a{' '}
-                <code>CertificateStatusChanged</code> event to Kafka topic <code>incert.certificate.status.v1</code>.
+                <code>CertificateStatusChanged</code> event to RabbitMQ exchange <code>incert.certificate.status</code>.
                 The OCSP responder will update its state and invalidate cached responses.
               </Alert>
             </Box>

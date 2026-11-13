@@ -28,18 +28,20 @@ spring:
     user: ${FLYWAY_USER:${spring.datasource.username}}
     password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all
-    consumer:
-      group-id: ocsp-sync
-      auto-offset-reset: earliest
-      enable-auto-commit: false
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 500ms
+          multiplier: 2.0
+          max-attempts: 3
 
   security:
     oauth2:
@@ -68,13 +70,23 @@ management:
       probability: 1.0
 
 ocsp:
-  cache:
-    l1:
-      max-size: 10000
-      expire-after-write-minutes: 60
-  kafka:
-    topic: incert.certificate.status.v1
-    consumer-group: ocsp-sync
+  rabbitmq:
+    exchange: incert.certificate.status
+    queue: ocsp.certificate.status
+    routing-key: incert.certificate.status.v1
+    dead-letter-exchange: incert.certificate.status.dlx
+    dead-letter-queue: ocsp.certificate.status.dlq
+  responder:
+    next-update-window: PT24H
+  client:
+    default-responder-url: http://${OCSP_RESPONDER_HOST:localhost}:${OCSP_RESPONDER_PORT:8080}/ocsp
+  reconciliation:
+    enabled: true
+    cron: "0 0/15 * * * *"
+
+kms:
+  snapshot:
+    url: http://${KMS_HOST:localhost}:${KMS_PORT:8090}/kms/snapshot
 
 hsm:
   enabled: ${HSM_ENABLED:true}
@@ -86,7 +98,6 @@ hsm:
 logging:
   level:
     com.company.incert.ocsp: INFO
-    org.springframework.kafka: WARN
+    org.springframework.amqp: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
-
