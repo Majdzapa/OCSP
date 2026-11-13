@@ -26,3 +26,4 @@ However, the OCSP Responder also exposes administrative APIs (`/api/v1/admin/**`
 ## Consequences
 - **Positive**: Hardened administrative surface while strictly maintaining RFC 6960 compliance for public certificate validation.
 - **Negative**: Admin callers must supply credentials or `X-API-KEY`.
+

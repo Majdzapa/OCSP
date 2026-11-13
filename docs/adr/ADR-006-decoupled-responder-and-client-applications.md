@@ -23,3 +23,4 @@ Split into two distinct standalone Spring Boot applications:
 ## Consequences
 - **Positive**: Clean separation of roles matching real-world PKI deployments. Client can be scaled, tested, or deployed as a lightweight sidecar or CLI without database credentials.
 - **Negative**: Requires separate Docker container and port allocation (`8080` vs `8082`).
+

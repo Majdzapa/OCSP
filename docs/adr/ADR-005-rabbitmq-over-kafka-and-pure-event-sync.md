@@ -25,3 +25,4 @@ However:
 ## Consequences
 - **Positive**: Sub-100ms propagation latency from KMS mutation to OCSP status availability. Lower memory and CPU utilization. Total decoupling of Responder from KMS runtime.
 - **Negative**: The responder relies entirely on the durable RabbitMQ queue for replay after extended outages.
+
