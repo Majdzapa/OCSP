@@ -68,7 +68,6 @@ public class AdminDashboardService implements GetDashboardStatsUseCase, GetRevoc
         );
     }
 
-    @Override
     public Map<String, Object> runReconciliation() {
         if (reconciliationUseCase == null) {
             return Map.of("status", "UNAVAILABLE", "message", "ReconciliationUseCase is not configured");
