@@ -1,6 +1,6 @@
 # Incert OCSP Subsystem — Architecture & Blueprint (v4.0)
 
-> **Version**: 4.0 · **Architecture**: Standalone Distributed Services & Pure Event Bus · **Stack**: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
+> **Version**: 4.0 · **Architecture**: Standalone Distributed Services & Pure Event Bus · **Stack**: Java 25 · Spring Boot 4.0 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
 
 ---
 
@@ -349,7 +349,7 @@ graph LR
 ```mermaid
 graph TD
     subgraph CONTAINER["ocsp-responder Container Sandbox Boundary"]
-        subgraph PROCESS["JVM (Java 21)"]
+        subgraph PROCESS["JVM (Java 25)"]
             APP_CODE["Responder Code (Protocol + Admin + Auth)"]
             SUN_PKCS11["SunPKCS11 Provider<br/>sun.security.pkcs11.SunPKCS11"]
         end
@@ -381,9 +381,9 @@ All backend applications are completely separated, standalone Spring Boot projec
 
 | Project | Location | Parent POM | Build Command |
 |---|---|---|---|
-| **KMS Simulator** | `kms-simulator/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd kms-simulator && mvn clean package` |
-| **OCSP Responder** | `ocsp-responder/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd ocsp-responder && mvn clean package` |
-| **OCSP Client** | `ocsp-client/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd ocsp-client && mvn clean package` |
+| **KMS Simulator** | `kms-simulator/` | `spring-boot-starter-parent:4.0.0` (`<relativePath/>`) | `cd kms-simulator && mvn clean package` |
+| **OCSP Responder** | `ocsp-responder/` | `spring-boot-starter-parent:4.0.0` (`<relativePath/>`) | `cd ocsp-responder && mvn clean package` |
+| **OCSP Client** | `ocsp-client/` | `spring-boot-starter-parent:4.0.0` (`<relativePath/>`) | `cd ocsp-client && mvn clean package` |
 | **OCSP Console** | `ocsp-console/` | N/A (Node / Vite / Mantine v7) | `cd ocsp-console && npm run build` |
 
 ### Key Characteristics:

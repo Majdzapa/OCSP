@@ -2,7 +2,7 @@
 
 > RFC 6960-compliant OCSP Infrastructure for Incert Private CA.  
 > Architected with **Separated Standalone Applications**, **RabbitMQ Event Bus**, **SoftHSM2 (PKCS#11)**, **Spring Security Authentication**, and **Mantine v7 Dashboard**.  
-> Stack: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 · MariaDB 10.11 · React 18 · Mantine v7
+> Stack: Java 25 · Spring Boot 4.0 · RabbitMQ 3.13 · SoftHSM2 · MariaDB 10.11 · React 18 · Mantine v7
 
 ---
 
