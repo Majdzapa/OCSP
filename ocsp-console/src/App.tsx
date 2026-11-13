@@ -1,17 +1,22 @@
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import {
-  Box, Drawer, List, ListItem, ListItemButton, ListItemIcon,
-  ListItemText, Toolbar, Typography, Divider, Tooltip,
-} from '@mui/material'
+  AppShell,
+  Box,
+  Group,
+  Stack,
+  Text,
+  ThemeIcon,
+  Tooltip,
+} from '@mantine/core'
 import {
-  DashboardOutlined,
-  GppBadOutlined,
-  ReceiptLongOutlined,
-  VerifiedUserOutlined,
-  ManageSearchOutlined,
-  KeyOutlined,
-  Circle,
-} from '@mui/icons-material'
+  IconDashboard,
+  IconKey,
+  IconShieldX,
+  IconCertificate,
+  IconSearch,
+  IconReceipt,
+  IconCircleFilled,
+} from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertPage } from './pages/SigningCertPage'
@@ -19,144 +24,116 @@ import { CertCheckerPage } from './pages/CertCheckerPage'
 import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
 import { useDashboardStats } from './hooks/useDashboardStats'
 
-const DRAWER_WIDTH = 240
-
 const navItems = [
-  { label: 'Dashboard',       path: '/dashboard',        icon: <DashboardOutlined /> },
-  { label: 'KMS Inventory',   path: '/kms-certificates', icon: <KeyOutlined /> },
-  { label: 'Revocations',     path: '/revocations',      icon: <GppBadOutlined /> },
-  { label: 'Signing Cert',    path: '/signing-cert',     icon: <VerifiedUserOutlined /> },
-  { label: 'Cert Checker',    path: '/cert-checker',     icon: <ManageSearchOutlined /> },
-  { label: 'Audit Log',       path: '/audit',            icon: <ReceiptLongOutlined /> },
+  { label: 'Dashboard',       path: '/dashboard',        icon: IconDashboard },
+  { label: 'KMS Inventory',   path: '/kms-certificates', icon: IconKey },
+  { label: 'Revocations',     path: '/revocations',      icon: IconShieldX },
+  { label: 'Signing Cert',    path: '/signing-cert',     icon: IconCertificate },
+  { label: 'Cert Checker',    path: '/cert-checker',     icon: IconSearch },
+  { label: 'Audit Log',       path: '/audit',            icon: IconReceipt },
 ]
 
 export default function App() {
   const { stats } = useDashboardStats(10_000)
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh' }}>
-
-      {/* ---- Sidebar ---- */}
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: DRAWER_WIDTH,
-          flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: DRAWER_WIDTH,
-            boxSizing: 'border-box',
-            background: 'linear-gradient(180deg, #0d1424 0%, #090b14 100%)',
-            borderRight: '1px solid rgba(255,255,255,0.06)',
-          },
-        }}
-      >
-        {/* Logo area */}
-        <Toolbar sx={{ px: 2, py: 2.5, flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{
-              width: 32, height: 32, borderRadius: '8px',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(99,102,241,0.4)',
-              fontSize: '14px', fontWeight: 700, color: '#fff',
-            }}>
-              🔐
-            </Box>
+    <AppShell
+      navbar={{ width: 250, breakpoint: 'sm' }}
+      padding="md"
+      styles={{
+        main: {
+          backgroundColor: 'var(--mantine-color-dark-7)',
+          minHeight: '100vh',
+          color: 'var(--mantine-color-dark-0)',
+        },
+        navbar: {
+          backgroundColor: 'var(--mantine-color-dark-6)',
+          borderRight: '1px solid var(--mantine-color-dark-4)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+        },
+      }}
+    >
+      <AppShell.Navbar p="md">
+        <Stack gap="sm">
+          {/* Logo */}
+          <Group gap="sm" mb="xs">
+            <ThemeIcon size={36} radius="md" variant="gradient" gradient={{ from: 'indigo', to: 'violet' }}>
+              <Text fw={700} fz="lg">🔐</Text>
+            </ThemeIcon>
             <Box>
-              <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.2, color: '#e2e8f0' }}>
+              <Text fw={700} fz="sm" lh={1.2}>
                 OCSP Console
-              </Typography>
-              <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.65rem' }}>
+              </Text>
+              <Text fz="xs" c="dimmed">
                 Incert Private CA
-              </Typography>
+              </Text>
             </Box>
-          </Box>
-        </Toolbar>
+          </Group>
 
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.06)' }} />
-
-        {/* Live status indicator */}
-        <Box sx={{ px: 2, py: 1.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Circle sx={{
-              fontSize: 8,
-              color: '#22c55e',
-              animation: 'pulse 2s infinite',
-              '@keyframes pulse': {
-                '0%': { opacity: 1 },
-                '50%': { opacity: 0.4 },
-                '100%': { opacity: 1 },
-              }
-            }} />
-            <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.68rem' }}>
+          {/* Live indicator */}
+          <Group gap="xs" px="xs" py={4} bg="var(--mantine-color-dark-5)" style={{ borderRadius: 8 }}>
+            <IconCircleFilled size={8} color="var(--mantine-color-teal-5)" />
+            <Text fz="xs" c="dimmed">
               LIVE — {stats ? `${stats.requestsPerSecond.toFixed(1)} req/s` : 'Connecting...'}
-            </Typography>
-          </Box>
-        </Box>
+            </Text>
+          </Group>
 
-        {/* Nav items */}
-        <List sx={{ px: 1, flex: 1 }}>
-          {navItems.map((item) => (
-            <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                component={NavLink}
-                to={item.path}
-                sx={{
-                  borderRadius: '10px',
-                  px: 1.5,
-                  py: 1,
-                  color: '#64748b',
-                  '&.active': {
-                    background: 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12))',
-                    color: '#a5b4fc',
-                    boxShadow: 'inset 0 0 0 1px rgba(99,102,241,0.2)',
-                  },
-                  '&:hover': {
-                    background: 'rgba(99,102,241,0.08)',
-                    color: '#c7d2fe',
-                  },
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <ListItemIcon sx={{ color: 'inherit', minWidth: 36, '& svg': { fontSize: 18 } }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.label}
-                  primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 500 }}
-                />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
+          {/* Nav Items */}
+          <Stack gap={4} mt="xs">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  style={({ isActive }) => ({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    textDecoration: 'none',
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
+                    color: isActive ? 'var(--mantine-color-indigo-2)' : 'var(--mantine-color-dark-1)',
+                    backgroundColor: isActive ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                    border: isActive ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid transparent',
+                    transition: 'all 150ms ease',
+                  })}
+                >
+                  <Icon size={18} />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </Stack>
+        </Stack>
 
-        {/* Signing cert expiry badge */}
-        <Box sx={{ p: 2 }}>
-          {stats && (
-            <Tooltip title="Days until OCSP signing cert expires">
-              <Box sx={{
-                background: stats.ocspSigningCertDaysRemaining <= 7
-                  ? 'rgba(244,63,94,0.12)'
-                  : 'rgba(99,102,241,0.08)',
-                border: `1px solid ${stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.25)' : 'rgba(99,102,241,0.2)'}`,
-                borderRadius: '10px',
-                p: 1.5,
-              }}>
-                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
-                  Signing cert expires in
-                </Typography>
-                <Typography variant="body2" fontWeight={700}
-                  sx={{ color: stats.ocspSigningCertDaysRemaining <= 7 ? '#f43f5e' : '#a5b4fc' }}>
-                  {stats.ocspSigningCertDaysRemaining} days
-                </Typography>
-              </Box>
-            </Tooltip>
-          )}
-        </Box>
-      </Drawer>
+        {/* Footer: Signing cert expiry badge */}
+        {stats && (
+          <Tooltip label="Days until OCSP signing cert expires">
+            <Box
+              p="xs"
+              style={{
+                borderRadius: 8,
+                backgroundColor: stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.12)' : 'rgba(99,102,241,0.08)',
+                border: `1px solid ${stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.3)' : 'rgba(99,102,241,0.2)'}`,
+              }}
+            >
+              <Text fz="xs" c="dimmed">
+                Signing cert expires in
+              </Text>
+              <Text fw={700} fz="sm" c={stats.ocspSigningCertDaysRemaining <= 7 ? 'red.5' : 'indigo.3'}>
+                {stats.ocspSigningCertDaysRemaining} days
+              </Text>
+            </Box>
+          </Tooltip>
+        )}
+      </AppShell.Navbar>
 
-      {/* ---- Main content ---- */}
-      <Box component="main" sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+      <AppShell.Main>
         <Routes>
           <Route path="/"                 element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"        element={<DashboardPage />} />
@@ -166,7 +143,7 @@ export default function App() {
           <Route path="/cert-checker"     element={<CertCheckerPage />} />
           <Route path="/audit"            element={<RevocationFeed />} />
         </Routes>
-      </Box>
-    </Box>
+      </AppShell.Main>
+    </AppShell>
   )
 }

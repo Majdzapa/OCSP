@@ -1,18 +1,18 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { ThemeProvider, CssBaseline } from '@mui/material'
+import { MantineProvider } from '@mantine/core'
+import '@mantine/core/styles.css'
 import App from './App'
-import { ocspTheme } from './theme/ocspTheme'
+import { mantineTheme } from './theme/mantineTheme'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider theme={ocspTheme}>
-        <CssBaseline />
+      <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
         <App />
-      </ThemeProvider>
+      </MantineProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

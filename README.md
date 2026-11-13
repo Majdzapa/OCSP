@@ -1,8 +1,8 @@
 # Incert OCSP Subsystem (v2.0)
 
-> RFC 6960-compliant OCSP Responder for Incert Private CA.
-> Re-architected with **Kafka (KRaft)**, **Spring Modulith**, **SoftHSM2 (PKCS#11)**, and **Transactional Outbox**.
-> Stack: Java 21 · Spring Boot 3.3 · Spring Modulith 1.2 · Apache Kafka 3.8 · MariaDB 10.11 · React 18
+> RFC 6960-compliant OCSP Monolith (Responder & Client) for Incert Private CA.
+> Architected with **Monolith Application**, **RabbitMQ**, **SoftHSM2 (PKCS#11)**, and **Direct Dynamic Signing (No Caching)**.
+> Stack: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 · MariaDB 10.11 · React 18
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### 1. Build backend modules
 ```bash
-mvn clean verify
+JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn clean package
 ```
 
 ### 2. Run with Docker Compose
@@ -31,9 +31,11 @@ docker compose up --build -d
 |---|---|---|
 | **Admin Console** | `3000` | http://localhost:3000 (React 18 SPA + Nginx reverse proxy) |
 | **OCSP Responder** | `8080` | http://localhost:8080/ocsp (`POST` DER · `GET /{b64url}`) |
-| **Admin API** | `8080` | http://localhost:8080/api/v1/admin (Dashboard, Cache, Revocation Feed) |
-| **KMS Simulator** | `8090` | http://localhost:8090/kms (Cert inventory, manual revoke/unrevoke, job triggers) |
-| **Kafka Broker** | `9092` | localhost:9092 (KRaft mode; no ZooKeeper) |
+| **OCSP Client API** | `8080` | http://localhost:8080/api/v1/client/check (Full RFC 6960 verification) |
+| **Admin API** | `8080` | http://localhost:8080/api/v1/admin (Dashboard, Revocation Feed, Cert Check) |
+| **KMS Simulator** | `8090` | http://localhost:8090/kms (Cert inventory, manual revoke/unrevoke, snapshot) |
+| **RabbitMQ Management** | `15672` | http://localhost:15672 (guest/guest · Web UI) |
+| **RabbitMQ AMQP** | `5672` | localhost:5672 (AMQP protocol) |
 | **MariaDB** | `3307` | localhost:3307 (Schemas: `ocsp`, `kms`) |
 
 ---
@@ -42,20 +44,21 @@ docker compose up --build -d
 
 | Module | Description |
 |---|---|
-| [`kms-simulator`](./kms-simulator) | Source of truth for certificates. Test PKI generator, transactional outbox pattern, scheduled revocation job, Kafka event publisher. |
-| [`ocsp-app`](./ocsp-app) | Unified Spring Modulith application. Modules: `responder` (RFC 6960), `status` (Caffeine L1 + DB), `signing` (SoftHSM2 PKCS#11), `sync` (Kafka consumer), `admin` (management REST API). |
-| [`ocsp-console`](./ocsp-console) | React 18 + TypeScript + MUI admin interface. Points to `ocsp-app` via Nginx reverse proxy. |
+| [`kms-simulator`](./kms-simulator) | Source of truth for certificates. Test PKI generator, transactional outbox pattern, scheduled revocation job, RabbitMQ event publisher. |
+| [`ocsp-app`](./ocsp-app) | Monolith application with clean layered architecture (`controller`, `service`, `repository`, `entity`, `signing`, `messaging`). Hosts both the **OCSP Responder** and the **OCSP Client** with SoftHSM2 PKCS#11 signing and RabbitMQ event consumption. |
+| [`ocsp-console`](./ocsp-console) | React 18 + TypeScript + MUI admin interface. Proxied via Nginx to `ocsp-app` and `kms-simulator`. |
 
 ---
 
-## Key Design Decisions & ADRs
+## Key Design Decisions
 
-| Decision | Summary | ADR Reference |
-|---|---|---|
-| **Kafka over RabbitMQ** | Key-ordered partitions (`issuerKeyHash:serial`) guarantee strict chronological order per certificate. Replay from offset eliminates external sync APIs. | [ADR-001](./docs/adr/ADR-001-kafka-over-rabbitmq.md) |
-| **Spring Modulith** | Single container deployable unit. In-process cache invalidation replaces network messaging. Enforced via `verify()` and ArchUnit tests. | [ADR-002](./docs/adr/ADR-002-modulith-over-microservices.md) |
-| **SoftHSM2 (PKCS#11)** | Cryptographic signing executed inside HSM token via SunPKCS11. Private key is non-extractable; zero private key material stored in container filesystem. | [ADR-003](./docs/adr/ADR-003-softhsm-pkcs11-signing.md) |
-| **Transactional Outbox** | Status mutations and outbox events committed in the same MariaDB transaction, relayed to Kafka asynchronously with `enable.idempotence=true`. | [ADR-004](./docs/adr/ADR-004-transactional-outbox-pattern.md) |
+| Decision | Summary |
+|---|---|
+| **Monolith Architecture** | Combines OCSP Responder and OCSP Client in a single, simple Spring Boot application with standard layered packages. Eliminates distributed microservice network latency. |
+| **Direct Signing (No Caching)** | Pre-signed L2 cache and L1 Caffeine cache removed. Every request queries the DB directly and generates a dynamic PKCS#11 signature. Guarantees 100% cryptographic freshness with zero stale cache windows. |
+| **RabbitMQ Messaging** | Direct exchange (`incert.certificate.status`) and durable queue (`ocsp.certificate.status`) with dead-letter queue (`ocsp.certificate.status.dlq`). Monotonic `sequence` counter per certificate guarantees idempotency and out-of-order protection. |
+| **SoftHSM2 (PKCS#11)** | Cryptographic signing executed inside HSM token via SunPKCS11. Private key is non-extractable (`CKA_EXTRACTABLE=FALSE`); zero private key material stored in container filesystem. |
+| **Transactional Outbox** | Status mutations and outbox events committed in the same MariaDB transaction in KMS, relayed asynchronously to RabbitMQ. |
 
 ---
 
@@ -69,7 +72,8 @@ docker compose up --build -d
 | `MARIADB_KMS_DB` | `kms` | `kms-simulator` | KMS schema name |
 | `MARIADB_USER` | `ocsp_app` | `ocsp-app` | OCSP database user |
 | `MARIADB_KMS_USER` | `kms_app` | `kms-simulator` | KMS database user |
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:29092` | all | Kafka cluster bootstrap servers |
+| `RABBITMQ_HOST` | `rabbitmq` | all | RabbitMQ host |
+| `RABBITMQ_PORT` | `5672` | all | RabbitMQ AMQP port |
 | `HSM_ENABLED` | `true` | `ocsp-app` | Enable PKCS#11 signing (`false` falls back to software signer) |
 | `HSM_PKCS11_LIBRARY` | `/usr/lib/softhsm/libsofthsm2.so` | `ocsp-app` | PKCS#11 shared object path |
 | `HSM_TOKEN_LABEL` | `ocsp-signing` | `ocsp-app` | SoftHSM2 token label |
@@ -84,8 +88,8 @@ docker compose up --build -d
 ## Testing
 
 ```bash
-# 1. Unit & Modulith verification tests
-mvn test
+# 1. Unit & client verification tests
+JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn test
 
 # 2. End-to-end integration test (with live containers)
 ./scripts/e2e-test.sh

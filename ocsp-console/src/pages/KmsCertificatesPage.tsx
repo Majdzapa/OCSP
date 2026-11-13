@@ -1,50 +1,43 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Box,
-  Typography,
+  Title,
+  Text,
   Card,
-  CardContent,
   Grid,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  TextField,
-  InputAdornment,
+  TextInput,
   Button,
-  IconButton,
-  Chip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
+  ActionIcon,
+  Badge,
+  Modal,
   Select,
-  MenuItem,
-  CircularProgress,
   Alert,
   Tooltip,
   Paper,
-} from '@mui/material'
+  Pagination,
+  Group,
+  Stack,
+  Skeleton,
+} from '@mantine/core'
 import {
-  SearchOutlined,
-  RefreshOutlined,
-  KeyOutlined,
-  CheckCircleOutlined,
-  CancelOutlined,
-  PauseCircleOutlined,
-  PlayArrowOutlined,
-  ContentCopyOutlined,
-  DownloadOutlined,
-  VisibilityOutlined,
-  WarningAmberOutlined,
-  CloseOutlined,
-  FilterListOutlined,
-} from '@mui/icons-material'
+  IconSearch,
+  IconRefresh,
+  IconKey,
+  IconShieldCheck,
+  IconShieldX,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconCopy,
+  IconDownload,
+  IconEye,
+  IconAlertTriangle,
+  IconX,
+  IconFilter,
+  IconCheck,
+  IconAlertCircle,
+  IconInfoCircle,
+} from '@tabler/icons-react'
 import {
   getKmsCertificates,
   revokeKmsCertificate,
@@ -56,7 +49,11 @@ import type { KmsCertificate, KmsRevocationReason } from '../types/api'
 // ---------------------------------------------------------------------------
 // RFC 5280 Reasons Metadata
 // ---------------------------------------------------------------------------
-const RFC_5280_REASONS: { code: KmsRevocationReason; label: string; description: string }[] = [
+const RFC_5280_REASONS: {
+  code: KmsRevocationReason
+  label: string
+  description: string
+}[] = [
   {
     code: 'KEY_COMPROMISE',
     label: 'Key Compromise (1)',
@@ -70,7 +67,8 @@ const RFC_5280_REASONS: { code: KmsRevocationReason; label: string; description:
   {
     code: 'AFFILIATION_CHANGED',
     label: 'Affiliation Changed (3)',
-    description: 'Subject name, organizational affiliation, or identity changed',
+    description:
+      'Subject name, organizational affiliation, or identity changed',
   },
   {
     code: 'SUPERSEDED',
@@ -80,17 +78,20 @@ const RFC_5280_REASONS: { code: KmsRevocationReason; label: string; description:
   {
     code: 'CESSATION_OF_OPERATION',
     label: 'Cessation of Operation (5)',
-    description: 'Server, domain, or service has permanently ceased operation',
+    description:
+      'Server, domain, or service has permanently ceased operation',
   },
   {
     code: 'CERTIFICATE_HOLD',
     label: 'Certificate Hold / Suspension (6)',
-    description: 'Temporary suspension — can be un-revoked / reinstated back to GOOD later',
+    description:
+      'Temporary suspension — can be un-revoked / reinstated back to GOOD later',
   },
   {
     code: 'PRIVILEGE_WITHDRAWN',
     label: 'Privilege Withdrawn (9)',
-    description: 'Subject privileges, credentials, or certifications were revoked',
+    description:
+      'Subject privileges, credentials, or certifications were revoked',
   },
   {
     code: 'AA_COMPROMISE',
@@ -146,15 +147,18 @@ export function KmsCertificatesPage() {
   const [certificates, setCertificates] = useState<KmsCertificate[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
-  const [alert, setAlert] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const [alert, setAlert] = useState<{
+    type: 'teal' | 'red' | 'indigo'
+    message: string
+  } | null>(null)
 
   // Filters
   const [search, setSearch] = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'GOOD' | 'REVOKED' | 'HOLD'>('ALL')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
   // Pagination
   const [page, setPage] = useState<number>(0)
-  const [rowsPerPage, setRowsPerPage] = useState<number>(10)
+  const pageSize = 10
 
   // Revoke Dialog
   const [revokeDialogOpen, setRevokeDialogOpen] = useState<boolean>(false)
@@ -179,7 +183,11 @@ export function KmsCertificatesPage() {
       const data = await getKmsCertificates()
       setCertificates(data)
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to load KMS certificates')
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to load KMS certificates'
+      )
     } finally {
       setLoading(false)
     }
@@ -209,7 +217,8 @@ export function KmsCertificatesPage() {
 
       try {
         const notAfter = new Date(c.notAfter)
-        const daysLeft = (notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        const daysLeft =
+          (notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
         if (daysLeft <= 30) {
           expiredSoon++
         }
@@ -225,12 +234,14 @@ export function KmsCertificatesPage() {
   const filteredCerts = useMemo(() => {
     const s = search.trim().toLowerCase()
     return certificates.filter((c) => {
-      // Status filter
       if (statusFilter === 'GOOD' && c.status !== 'GOOD') return false
       if (statusFilter === 'REVOKED' && c.status !== 'REVOKED') return false
-      if (statusFilter === 'HOLD' && !(c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD')) return false
+      if (
+        statusFilter === 'HOLD' &&
+        !(c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD')
+      )
+        return false
 
-      // Search term
       if (s) {
         const matchSerial = c.serialNumberHex.toLowerCase().includes(s)
         const matchSubject = c.subjectDn.toLowerCase().includes(s)
@@ -255,15 +266,20 @@ export function KmsCertificatesPage() {
     try {
       await revokeKmsCertificate(targetCert.serialNumberHex, revokeReason)
       setAlert({
-        type: 'success',
-        message: `Certificate ${truncateSerial(targetCert.serialNumberHex)} revoked (${revokeReason}). Event published to RabbitMQ!`,
+        type: 'teal',
+        message: `Certificate ${truncateSerial(
+          targetCert.serialNumberHex
+        )} revoked (${revokeReason}). Event published to RabbitMQ!`,
       })
       setRevokeDialogOpen(false)
       fetchCertificates()
     } catch (err: any) {
       setAlert({
-        type: 'error',
-        message: err?.response?.data?.error || err?.message || 'Revocation failed',
+        type: 'red',
+        message:
+          err?.response?.data?.error ||
+          err?.message ||
+          'Revocation failed',
       })
     } finally {
       setActionLoading(false)
@@ -276,14 +292,19 @@ export function KmsCertificatesPage() {
     try {
       await unrevokeKmsCertificate(cert.serialNumberHex)
       setAlert({
-        type: 'success',
-        message: `Certificate ${truncateSerial(cert.serialNumberHex)} hold released. Reinstated to GOOD!`,
+        type: 'teal',
+        message: `Certificate ${truncateSerial(
+          cert.serialNumberHex
+        )} hold released. Reinstated to GOOD!`,
       })
       fetchCertificates()
     } catch (err: any) {
       setAlert({
-        type: 'error',
-        message: err?.response?.data?.error || err?.message || 'Un-revocation failed',
+        type: 'red',
+        message:
+          err?.response?.data?.error ||
+          err?.message ||
+          'Un-revocation failed',
       })
     } finally {
       setActionLoading(false)
@@ -296,18 +317,21 @@ export function KmsCertificatesPage() {
     try {
       await triggerKmsRevocationJob()
       setAlert({
-        type: 'info',
-        message: 'KMS Simulator job executed: random GOOD certs revoked / HOLD certs unrevoked. RabbitMQ events published.',
+        type: 'indigo',
+        message:
+          'KMS Simulator job executed: random GOOD certs revoked / HOLD certs unrevoked. RabbitMQ events published.',
       })
-      // Give RabbitMQ / DB 500ms to process
       setTimeout(() => {
         fetchCertificates()
         setJobTriggerLoading(false)
       }, 500)
     } catch (err: any) {
       setAlert({
-        type: 'error',
-        message: err?.response?.data?.error || err?.message || 'Failed to trigger revocation job',
+        type: 'red',
+        message:
+          err?.response?.data?.error ||
+          err?.message ||
+          'Failed to trigger revocation job',
       })
       setJobTriggerLoading(false)
     }
@@ -320,259 +344,236 @@ export function KmsCertificatesPage() {
     setDetailsDialogOpen(true)
   }
 
+  const totalPages = Math.ceil(filteredCerts.length / pageSize)
+
   return (
     <Box className="page-enter">
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+      <Group justify="space-between" align="flex-start" mb="lg">
         <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <KeyOutlined sx={{ color: '#818cf8', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight={700}>
+          <Group gap="sm">
+            <IconKey size={30} color="#818cf8" />
+            <Title order={3} fw={700}>
               KMS Certificate Manager
-            </Typography>
-          </Box>
-          <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
-            Source of truth certificate inventory — Incert Test PKI simulation with Transactional Outbox event publishing
-          </Typography>
+            </Title>
+          </Group>
+          <Text fz="sm" c="dimmed" mt={4}>
+            Source of truth certificate inventory — Incert Test PKI simulation
+            with Transactional Outbox event publishing
+          </Text>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
+        <Group gap="sm">
           <Button
-            variant="outlined"
-            startIcon={<RefreshOutlined />}
+            variant="default"
+            leftSection={<IconRefresh size={16} />}
             onClick={fetchCertificates}
             disabled={loading}
-            sx={{ borderColor: 'rgba(255,255,255,0.12)' }}
           >
             Refresh
           </Button>
 
           <Button
-            variant="contained"
-            color="primary"
-            startIcon={jobTriggerLoading ? <CircularProgress size={16} color="inherit" /> : <PlayArrowOutlined />}
+            leftSection={<IconPlayerPlay size={16} />}
             onClick={handleTriggerJob}
-            disabled={jobTriggerLoading}
-            sx={{
+            loading={jobTriggerLoading}
+            style={{
               background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              fontWeight: 600,
             }}
           >
             Run Revocation Job
           </Button>
-        </Box>
-      </Box>
+        </Group>
+      </Group>
 
       {/* Notifications / Alerts */}
       {alert && (
         <Alert
-          severity={alert.type}
+          color={alert.type}
+          icon={
+            alert.type === 'teal' ? (
+              <IconCheck size={16} />
+            ) : alert.type === 'red' ? (
+              <IconAlertCircle size={16} />
+            ) : (
+              <IconInfoCircle size={16} />
+            )
+          }
+          withCloseButton
           onClose={() => setAlert(null)}
-          sx={{ mb: 3, border: '1px solid rgba(255,255,255,0.08)' }}
+          mb="lg"
         >
           {alert.message}
         </Alert>
       )}
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert
+          icon={<IconAlertCircle size={16} />}
+          color="red"
+          title="Error"
+          mb="lg"
+        >
           {error}
         </Alert>
       )}
 
       {/* Metrics Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Total Certs
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5, color: '#e2e8f0' }}>
-                {metrics.total}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Good / Active
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5, color: '#22c55e' }}>
-                {metrics.good}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Revoked (Total)
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5, color: '#f43f5e' }}>
-                {metrics.revoked}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                On Hold (Suspended)
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5, color: '#f59e0b' }}>
-                {metrics.hold}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Near Expiry (&le;30d)
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.5, color: '#38bdf8' }}>
-                {metrics.expiredSoon}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+      <Grid gutter="sm" mb="lg">
+        {[
+          { label: 'Total Certs', value: metrics.total, color: 'dimmed' },
+          { label: 'Good / Active', value: metrics.good, color: 'teal.4' },
+          { label: 'Revoked (Total)', value: metrics.revoked, color: 'red.4' },
+          { label: 'On Hold (Suspended)', value: metrics.hold, color: 'yellow.5' },
+          { label: 'Near Expiry (≤30d)', value: metrics.expiredSoon, color: 'blue.4' },
+        ].map(({ label, value, color }) => (
+          <Grid.Col span={{ base: 6, sm: 4, md: 2.4 }} key={label}>
+            <Card
+              p="sm"
+              radius="md"
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-6)',
+                border: '1px solid var(--mantine-color-dark-4)',
+              }}
+            >
+              <Text fz="xs" tt="uppercase" fw={700} c="dimmed">
+                {label}
+              </Text>
+              <Text fz={26} fw={700} mt={4} c={color}>
+                {value}
+              </Text>
+            </Card>
+          </Grid.Col>
+        ))}
       </Grid>
 
       {/* Filter and Search Bar */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                size="small"
-                placeholder="Search by Serial Hex or Subject DN..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setPage(0)
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchOutlined sx={{ color: '#64748b' }} />
-                    </InputAdornment>
-                  ),
-                  endAdornment: search ? (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => setSearch('')}>
-                        <CloseOutlined sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </InputAdornment>
-                  ) : null,
-                }}
-              />
-            </Grid>
+      <Card
+        p="sm"
+        radius="md"
+        mb="lg"
+        style={{
+          backgroundColor: 'var(--mantine-color-dark-6)',
+          border: '1px solid var(--mantine-color-dark-4)',
+        }}
+      >
+        <Grid gutter="sm" align="center">
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <TextInput
+              placeholder="Search by Serial Hex or Subject DN..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPage(0)
+              }}
+              leftSection={<IconSearch size={16} color="#64748b" />}
+              rightSection={
+                search ? (
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => setSearch('')}
+                  >
+                    <IconX size={14} />
+                  </ActionIcon>
+                ) : null
+              }
+            />
+          </Grid.Col>
 
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="status-filter-label">Filter Status</InputLabel>
-                <Select
-                  labelId="status-filter-label"
-                  label="Filter Status"
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value as any)
-                    setPage(0)
-                  }}
-                  startAdornment={
-                    <InputAdornment position="start">
-                      <FilterListOutlined sx={{ color: '#64748b', fontSize: 18 }} />
-                    </InputAdornment>
-                  }
-                >
-                  <MenuItem value="ALL">All Certificates ({metrics.total})</MenuItem>
-                  <MenuItem value="GOOD">Good / Active ({metrics.good})</MenuItem>
-                  <MenuItem value="REVOKED">Revoked ({metrics.revoked})</MenuItem>
-                  <MenuItem value="HOLD">On Hold / Suspended ({metrics.hold})</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Select
+              placeholder="Filter Status"
+              value={statusFilter}
+              onChange={(val) => {
+                setStatusFilter(val || 'ALL')
+                setPage(0)
+              }}
+              leftSection={<IconFilter size={16} color="#64748b" />}
+              data={[
+                { value: 'ALL', label: `All Certificates (${metrics.total})` },
+                { value: 'GOOD', label: `Good / Active (${metrics.good})` },
+                { value: 'REVOKED', label: `Revoked (${metrics.revoked})` },
+                { value: 'HOLD', label: `On Hold / Suspended (${metrics.hold})` },
+              ]}
+            />
+          </Grid.Col>
 
-            <Grid item xs={12} md={2} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                Showing {filteredCerts.length} of {certificates.length}
-              </Typography>
-            </Grid>
-          </Grid>
-        </CardContent>
+          <Grid.Col span={{ base: 12, md: 2 }}>
+            <Text fz="xs" c="dimmed" ta={{ base: 'left', md: 'right' }}>
+              Showing {filteredCerts.length} of {certificates.length}
+            </Text>
+          </Grid.Col>
+        </Grid>
       </Card>
 
       {/* Certificates Table */}
-      <Card>
-        <TableContainer>
-          <Table size="medium">
-            <TableHead>
-              <TableRow sx={{ background: 'rgba(255,255,255,0.02)' }}>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8' }}>Serial Number</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8' }}>Subject DN</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8' }}>Validity Window</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8' }}>Status / Reason</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8', width: 80 }}>Seq</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: '#94a3b8', textAlign: 'right' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
+      <Card
+        p="md"
+        radius="md"
+        style={{
+          backgroundColor: 'var(--mantine-color-dark-6)',
+          border: '1px solid var(--mantine-color-dark-4)',
+        }}
+      >
+        <Table.ScrollContainer minWidth={850}>
+          <Table verticalSpacing="xs" highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Serial Number</Table.Th>
+                <Table.Th>Subject DN</Table.Th>
+                <Table.Th>Validity Window</Table.Th>
+                <Table.Th>Status / Reason</Table.Th>
+                <Table.Th style={{ width: 80 }}>Seq</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                    <CircularProgress size={32} />
-                    <Typography variant="body2" sx={{ color: '#94a3b8', mt: 2 }}>
-                      Loading certificate inventory...
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 8 }).map((_, i) => (
+                  <Table.Tr key={i}>
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <Table.Td key={j}>
+                        <Skeleton height={18} radius="sm" />
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))
               ) : filteredCerts.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                <Table.Tr>
+                  <Table.Td colSpan={6}>
+                    <Text ta="center" c="dimmed" py="xl">
                       No certificates match the selected filter or search term.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
               ) : (
                 filteredCerts
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .slice(page * pageSize, page * pageSize + pageSize)
                   .map((cert) => {
                     const isGood = cert.status === 'GOOD'
-                    const isHold = cert.status === 'REVOKED' && cert.revocationReason === 'CERTIFICATE_HOLD'
+                    const isHold =
+                      cert.status === 'REVOKED' &&
+                      cert.revocationReason === 'CERTIFICATE_HOLD'
 
-                    // Expiration calculation
                     let expiryBadge: React.ReactNode = null
                     try {
                       const notAfter = new Date(cert.notAfter)
-                      const diffDays = Math.ceil((notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                      const diffDays = Math.ceil(
+                        (notAfter.getTime() - now.getTime()) /
+                          (1000 * 60 * 60 * 24)
+                      )
                       if (diffDays < 0) {
                         expiryBadge = (
-                          <Chip
-                            label={`Expired ${Math.abs(diffDays)}d ago`}
-                            size="small"
-                            sx={{ bgcolor: 'rgba(244,63,94,0.12)', color: '#f43f5e', fontSize: '0.68rem', height: 18 }}
-                          />
+                          <Badge color="red" variant="light" size="xs">
+                            Expired {Math.abs(diffDays)}d ago
+                          </Badge>
                         )
                       } else if (diffDays <= 30) {
                         expiryBadge = (
-                          <Chip
-                            label={`Expiring in ${diffDays}d`}
-                            size="small"
-                            sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontSize: '0.68rem', height: 18 }}
-                          />
+                          <Badge color="yellow" variant="light" size="xs">
+                            Expiring in {diffDays}d
+                          </Badge>
                         )
                       }
                     } catch {
@@ -580,152 +581,127 @@ export function KmsCertificatesPage() {
                     }
 
                     return (
-                      <TableRow
-                        key={cert.serialNumberHex}
-                        hover
-                        sx={{
-                          '&:last-child td, &:last-child th': { border: 0 },
-                          transition: 'background 0.15s ease',
-                        }}
-                      >
+                      <Table.Tr key={cert.serialNumberHex}>
                         {/* Serial */}
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <Tooltip title={cert.serialNumberHex} arrow placement="top">
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontFamily: "'JetBrains Mono', monospace",
-                                  fontWeight: 600,
-                                  color: '#e2e8f0',
-                                  cursor: 'pointer',
-                                }}
+                        <Table.Td>
+                          <Group gap={6} wrap="nowrap">
+                            <Tooltip
+                              label={cert.serialNumberHex}
+                              withArrow
+                              position="top"
+                            >
+                              <Text
+                                fz="xs"
+                                ff="'JetBrains Mono', monospace"
+                                fw={600}
+                                c="indigo.2"
+                                style={{ cursor: 'pointer' }}
                                 onClick={() => openDetailsModal(cert)}
                               >
                                 {truncateSerial(cert.serialNumberHex)}
-                              </Typography>
+                              </Text>
                             </Tooltip>
-                            <Tooltip title="Copy full serial hex">
-                              <IconButton
-                                size="small"
+                            <Tooltip label="Copy full serial hex" withArrow>
+                              <ActionIcon
+                                size="xs"
+                                variant="subtle"
                                 onClick={() => {
-                                  copyToClipboard(cert.serialNumberHex, () => {
-                                    setCopiedSerial(cert.serialNumberHex)
-                                    setTimeout(() => setCopiedSerial(null), 1500)
-                                  })
+                                  copyToClipboard(
+                                    cert.serialNumberHex,
+                                    () => {
+                                      setCopiedSerial(cert.serialNumberHex)
+                                      setTimeout(
+                                        () => setCopiedSerial(null),
+                                        1500
+                                      )
+                                    }
+                                  )
                                 }}
                               >
-                                <ContentCopyOutlined sx={{ fontSize: 14, color: copiedSerial === cert.serialNumberHex ? '#22c55e' : '#64748b' }} />
-                              </IconButton>
+                                {copiedSerial === cert.serialNumberHex ? (
+                                  <IconCheck size={12} color="#22c55e" />
+                                ) : (
+                                  <IconCopy size={12} color="#64748b" />
+                                )}
+                              </ActionIcon>
                             </Tooltip>
-                          </Box>
-                        </TableCell>
+                          </Group>
+                        </Table.Td>
 
                         {/* Subject DN */}
-                        <TableCell>
-                          <Typography variant="body2" sx={{ fontWeight: 500, color: '#e2e8f0' }}>
+                        <Table.Td>
+                          <Text fz="xs" fw={500}>
                             {cert.subjectDn}
-                          </Typography>
-                          <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                          </Text>
+                          <Text fz={11} c="dimmed">
                             Issuer: {cert.issuerDn}
-                          </Typography>
-                        </TableCell>
+                          </Text>
+                        </Table.Td>
 
                         {/* Validity */}
-                        <TableCell>
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
-                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                              {formatDate(cert.notBefore)} &rarr; {formatDate(cert.notAfter)}
-                            </Typography>
+                        <Table.Td>
+                          <Stack gap={2}>
+                            <Text fz="xs" c="dimmed">
+                              {formatDate(cert.notBefore)} &rarr;{' '}
+                              {formatDate(cert.notAfter)}
+                            </Text>
                             {expiryBadge}
-                          </Box>
-                        </TableCell>
+                          </Stack>
+                        </Table.Td>
 
                         {/* Status */}
-                        <TableCell>
+                        <Table.Td>
                           {isGood ? (
-                            <Chip
-                              icon={<CheckCircleOutlined sx={{ fontSize: '14px !important' }} />}
-                              label="GOOD"
-                              size="small"
-                              sx={{
-                                fontWeight: 700,
-                                fontSize: '0.75rem',
-                                color: '#22c55e',
-                                bgcolor: 'rgba(34,197,94,0.12)',
-                                border: '1px solid rgba(34,197,94,0.3)',
-                              }}
-                            />
+                            <Badge
+                              leftSection={<IconShieldCheck size={12} />}
+                              color="teal"
+                              variant="light"
+                              size="sm"
+                            >
+                              GOOD
+                            </Badge>
                           ) : isHold ? (
-                            <Tooltip title="Certificate is temporarily on hold. Click 'Release Hold' to reinstate.">
-                              <Chip
-                                icon={<PauseCircleOutlined sx={{ fontSize: '14px !important' }} />}
-                                label="ON HOLD (Suspended)"
-                                size="small"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: '0.75rem',
-                                  color: '#f59e0b',
-                                  bgcolor: 'rgba(245,158,11,0.12)',
-                                  border: '1px solid rgba(245,158,11,0.3)',
-                                }}
-                              />
-                            </Tooltip>
+                            <Badge
+                              leftSection={<IconPlayerPause size={12} />}
+                              color="yellow"
+                              variant="light"
+                              size="sm"
+                            >
+                              ON HOLD
+                            </Badge>
                           ) : (
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                              <Chip
-                                icon={<CancelOutlined sx={{ fontSize: '14px !important' }} />}
-                                label={`REVOKED`}
-                                size="small"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: '0.75rem',
-                                  color: '#f43f5e',
-                                  bgcolor: 'rgba(244,63,94,0.12)',
-                                  border: '1px solid rgba(244,63,94,0.3)',
-                                  width: 'fit-content',
-                                }}
-                              />
-                              <Typography variant="caption" sx={{ color: '#f43f5e', fontSize: '0.68rem' }}>
+                            <Stack gap={2}>
+                              <Badge
+                                leftSection={<IconShieldX size={12} />}
+                                color="red"
+                                variant="light"
+                                size="sm"
+                              >
+                                REVOKED
+                              </Badge>
+                              <Text fz={11} c="red.4">
                                 Reason: {cert.revocationReason || 'UNSPECIFIED'}
-                              </Typography>
-                            </Box>
+                              </Text>
+                            </Stack>
                           )}
-                        </TableCell>
+                        </Table.Td>
 
-                        {/* Sequence */}
-                        <TableCell>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontFamily: "'JetBrains Mono', monospace",
-                              bgcolor: 'rgba(255,255,255,0.06)',
-                              px: 1,
-                              py: 0.3,
-                              borderRadius: '4px',
-                            }}
-                          >
+                        {/* Seq */}
+                        <Table.Td>
+                          <Badge color="gray" variant="light" size="xs">
                             v{cert.sequence}
-                          </Typography>
-                        </TableCell>
+                          </Badge>
+                        </Table.Td>
 
                         {/* Actions */}
-                        <TableCell align="right">
-                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Group gap="xs" justify="flex-end" wrap="nowrap">
                             {isGood && (
                               <Button
-                                size="small"
-                                variant="outlined"
-                                color="error"
+                                size="compact-xs"
+                                variant="outline"
+                                color="red"
                                 onClick={() => openRevokeModal(cert)}
-                                sx={{
-                                  textTransform: 'none',
-                                  fontSize: '0.75rem',
-                                  py: 0.4,
-                                  px: 1.2,
-                                  borderColor: 'rgba(244,63,94,0.4)',
-                                  '&:hover': { bgcolor: 'rgba(244,63,94,0.08)' },
-                                }}
                               >
                                 Revoke
                               </Button>
@@ -733,341 +709,328 @@ export function KmsCertificatesPage() {
 
                             {isHold && (
                               <Button
-                                size="small"
-                                variant="contained"
-                                color="warning"
+                                size="compact-xs"
+                                variant="filled"
+                                color="yellow"
                                 disabled={actionLoading}
                                 onClick={() => handleUnrevoke(cert)}
-                                sx={{
-                                  textTransform: 'none',
-                                  fontSize: '0.75rem',
-                                  py: 0.4,
-                                  px: 1.2,
-                                  fontWeight: 600,
-                                }}
                               >
                                 Release Hold
                               </Button>
                             )}
 
-                            <Tooltip title="View Certificate Details & PEM">
-                              <IconButton
-                                size="small"
+                            <Tooltip
+                              label="View Certificate Details & PEM"
+                              withArrow
+                            >
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="indigo"
                                 onClick={() => openDetailsModal(cert)}
-                                sx={{ color: '#818cf8', bgcolor: 'rgba(99,102,241,0.08)' }}
                               >
-                                <VisibilityOutlined sx={{ fontSize: 16 }} />
-                              </IconButton>
+                                <IconEye size={16} />
+                              </ActionIcon>
                             </Tooltip>
-                          </Box>
-                        </TableCell>
-                      </TableRow>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
                     )
                   })
               )}
-            </TableBody>
+            </Table.Tbody>
           </Table>
-        </TableContainer>
+        </Table.ScrollContainer>
 
-        <TablePagination
-          rowsPerPageOptions={[10, 25, 50]}
-          component="div"
-          count={filteredCerts.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(parseInt(e.target.value, 10))
-            setPage(0)
-          }}
-          sx={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
-        />
+        {totalPages > 1 && (
+          <Group justify="center" mt="md" py="xs">
+            <Pagination
+              total={totalPages}
+              value={page + 1}
+              onChange={(v) => setPage(v - 1)}
+              color="indigo"
+              size="sm"
+            />
+          </Group>
+        )}
       </Card>
 
       {/* =================================================================== */}
-      {/* Revocation Dialog                                                  */}
+      {/* Revocation Modal                                                   */}
       {/* =================================================================== */}
-      <Dialog
-        open={revokeDialogOpen}
+      <Modal
+        opened={revokeDialogOpen}
         onClose={() => !actionLoading && setRevokeDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: '#0f1629',
-            border: '1px solid rgba(255,255,255,0.1)',
-            backgroundImage: 'none',
+        title={
+          <Text fw={700} fz="md">
+            Revoke Certificate
+          </Text>
+        }
+        centered
+        radius="md"
+        styles={{
+          content: {
+            backgroundColor: 'var(--mantine-color-dark-6)',
+            border: '1px solid var(--mantine-color-dark-4)',
           },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
-          Revoke Certificate
-        </DialogTitle>
+        {targetCert && (
+          <Stack gap="md">
+            <Paper
+              p="sm"
+              radius="sm"
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-5)',
+                border: '1px solid var(--mantine-color-dark-4)',
+              }}
+            >
+              <Text fz="xs" c="dimmed">
+                Target Certificate
+              </Text>
+              <Text fz="sm" fw={600} mt={2}>
+                {targetCert.subjectDn}
+              </Text>
+              <Text
+                fz="xs"
+                ff="'JetBrains Mono', monospace"
+                c="indigo.3"
+                mt={4}
+              >
+                Serial: {targetCert.serialNumberHex}
+              </Text>
+            </Paper>
 
-        <DialogContent dividers sx={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          {targetCert && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2 }}>
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
-                  Target Certificate
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#e2e8f0', mt: 0.3 }}>
-                  {targetCert.subjectDn}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{ fontFamily: "'JetBrains Mono', monospace", color: '#818cf8', display: 'block', mt: 0.5 }}
-                >
-                  Serial: {targetCert.serialNumberHex}
-                </Typography>
-              </Box>
+            <Select
+              label="Revocation Reason (RFC 5280)"
+              value={revokeReason}
+              onChange={(val) => setRevokeReason(val || 'KEY_COMPROMISE')}
+              data={RFC_5280_REASONS.map((r) => ({
+                value: r.code,
+                label: r.label,
+              }))}
+            />
 
-              <FormControl fullWidth>
-                <InputLabel id="revocation-reason-select-label">Revocation Reason (RFC 5280)</InputLabel>
-                <Select
-                  labelId="revocation-reason-select-label"
-                  label="Revocation Reason (RFC 5280)"
-                  value={revokeReason}
-                  onChange={(e) => setRevokeReason(e.target.value)}
-                >
-                  {RFC_5280_REASONS.map((r) => (
-                    <MenuItem key={r.code} value={r.code}>
-                      <Box>
-                        <Typography variant="body2" fontWeight={600}>
-                          {r.label}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                          {r.description}
-                        </Typography>
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+            <Alert
+              icon={<IconAlertTriangle size={18} />}
+              color="yellow"
+              title="RabbitMQ Event Propagation"
+            >
+              Revoking immediately creates a Transactional Outbox record in KMS
+              and relays a <code>CertificateStatusChanged</code> event to
+              RabbitMQ exchange <code>incert.certificate.status</code>.
+            </Alert>
 
-              <Alert severity="warning" icon={<WarningAmberOutlined />} sx={{ mt: 1 }}>
-                Revoking immediately creates a Transactional Outbox record in the KMS database and relays a{' '}
-                <code>CertificateStatusChanged</code> event to RabbitMQ exchange <code>incert.certificate.status</code>.
-                The OCSP responder will update its state and invalidate cached responses.
-              </Alert>
-            </Box>
-          )}
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button
-            onClick={() => setRevokeDialogOpen(false)}
-            disabled={actionLoading}
-            sx={{ color: '#94a3b8' }}
-          >
-            Cancel
-          </Button>
-
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleConfirmRevoke}
-            disabled={actionLoading}
-            startIcon={actionLoading ? <CircularProgress size={16} color="inherit" /> : <CancelOutlined />}
-            sx={{ fontWeight: 600 }}
-          >
-            Confirm Revocation
-          </Button>
-        </DialogActions>
-      </Dialog>
+            <Group justify="flex-end" mt="md">
+              <Button
+                variant="default"
+                onClick={() => setRevokeDialogOpen(false)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                color="red"
+                onClick={handleConfirmRevoke}
+                loading={actionLoading}
+                leftSection={<IconShieldX size={16} />}
+              >
+                Confirm Revocation
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* =================================================================== */}
-      {/* Details & PEM Dialog                                               */}
+      {/* Details & PEM Modal                                                */}
       {/* =================================================================== */}
-      <Dialog
-        open={detailsDialogOpen}
+      <Modal
+        opened={detailsDialogOpen}
         onClose={() => setDetailsDialogOpen(false)}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: '#0f1629',
-            border: '1px solid rgba(255,255,255,0.1)',
-            backgroundImage: 'none',
+        size="lg"
+        title={
+          <Group gap="xs">
+            <IconKey size={20} color="#818cf8" />
+            <Text fw={700} fz="md">
+              Certificate Details & PEM
+            </Text>
+          </Group>
+        }
+        centered
+        radius="md"
+        styles={{
+          content: {
+            backgroundColor: 'var(--mantine-color-dark-6)',
+            border: '1px solid var(--mantine-color-dark-4)',
           },
         }}
       >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <KeyOutlined sx={{ color: '#818cf8' }} />
-            <Typography variant="h6" fontWeight={700}>
-              Certificate Details & PEM
-            </Typography>
-          </Box>
-          <IconButton size="small" onClick={() => setDetailsDialogOpen(false)}>
-            <CloseOutlined />
-          </IconButton>
-        </DialogTitle>
+        {detailsCert && (
+          <Stack gap="lg">
+            {/* Attributes */}
+            <Box>
+              <Text fz="xs" fw={700} c="indigo.3" tt="uppercase" mb="xs">
+                X.509 ATTRIBUTES
+              </Text>
 
-        <DialogContent dividers sx={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          {detailsCert && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* Metadata Table */}
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#818cf8', mb: 1.5 }}>
-                  X.509 ATTRIBUTES
-                </Typography>
-
-                <Paper sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <Grid container spacing={1.5}>
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Serial Number</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="caption" sx={{ fontFamily: "'JetBrains Mono', monospace", color: '#e2e8f0', wordBreak: 'break-all' }}>
-                        {detailsCert.serialNumberHex}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Subject DN</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 500 }}>
-                        {detailsCert.subjectDn}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Issuer DN</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="body2" sx={{ color: '#e2e8f0' }}>
-                        {detailsCert.issuerDn}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Issuer Key Hash (SHA-1)</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="caption" sx={{ fontFamily: "'JetBrains Mono', monospace", color: '#94a3b8' }}>
-                        {detailsCert.issuerKeyHashHex}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Issuer Name Hash (SHA-1)</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="caption" sx={{ fontFamily: "'JetBrains Mono', monospace", color: '#94a3b8' }}>
-                        {detailsCert.issuerNameHashHex}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Validity Period</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="caption" sx={{ color: '#e2e8f0' }}>
-                        {formatDate(detailsCert.notBefore)} &mdash; {formatDate(detailsCert.notAfter)}
-                      </Typography>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Status</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                          label={detailsCert.status}
-                          size="small"
-                          color={detailsCert.status === 'GOOD' ? 'success' : 'error'}
-                          sx={{ fontWeight: 700, height: 20 }}
-                        />
-                        {detailsCert.status === 'REVOKED' && (
-                          <Typography variant="caption" sx={{ color: '#f43f5e' }}>
-                            Reason: {detailsCert.revocationReason} ({formatDate(detailsCert.revocationTime)})
-                          </Typography>
-                        )}
-                      </Box>
-                    </Grid>
-
-                    <Grid item xs={12} sm={3}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Sequence</Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={9}>
-                      <Typography variant="caption" sx={{ fontFamily: "'JetBrains Mono', monospace", color: '#818cf8' }}>
-                        v{detailsCert.sequence}
-                      </Typography>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              </Box>
-
-              {/* PEM Block */}
-              <Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#818cf8' }}>
-                    PEM CERTIFICATE
-                  </Typography>
-
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      size="small"
-                      startIcon={<ContentCopyOutlined />}
-                      onClick={() => {
-                        copyToClipboard(detailsCert.pemEncoded, () => {
-                          setCopiedPem(true)
-                          setTimeout(() => setCopiedPem(false), 2000)
-                        })
+              <Paper
+                p="sm"
+                radius="sm"
+                style={{
+                  backgroundColor: 'var(--mantine-color-dark-5)',
+                  border: '1px solid var(--mantine-color-dark-4)',
+                }}
+              >
+                <Stack gap={6}>
+                  {[
+                    {
+                      label: 'Serial Number',
+                      value: detailsCert.serialNumberHex,
+                      mono: true,
+                    },
+                    { label: 'Subject DN', value: detailsCert.subjectDn },
+                    { label: 'Issuer DN', value: detailsCert.issuerDn },
+                    {
+                      label: 'Issuer Key Hash (SHA-1)',
+                      value: detailsCert.issuerKeyHashHex,
+                      mono: true,
+                    },
+                    {
+                      label: 'Issuer Name Hash (SHA-1)',
+                      value: detailsCert.issuerNameHashHex,
+                      mono: true,
+                    },
+                    {
+                      label: 'Validity Period',
+                      value: `${formatDate(detailsCert.notBefore)} — ${formatDate(
+                        detailsCert.notAfter
+                      )}`,
+                    },
+                    {
+                      label: 'Status',
+                      value:
+                        detailsCert.status === 'GOOD'
+                          ? 'GOOD'
+                          : `REVOKED (${detailsCert.revocationReason || 'UNSPECIFIED'})`,
+                    },
+                    {
+                      label: 'Sequence',
+                      value: `v${detailsCert.sequence}`,
+                      mono: true,
+                    },
+                  ].map(({ label, value, mono }) => (
+                    <Group
+                      key={label}
+                      justify="space-between"
+                      align="flex-start"
+                      py={4}
+                      style={{
+                        borderBottom:
+                          '1px solid var(--mantine-color-dark-4)',
                       }}
-                      sx={{ textTransform: 'none', color: copiedPem ? '#22c55e' : '#818cf8' }}
                     >
-                      {copiedPem ? 'Copied!' : 'Copy PEM'}
-                    </Button>
+                      <Text fz="xs" c="dimmed" style={{ minWidth: 140 }}>
+                        {label}
+                      </Text>
+                      <Text
+                        fz="xs"
+                        ff={mono ? "'JetBrains Mono', monospace" : 'inherit'}
+                        ta="right"
+                        style={{ wordBreak: 'break-all' }}
+                      >
+                        {value}
+                      </Text>
+                    </Group>
+                  ))}
+                </Stack>
+              </Paper>
+            </Box>
 
-                    <Button
-                      size="small"
-                      startIcon={<DownloadOutlined />}
-                      onClick={() => downloadPem(detailsCert.pemEncoded, `cert-${truncateSerial(detailsCert.serialNumberHex)}.crt`)}
-                      sx={{ textTransform: 'none', color: '#818cf8' }}
-                    >
-                      Download .crt
-                    </Button>
-                  </Box>
-                </Box>
+            {/* PEM Block */}
+            <Box>
+              <Group justify="space-between" mb="xs">
+                <Text fz="xs" fw={700} c="indigo.3" tt="uppercase">
+                  PEM CERTIFICATE
+                </Text>
 
-                <Paper
-                  sx={{
-                    p: 2,
-                    bgcolor: '#080c14',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    maxHeight: 220,
-                    overflowY: 'auto',
-                  }}
-                >
-                  <Typography
-                    variant="caption"
-                    component="pre"
-                    sx={{
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: '0.72rem',
-                      color: '#a5b4fc',
-                      margin: 0,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
+                <Group gap="xs">
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color={copiedPem ? 'teal' : 'indigo'}
+                    leftSection={
+                      copiedPem ? (
+                        <IconCheck size={14} />
+                      ) : (
+                        <IconCopy size={14} />
+                      )
+                    }
+                    onClick={() => {
+                      copyToClipboard(detailsCert.pemEncoded, () => {
+                        setCopiedPem(true)
+                        setTimeout(() => setCopiedPem(false), 2000)
+                      })
                     }}
                   >
-                    {detailsCert.pemEncoded}
-                  </Typography>
-                </Paper>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
+                    {copiedPem ? 'Copied!' : 'Copy PEM'}
+                  </Button>
 
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setDetailsDialogOpen(false)} sx={{ color: '#94a3b8' }}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="indigo"
+                    leftSection={<IconDownload size={14} />}
+                    onClick={() =>
+                      downloadPem(
+                        detailsCert.pemEncoded,
+                        `cert-${truncateSerial(
+                          detailsCert.serialNumberHex
+                        )}.crt`
+                      )
+                    }
+                  >
+                    Download .crt
+                  </Button>
+                </Group>
+              </Group>
+
+              <Paper
+                p="sm"
+                radius="sm"
+                style={{
+                  backgroundColor: '#080c14',
+                  border: '1px solid var(--mantine-color-dark-4)',
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                }}
+              >
+                <Text
+                  fz={11}
+                  ff="'JetBrains Mono', monospace"
+                  c="indigo.2"
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    margin: 0,
+                  }}
+                >
+                  {detailsCert.pemEncoded}
+                </Text>
+              </Paper>
+            </Box>
+
+            <Group justify="flex-end">
+              <Button
+                variant="default"
+                onClick={() => setDetailsDialogOpen(false)}
+              >
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Box>
   )
 }

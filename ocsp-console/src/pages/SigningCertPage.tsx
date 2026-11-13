@@ -1,121 +1,210 @@
-import { Box, Typography, Card, CardContent, Grid, Chip, LinearProgress, Alert } from '@mui/material'
-import { VerifiedUserOutlined, WarningAmberOutlined, AutorenewOutlined } from '@mui/icons-material'
+import {
+  Box,
+  Title,
+  Text,
+  Card,
+  Grid,
+  Badge,
+  Progress,
+  Alert,
+  Group,
+  Stack,
+  Skeleton,
+} from '@mantine/core'
+import {
+  IconShieldCheck,
+  IconAlertTriangle,
+  IconRefresh,
+} from '@tabler/icons-react'
 import { useDashboardStats } from '../hooks/useDashboardStats'
 
 export function SigningCertPage() {
   const { stats, loading } = useDashboardStats(30_000)
 
   const days = stats?.ocspSigningCertDaysRemaining ?? null
-  const isWarning  = days !== null && days <= 14
+  const isWarning = days !== null && days <= 14
   const isCritical = days !== null && days <= 7
 
   return (
     <Box className="page-enter">
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>OCSP Signing Certificate</Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+      <Box mb="lg">
+        <Title order={3} fw={700}>
+          OCSP Signing Certificate
+        </Title>
+        <Text fz="sm" c="dimmed" mt={4}>
           Delegated signing certificate lifecycle — issued by Incert, HSM-backed
-        </Typography>
+        </Text>
       </Box>
 
       {isCritical && (
-        <Alert severity="error" icon={<WarningAmberOutlined />} sx={{ mb: 3 }}>
-          <strong>CRITICAL:</strong> The OCSP signing certificate expires in {days} day{days !== 1 ? 's' : ''}.
-          Immediate rotation required to avoid responder outage.
+        <Alert
+          color="red"
+          icon={<IconAlertTriangle size={18} />}
+          title="CRITICAL EXPIRATION"
+          mb="lg"
+        >
+          The OCSP signing certificate expires in {days} day
+          {days !== 1 ? 's' : ''}. Immediate rotation required to avoid responder
+          outage.
         </Alert>
       )}
+
       {isWarning && !isCritical && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          The OCSP signing certificate expires in {days} days. Plan rotation now.
+        <Alert
+          color="yellow"
+          icon={<IconAlertTriangle size={18} />}
+          title="EXPIRING SOON"
+          mb="lg"
+        >
+          The OCSP signing certificate expires in {days} days. Plan rotation
+          now.
         </Alert>
       )}
 
-      <Grid container spacing={2}>
+      <Grid gutter="md">
         {/* Validity panel */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                <VerifiedUserOutlined sx={{ color: isCritical ? '#f43f5e' : '#22c55e', fontSize: 28 }} />
+        <Grid.Col span={{ base: 12, md: 6 }}>
+          <Card
+            p="lg"
+            radius="md"
+            style={{
+              backgroundColor: 'var(--mantine-color-dark-6)',
+              border: '1px solid var(--mantine-color-dark-4)',
+            }}
+          >
+            <Group justify="space-between" mb="md">
+              <Group gap="sm">
+                <IconShieldCheck
+                  size={28}
+                  color={isCritical ? '#f43f5e' : isWarning ? '#f59e0b' : '#22c55e'}
+                />
                 <Box>
-                  <Typography variant="h6">Active Signing Cert</Typography>
-                  <Chip
-                    label={isCritical ? 'CRITICAL' : isWarning ? 'EXPIRING SOON' : 'Valid'}
-                    color={isCritical ? 'error' : isWarning ? 'warning' : 'success'}
-                    size="small"
-                  />
+                  <Text fw={700} fz="md">
+                    Active Signing Cert
+                  </Text>
+                  <Badge
+                    color={isCritical ? 'red' : isWarning ? 'yellow' : 'teal'}
+                    variant="light"
+                    size="sm"
+                  >
+                    {isCritical
+                      ? 'CRITICAL'
+                      : isWarning
+                      ? 'EXPIRING SOON'
+                      : 'VALID'}
+                  </Badge>
                 </Box>
+              </Group>
+            </Group>
+
+            {loading ? (
+              <Stack gap="sm">
+                <Skeleton height={20} />
+                <Skeleton height={12} />
+                <Skeleton height={100} />
+              </Stack>
+            ) : (
+              <Box>
+                <Group justify="space-between" mb={6}>
+                  <Text fz="sm" c="dimmed">
+                    Days remaining
+                  </Text>
+                  <Text
+                    fz="sm"
+                    fw={700}
+                    c={isCritical ? 'red' : isWarning ? 'yellow' : 'teal'}
+                  >
+                    {days} days
+                  </Text>
+                </Group>
+                <Progress
+                  value={Math.min(100, ((days ?? 0) / 90) * 100)}
+                  color={isCritical ? 'red' : isWarning ? 'yellow' : 'teal'}
+                  size="md"
+                  radius="xl"
+                  mb="lg"
+                />
+
+                {/* Static metadata */}
+                {[
+                  { label: 'Key Algorithm', value: 'RSA-4096' },
+                  { label: 'Signature Alg', value: 'SHA256withRSA' },
+                  { label: 'EKU', value: 'id-kp-OCSPSigning' },
+                  { label: 'nocheck ext', value: 'id-pkix-ocsp-nocheck ✓' },
+                  { label: 'KMS Key Ref', value: 'ocsp-signing-key-01' },
+                  { label: 'Issued by', value: 'Incert-Root-CA-01' },
+                ].map(({ label, value }) => (
+                  <Group
+                    key={label}
+                    justify="space-between"
+                    py={8}
+                    style={{
+                      borderBottom: '1px solid var(--mantine-color-dark-4)',
+                    }}
+                  >
+                    <Text fz="sm" c="dimmed">
+                      {label}
+                    </Text>
+                    <Text
+                      fz="xs"
+                      ff="'JetBrains Mono', monospace"
+                      c="indigo.3"
+                    >
+                      {value}
+                    </Text>
+                  </Group>
+                ))}
               </Box>
-
-              {loading ? (
-                <LinearProgress />
-              ) : (
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2" sx={{ color: '#64748b' }}>Days remaining</Typography>
-                    <Typography variant="body2" fontWeight={700}
-                      sx={{ color: isCritical ? '#f43f5e' : isWarning ? '#f59e0b' : '#22c55e' }}>
-                      {days} days
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={Math.min(100, ((days ?? 0) / 90) * 100)}
-                    color={isCritical ? 'error' : isWarning ? 'warning' : 'success'}
-                    sx={{ mb: 2 }}
-                  />
-
-                  {/* Static metadata (loaded from KMS at startup in real impl) */}
-                  {[
-                    { label: 'Key Algorithm',   value: 'RSA-4096' },
-                    { label: 'Signature Alg',   value: 'SHA256withRSA' },
-                    { label: 'EKU',             value: 'id-kp-OCSPSigning' },
-                    { label: 'nocheck ext',     value: 'id-pkix-ocsp-nocheck ✓' },
-                    { label: 'KMS Key Ref',     value: 'ocsp-signing-key-01' },
-                    { label: 'Issued by',       value: 'Incert-Root-CA-01' },
-                  ].map(({ label, value }) => (
-                    <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75,
-                      borderBottom: '1px solid rgba(255,255,255,0.05)', '&:last-child': { borderBottom: 'none' } }}>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>{label}</Typography>
-                      <Typography variant="caption" sx={{ fontFamily: 'JetBrains Mono, monospace', color: '#a5b4fc' }}>
-                        {value}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </CardContent>
+            )}
           </Card>
-        </Grid>
+        </Grid.Col>
 
         {/* Auto-rotation info */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                <AutorenewOutlined sx={{ color: '#6366f1', fontSize: 28 }} />
-                <Typography variant="h6">Auto-Rotation Policy</Typography>
-              </Box>
+        <Grid.Col span={{ base: 12, md: 6 }}>
+          <Card
+            p="lg"
+            radius="md"
+            style={{
+              backgroundColor: 'var(--mantine-color-dark-6)',
+              border: '1px solid var(--mantine-color-dark-4)',
+            }}
+          >
+            <Group gap="sm" mb="md">
+              <IconRefresh size={26} color="#6366f1" />
+              <Text fw={700} fz="md">
+                Auto-Rotation Policy
+              </Text>
+            </Group>
+
+            <Stack gap={0}>
               {[
-                { label: 'Rotation trigger',    value: 'T-14 days before expiry' },
-                { label: 'Rotation method',     value: 'KMS auto-issues new cert' },
-                { label: 'Cert lifetime',       value: '90 days' },
-                { label: 'Alert at T-14 days',  value: 'Prometheus alert → PagerDuty' },
-                { label: 'Alert at T-7 days',   value: 'Critical — page on-call' },
-                { label: 'Alert at T-1 day',    value: 'Critical — escalation' },
-                { label: 'Private key',         value: 'Stays in KMS/HSM — never exported' },
+                { label: 'Rotation trigger', value: 'T-14 days before expiry' },
+                { label: 'Rotation method', value: 'KMS auto-issues new cert' },
+                { label: 'Cert lifetime', value: '90 days' },
+                { label: 'Alert at T-14 days', value: 'Prometheus alert → PagerDuty' },
+                { label: 'Alert at T-7 days', value: 'Critical — page on-call' },
+                { label: 'Alert at T-1 day', value: 'Critical — escalation' },
+                { label: 'Private key', value: 'Stays in KMS/HSM — never exported' },
               ].map(({ label, value }) => (
-                <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75,
-                  borderBottom: '1px solid rgba(255,255,255,0.05)', '&:last-child': { borderBottom: 'none' } }}>
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>{label}</Typography>
-                  <Typography variant="body2" sx={{ color: '#e2e8f0', textAlign: 'right', maxWidth: '55%' }}>
+                <Group
+                  key={label}
+                  justify="space-between"
+                  py={8}
+                  style={{
+                    borderBottom: '1px solid var(--mantine-color-dark-4)',
+                  }}
+                >
+                  <Text fz="sm" c="dimmed">
+                    {label}
+                  </Text>
+                  <Text fz="sm" fw={500} ta="right" style={{ maxWidth: '60%' }}>
                     {value}
-                  </Typography>
-                </Box>
+                  </Text>
+                </Group>
               ))}
-            </CardContent>
+            </Stack>
           </Card>
-        </Grid>
+        </Grid.Col>
       </Grid>
     </Box>
   )
