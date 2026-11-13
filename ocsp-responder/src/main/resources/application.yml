@@ -1,6 +1,6 @@
 spring:
   application:
-    name: ocsp-app
+    name: ocsp-responder
   profiles:
     active: dev
 
