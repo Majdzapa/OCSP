@@ -1,5 +1,11 @@
 package com.company.incert.ocsp.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +18,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@Tag(name = "Authentication", description = "Admin authentication and session verification endpoints")
 public class AuthController {
 
     private final String adminUsername;
@@ -27,8 +34,18 @@ public class AuthController {
         this.adminApiKey = adminApiKey;
     }
 
-    public record LoginPayload(String username, String password, String apiKey) {}
+    @Schema(description = "Credentials payload for login (supports username/password or X-API-KEY)")
+    public record LoginPayload(
+        @Schema(description = "Admin username", example = "admin") String username,
+        @Schema(description = "Admin password", example = "changeme") String password,
+        @Schema(description = "Admin API Key", example = "incert-admin-secret-key") String apiKey
+    ) {}
 
+    @Operation(summary = "Check current authentication status", description = "Returns identity and roles of the authenticated session caller")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "User is authenticated"),
+        @ApiResponse(responseCode = "401", description = "Caller is not authenticated")
+    })
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> me(Authentication auth) {
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
@@ -44,9 +61,15 @@ public class AuthController {
         ));
     }
 
+    @Operation(summary = "Authenticate admin credentials", description = "Validates username/password or API key and returns authentication headers for subsequent requests")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Authentication successful"),
+        @ApiResponse(responseCode = "401", description = "Invalid credentials or API key")
+    })
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
             Authentication auth,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Login credentials", required = false)
             @RequestBody(required = false) LoginPayload payload) {
 
         // 1. If already authenticated via HttpBasic or ApiKeyAuthFilter

@@ -73,6 +73,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 // Static web resources & landing page
                 .requestMatchers("/", "/index.html", "/login.html", "/favicon.ico", "/static/**").permitAll()
+                // OpenAPI / Swagger UI endpoints
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 // RFC 6960 OCSP endpoints MUST be public for relying parties
                 .requestMatchers("/ocsp", "/ocsp/**").permitAll()
                 // Healthcheck endpoints

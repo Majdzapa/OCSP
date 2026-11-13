@@ -72,6 +72,9 @@ docker compose up --build -d
 | Service | Port | Endpoint / Description | Authentication |
 |---|---|---|---|
 | **OCSP Console (Mantine)** | `3000` | [http://localhost:3000](http://localhost:3000) (Dashboard, KMS Inventory, Live Tests) | **Login Page** (`/login`) |
+| **OCSP Responder Swagger UI** | `8080` | [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) (`/v3/api-docs`) | Public Docs (Supports Auth in UI) |
+| **OCSP Client Swagger UI** | `8082` | [http://localhost:8082/swagger-ui/index.html](http://localhost:8082/swagger-ui/index.html) (`/v3/api-docs`) | Public Docs |
+| **KMS Simulator Swagger UI** | `8090` | [http://localhost:8090/swagger-ui/index.html](http://localhost:8090/swagger-ui/index.html) (`/v3/api-docs`) | Public Docs |
 | **OCSP Client Test Tool** | `8082` | [http://localhost:8082](http://localhost:8082) (Interactive test web tool) | Public UI |
 | **KMS Simulator Portal** | `8090` | [http://localhost:8090](http://localhost:8090) (Certificate management UI) | Public UI |
 | **OCSP Responder Protocol** | `8080` | [http://localhost:8080/ocsp](http://localhost:8080/ocsp) (`POST` DER · `GET /{b64url}`) | Public (RFC 6960) |

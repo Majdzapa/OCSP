@@ -1,7 +1,14 @@
 package com.company.incert.ocsp.controller;
 
+import com.company.incert.ocsp.config.OpenApiConfig;
 import com.company.incert.ocsp.entity.RevocationStatus;
 import com.company.incert.ocsp.service.CertificateStatusService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -18,13 +25,23 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
+@Tag(name = "Revocations", description = "Endpoints for inspecting revoked certificates and event synchronization feeds")
+@SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
 public class RevocationFeedController {
 
     private final CertificateStatusService statusService;
 
+    @Operation(summary = "Get paginated revocation feed", description = "Retrieves paginated list of revoked certificates received from RabbitMQ and stored in MariaDB")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Revocation feed page returned successfully"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
     @GetMapping({"/revocations", "/revocation-feed"})
     public ResponseEntity<Map<String, Object>> getRevoked(
+            @Parameter(description = "Page number (zero-based)", example = "0")
             @RequestParam(value = "page", defaultValue = "0") int page,
+            @Parameter(description = "Page size", example = "50")
             @RequestParam(value = "size", defaultValue = "50") int size) {
         Page<RevocationStatus> paged = statusService.findRevoked(page, size);
         HexFormat hex = HexFormat.of();
