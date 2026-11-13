@@ -110,20 +110,34 @@ export interface OcspTestResult {
   error?: string | null
 }
 
+export interface AuthConfig {
+  authMode: 'SELF_MANAGED' | 'KEYCLOCK' | string
+  isKeycloak: boolean
+  keycloak?: {
+    authServerUrl: string
+    realm: string
+    clientId: string
+  }
+}
+
 export interface AuthUser {
   authenticated: boolean
   username: string
   roles?: string[]
+  authMode?: string
   apiKey?: string
   basicAuth?: string
+  token?: string
 }
 
 export interface LoginResponse {
   authenticated: boolean
   username?: string
   roles?: string[]
+  authMode?: string
   apiKey?: string
   basicAuth?: string
+  token?: string
   authType?: string
   message?: string
 }

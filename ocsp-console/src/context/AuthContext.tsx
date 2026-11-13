@@ -1,27 +1,39 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import type { AuthUser } from '../types/api'
-import { loginWithCredentials, loginWithApiKey, getAuthMe } from '../api/client'
+import type { AuthUser, AuthConfig } from '../types/api'
+import {
+  loginWithCredentials,
+  loginWithApiKey,
+  loginWithBearerToken,
+  getAuthMe,
+  getAuthConfig,
+} from '../api/client'
 
 interface AuthContextType {
   user: AuthUser | null
+  authConfig: AuthConfig | null
   isAuthenticated: boolean
   isLoading: boolean
   login: (username: string, password: string) => Promise<void>
   loginWithKey: (apiKey: string) => Promise<void>
+  loginWithToken: (token: string) => Promise<void>
   logout: () => void
+  refreshAuthConfig: () => Promise<AuthConfig | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [user, setUser] = useState<AuthUser | null>(() => {
     const savedUser = localStorage.getItem('ocsp_auth_user')
+    const hasToken = localStorage.getItem('ocsp_bearer_token')
     const hasKey = localStorage.getItem('ocsp_api_key')
     const hasBasic = localStorage.getItem('ocsp_basic_auth')
-    if (savedUser && (hasKey || hasBasic)) {
+    if (savedUser && (hasToken || hasKey || hasBasic)) {
       return {
         authenticated: true,
         username: savedUser,
+        token: hasToken || undefined,
         apiKey: hasKey || undefined,
         basicAuth: hasBasic || undefined,
       }
@@ -35,15 +47,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('ocsp_auth_user')
     localStorage.removeItem('ocsp_api_key')
     localStorage.removeItem('ocsp_basic_auth')
+    localStorage.removeItem('ocsp_bearer_token')
     setUser(null)
   }
 
-  // Validate existing stored token on mount
+  const refreshAuthConfig = async (): Promise<AuthConfig | null> => {
+    try {
+      const cfg = await getAuthConfig()
+      setAuthConfig(cfg)
+      return cfg
+    } catch (e) {
+      console.warn('Failed to fetch auth configuration from responder:', e)
+      return null
+    }
+  }
+
+  // Validate existing stored token on mount & fetch server auth config
   useEffect(() => {
-    const checkAuth = async () => {
+    const initAuth = async () => {
+      await refreshAuthConfig()
+
+      const hasToken = localStorage.getItem('ocsp_bearer_token')
       const hasKey = localStorage.getItem('ocsp_api_key')
       const hasBasic = localStorage.getItem('ocsp_basic_auth')
-      if (!hasKey && !hasBasic) {
+      if (!hasToken && !hasKey && !hasBasic) {
         setIsLoading(false)
         return
       }
@@ -55,6 +82,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             authenticated: true,
             username: info.username,
             roles: info.roles,
+            authMode: info.authMode,
+            token: hasToken || undefined,
             apiKey: hasKey || undefined,
             basicAuth: hasBasic || undefined,
           })
@@ -68,7 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    checkAuth()
+    initAuth()
 
     const handleUnauthorized = () => {
       logout()
@@ -91,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authenticated: true,
       username: res.username || username,
       roles: res.roles,
+      authMode: res.authMode,
       basicAuth: res.basicAuth,
       apiKey: res.apiKey,
     })
@@ -109,7 +139,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authenticated: true,
       username: res.username || 'api-key-admin',
       roles: res.roles,
+      authMode: res.authMode,
       apiKey: res.apiKey || apiKey,
+    })
+  }
+
+  const loginWithToken = async (token: string) => {
+    const res = await loginWithBearerToken(token)
+    if (!res.authenticated) {
+      throw new Error(res.message || 'Invalid Bearer token')
+    }
+
+    localStorage.setItem('ocsp_bearer_token', token)
+    localStorage.setItem('ocsp_auth_user', res.username || 'keycloak-admin')
+
+    setUser({
+      authenticated: true,
+      username: res.username || 'keycloak-admin',
+      roles: res.roles,
+      authMode: res.authMode || 'KEYCLOCK',
+      token,
     })
   }
 
@@ -117,11 +166,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
+        authConfig,
         isAuthenticated: !!user?.authenticated,
         isLoading,
         login,
         loginWithKey,
+        loginWithToken,
         logout,
+        refreshAuthConfig,
       }}
     >
       {children}
@@ -136,4 +188,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context
 }
-

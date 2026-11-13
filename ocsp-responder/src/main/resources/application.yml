@@ -1,3 +1,13 @@
+security:
+  auth-mode: ${AUTH_MODE:SELF_MANAGED} # SELF_MANAGED or KEYCLOCK
+
+keycloak:
+  auth-server-url: ${KEYCLOAK_URL:http://localhost:8081}
+  realm: ${KEYCLOAK_REALM:incert}
+  client-id: ${KEYCLOAK_CLIENT_ID:ocsp-console}
+  jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs}
+  issuer-uri: ${KEYCLOAK_ISSUER_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}}
+
 spring:
   application:
     name: ocsp-responder
@@ -47,8 +57,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${JWK_SET_URI:http://localhost:9000/oauth2/jwks}
-          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:9000}
+          jwk-set-uri: ${keycloak.jwk-set-uri}
+          issuer-uri: ${keycloak.issuer-uri}
 
 server:
   port: 8080

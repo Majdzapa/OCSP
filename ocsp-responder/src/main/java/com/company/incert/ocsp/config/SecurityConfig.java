@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +14,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -22,9 +25,21 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+/**
+ * Security configuration supporting dual authentication modes:
+ * <ul>
+ *   <li><b>SELF_MANAGED</b> (default): HTTP Basic Auth (admin / changeme) and API Key (X-API-KEY).</li>
+ *   <li><b>KEYCLOCK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
+ * </ul>
+ * Configured via {@code security.auth-mode} or {@code auth.mode}.
+ */
+@Slf4j
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    @Value("${security.auth-mode:${auth.mode:SELF_MANAGED}}")
+    private String authModeStr;
 
     @Value("${admin.username:admin}")
     private String adminUsername;
@@ -34,6 +49,13 @@ public class SecurityConfig {
 
     @Value("${admin.api-key:incert-admin-secret-key}")
     private String adminApiKey;
+
+    @Value("${keycloak.jwk-set-uri:${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:8081/realms/incert/protocol/openid-connect/certs}}")
+    private String keycloakJwkSetUri;
+
+    public AuthenticationMode getAuthenticationMode() {
+        return AuthenticationMode.fromString(authModeStr);
+    }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -62,8 +84,16 @@ public class SecurityConfig {
         return new InMemoryUserDetailsManager(admin);
     }
 
+    public JwtDecoder jwtDecoder() {
+        log.info("Initializing NimbusJwtDecoder for Keycloak with JWKS URI: {}", keycloakJwkSetUri);
+        return NimbusJwtDecoder.withJwkSetUri(keycloakJwkSetUri).build();
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        AuthenticationMode mode = getAuthenticationMode();
+        log.info("Configuring OCSP Responder Security with Authentication Mode: {}", mode);
+
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
@@ -79,13 +109,25 @@ public class SecurityConfig {
                 .requestMatchers("/ocsp", "/ocsp/**").permitAll()
                 // Healthcheck endpoints
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                // Auth check endpoints
+                // Auth check & configuration endpoints
                 .requestMatchers("/api/v1/auth/**").permitAll()
-                // All admin & management endpoints require authentication (Basic Auth or X-API-KEY)
+                // All admin & management endpoints require ROLE_ADMIN
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
-            )
-            .httpBasic(Customizer.withDefaults());
+            );
+
+        if (mode.isKeycloak()) {
+            log.info("Activating KEYCLOCK OAuth2 Resource Server filter chain");
+            http.oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt
+                    .decoder(jwtDecoder())
+                    .jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())
+                )
+            );
+        } else {
+            log.info("Activating SELF_MANAGED HTTP Basic Auth filter chain");
+            http.httpBasic(Customizer.withDefaults());
+        }
 
         return http.build();
     }

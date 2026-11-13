@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Container,
@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   PasswordInput,
+  Textarea,
   Button,
   Alert,
   Group,
@@ -24,20 +25,31 @@ import {
   IconShieldLock,
   IconAlertCircle,
   IconArrowRight,
+  IconBrandOauth,
+  IconExternalLink,
 } from '@tabler/icons-react'
 import { useAuth } from '../context/AuthContext'
 
 export const LoginPage: React.FC = () => {
-  const { login, loginWithKey } = useAuth()
+  const { login, loginWithKey, loginWithToken, authConfig } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [activeTab, setActiveTab] = useState<string | null>('creds')
+  const isKeycloak = !!authConfig?.isKeycloak
+  const [activeTab, setActiveTab] = useState<string | null>(isKeycloak ? 'keycloak' : 'creds')
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('changeme')
   const [apiKey, setApiKey] = useState('incert-admin-secret-key')
+  const [bearerToken, setBearerToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Switch default tab if authConfig loads after initial render
+  useEffect(() => {
+    if (authConfig?.isKeycloak && activeTab === 'creds') {
+      setActiveTab('keycloak')
+    }
+  }, [authConfig?.isKeycloak])
 
   const from = (location.state as any)?.from?.pathname || '/dashboard'
 
@@ -52,6 +64,11 @@ export const LoginPage: React.FC = () => {
           throw new Error('Please enter both username and password')
         }
         await login(username, password)
+      } else if (activeTab === 'keycloak') {
+        if (!bearerToken.trim()) {
+          throw new Error('Please enter a Keycloak JWT Bearer token')
+        }
+        await loginWithToken(bearerToken.trim())
       } else {
         if (!apiKey) {
           throw new Error('Please enter an API Key')
@@ -92,7 +109,7 @@ export const LoginPage: React.FC = () => {
         padding: '24px',
       }}
     >
-      <Container size={440} style={{ width: '100%' }}>
+      <Container size={460} style={{ width: '100%' }}>
         <Stack align="center" gap="xs" mb="lg">
           <ThemeIcon
             size={56}
@@ -110,6 +127,22 @@ export const LoginPage: React.FC = () => {
           <Text c="dimmed" size="sm" ta="center">
             Sign in to access the Admin API & PKI Operations
           </Text>
+
+          {/* Authentication Mode Status Indicator */}
+          <Group gap="xs" mt={4}>
+            <Badge
+              variant="dot"
+              color={isKeycloak ? 'orange' : 'teal'}
+              size="md"
+            >
+              Auth Mode: {authConfig?.authMode || 'SELF_MANAGED'}
+            </Badge>
+            {isKeycloak && authConfig?.keycloak?.realm && (
+              <Badge variant="outline" color="orange" size="xs">
+                Realm: {authConfig.keycloak.realm}
+              </Badge>
+            )}
+          </Group>
         </Stack>
 
         <Paper
@@ -137,36 +170,80 @@ export const LoginPage: React.FC = () => {
 
           <Tabs value={activeTab} onChange={setActiveTab} mb="md">
             <Tabs.List grow>
-              <Tabs.Tab value="creds" leftSection={<IconUser size={16} />}>
-                Credentials
-              </Tabs.Tab>
+              {!isKeycloak && (
+                <Tabs.Tab value="creds" leftSection={<IconUser size={16} />}>
+                  Credentials
+                </Tabs.Tab>
+              )}
+              {isKeycloak && (
+                <Tabs.Tab value="keycloak" leftSection={<IconBrandOauth size={16} />}>
+                  Keycloak JWT
+                </Tabs.Tab>
+              )}
               <Tabs.Tab value="key" leftSection={<IconKey size={16} />}>
                 API Key
               </Tabs.Tab>
             </Tabs.List>
 
             <form onSubmit={handleSubmit}>
-              <Tabs.Panel value="creds" pt="md">
-                <Stack gap="sm">
-                  <TextInput
-                    label="Admin Username"
-                    placeholder="admin"
-                    leftSection={<IconUser size={16} />}
-                    value={username}
-                    onChange={(e) => setUsername(e.currentTarget.value)}
-                    required
-                  />
+              {!isKeycloak && (
+                <Tabs.Panel value="creds" pt="md">
+                  <Stack gap="sm">
+                    <TextInput
+                      label="Admin Username"
+                      placeholder="admin"
+                      leftSection={<IconUser size={16} />}
+                      value={username}
+                      onChange={(e) => setUsername(e.currentTarget.value)}
+                      required
+                    />
 
-                  <PasswordInput
-                    label="Admin Password"
-                    placeholder="Your password"
-                    leftSection={<IconLock size={16} />}
-                    value={password}
-                    onChange={(e) => setPassword(e.currentTarget.value)}
-                    required
-                  />
-                </Stack>
-              </Tabs.Panel>
+                    <PasswordInput
+                      label="Admin Password"
+                      placeholder="Your password"
+                      leftSection={<IconLock size={16} />}
+                      value={password}
+                      onChange={(e) => setPassword(e.currentTarget.value)}
+                      required
+                    />
+                  </Stack>
+                </Tabs.Panel>
+              )}
+
+              {isKeycloak && (
+                <Tabs.Panel value="keycloak" pt="md">
+                  <Stack gap="sm">
+                    <Textarea
+                      label="Keycloak JWT Bearer Token"
+                      placeholder="Paste your OAuth2 / OIDC access token (eyJhbGciOi...)"
+                      minRows={3}
+                      maxRows={5}
+                      value={bearerToken}
+                      onChange={(e) => setBearerToken(e.currentTarget.value)}
+                      required
+                    />
+                    <Text size="xs" c="dimmed">
+                      Verified against Keycloak realm <Code color="orange">{authConfig?.keycloak?.realm || 'incert'}</Code>. Requires <Code color="indigo">ROLE_ADMIN</Code>.
+                    </Text>
+                    {authConfig?.keycloak?.authServerUrl && (
+                      <Group justify="flex-start" gap="xs">
+                        <Button
+                          component="a"
+                          href={`${authConfig.keycloak.authServerUrl}/realms/${authConfig.keycloak.realm}/account`}
+                          target="_blank"
+                          rel="noreferrer"
+                          variant="subtle"
+                          size="compact-xs"
+                          color="orange"
+                          leftSection={<IconExternalLink size={12} />}
+                        >
+                          Open Keycloak Account Console
+                        </Button>
+                      </Group>
+                    )}
+                  </Stack>
+                </Tabs.Panel>
+              )}
 
               <Tabs.Panel value="key" pt="md">
                 <Stack gap="sm">
@@ -179,7 +256,7 @@ export const LoginPage: React.FC = () => {
                     required
                   />
                   <Text size="xs" c="dimmed">
-                    Grants direct administrative access to all <code>/api/v1/admin/**</code> endpoints.
+                    Grants direct administrative access to all <code>/api/v1/admin/**</code> endpoints (supported in both SELF_MANAGED and KEYCLOCK modes).
                   </Text>
                 </Stack>
               </Tabs.Panel>
@@ -192,7 +269,7 @@ export const LoginPage: React.FC = () => {
                 radius="md"
                 loading={loading}
                 variant="gradient"
-                gradient={{ from: 'indigo.6', to: 'violet.6' }}
+                gradient={isKeycloak ? { from: 'orange.6', to: 'red.6' } : { from: 'indigo.6', to: 'violet.6' }}
                 rightSection={<IconArrowRight size={18} />}
               >
                 Sign In to Admin Console
@@ -211,20 +288,24 @@ export const LoginPage: React.FC = () => {
           >
             <Group justify="space-between" mb={6}>
               <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                Default Credentials
+                Authentication Settings
               </Text>
-              <Badge size="xs" variant="light" color="indigo">DEV / LOCAL</Badge>
+              <Badge size="xs" variant="light" color={isKeycloak ? 'orange' : 'indigo'}>
+                {authConfig?.authMode || 'SELF_MANAGED'}
+              </Badge>
             </Group>
 
             <Stack gap={4}>
-              <Group justify="space-between">
-                <Text size="xs" c="dimmed">
-                  User: <Code color="indigo">admin / changeme</Code>
-                </Text>
-                <Button variant="subtle" size="compact-xs" color="indigo" onClick={fillDefaultCreds}>
-                  Autofill
-                </Button>
-              </Group>
+              {!isKeycloak && (
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">
+                    User: <Code color="indigo">admin / changeme</Code>
+                  </Text>
+                  <Button variant="subtle" size="compact-xs" color="indigo" onClick={fillDefaultCreds}>
+                    Autofill
+                  </Button>
+                </Group>
+              )}
 
               <Group justify="space-between">
                 <Text size="xs" c="dimmed">
@@ -234,6 +315,12 @@ export const LoginPage: React.FC = () => {
                   Autofill
                 </Button>
               </Group>
+
+              {isKeycloak && authConfig?.keycloak && (
+                <Text size="xs" c="dimmed">
+                  Server: <Code color="orange">{authConfig.keycloak.authServerUrl}</Code>
+                </Text>
+              )}
             </Stack>
           </Box>
         </Paper>
@@ -245,4 +332,3 @@ export const LoginPage: React.FC = () => {
     </Box>
   )
 }
-

@@ -11,9 +11,10 @@ import type {
   LoginResponse,
   InboxEventItem,
   ReconciliationReport,
+  AuthConfig,
 } from '../types/api'
 
-// API client for ocsp-responder (protected with X-API-KEY or Basic Auth)
+// API client for ocsp-responder (protected with X-API-KEY, Basic Auth, or Keycloak Bearer token)
 export const api = axios.create({
   baseURL: '/api/v1/admin',
   headers: {
@@ -23,10 +24,13 @@ export const api = axios.create({
 
 // Dynamically attach credentials from localStorage
 api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('ocsp_bearer_token')
   const apiKey = localStorage.getItem('ocsp_api_key')
   const basicAuth = localStorage.getItem('ocsp_basic_auth')
 
-  if (apiKey) {
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  } else if (apiKey) {
     config.headers['X-API-KEY'] = apiKey
   } else if (basicAuth) {
     config.headers['Authorization'] = basicAuth
@@ -42,6 +46,7 @@ api.interceptors.response.use(
       localStorage.removeItem('ocsp_auth_user')
       localStorage.removeItem('ocsp_api_key')
       localStorage.removeItem('ocsp_basic_auth')
+      localStorage.removeItem('ocsp_bearer_token')
       window.dispatchEvent(new CustomEvent('ocsp:unauthorized'))
     }
     return Promise.reject(error)
@@ -54,6 +59,11 @@ const authApi = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+export const getAuthConfig = async (): Promise<AuthConfig> => {
+  const res = await authApi.get<AuthConfig>('/config')
+  return res.data
+}
+
 export const loginWithCredentials = async (username: string, password: string): Promise<LoginResponse> => {
   const res = await authApi.post<LoginResponse>('/login', { username, password })
   return res.data
@@ -64,12 +74,19 @@ export const loginWithApiKey = async (apiKey: string): Promise<LoginResponse> =>
   return res.data
 }
 
+export const loginWithBearerToken = async (token: string): Promise<LoginResponse> => {
+  const res = await authApi.post<LoginResponse>('/login', { token })
+  return res.data
+}
+
 export const getAuthMe = async (): Promise<AuthUser> => {
+  const token = localStorage.getItem('ocsp_bearer_token')
   const apiKey = localStorage.getItem('ocsp_api_key')
   const basicAuth = localStorage.getItem('ocsp_basic_auth')
   const headers: Record<string, string> = {}
-  if (apiKey) headers['X-API-KEY'] = apiKey
-  if (basicAuth) headers['Authorization'] = basicAuth
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  else if (apiKey) headers['X-API-KEY'] = apiKey
+  else if (basicAuth) headers['Authorization'] = basicAuth
 
   const res = await authApi.get<AuthUser>('/me', { headers })
   return res.data
