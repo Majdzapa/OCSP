@@ -42,9 +42,17 @@
 
 ## Quick Start
 
-### 1. Build backend modules
+### 1. Build Standalone Applications
+Each application is completely independent and can be built either individually or via the helper script:
+
 ```bash
-JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn clean package
+# Build all standalone services at once:
+./scripts/build-all.sh
+
+# Or build any service individually in its own directory:
+(cd kms-simulator && mvn clean package -DskipTests)
+(cd ocsp-responder && mvn clean package -DskipTests)
+(cd ocsp-client && mvn clean package -DskipTests)
 ```
 
 ### 2. Run with Docker Compose
@@ -104,9 +112,11 @@ docker compose up --build -d
 ## Testing
 
 ```bash
-# 1. Run unit tests across all applications
-JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn test
+# 1. Run unit tests on individual standalone applications:
+(cd kms-simulator && mvn test)
+(cd ocsp-responder && mvn test)
+(cd ocsp-client && mvn test)
 
-# 2. Run end-to-end integration test (with live containers)
+# 2. Run end-to-end integration test suite (with live containers):
 ./scripts/e2e-test.sh
 ```

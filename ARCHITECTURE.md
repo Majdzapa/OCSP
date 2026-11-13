@@ -14,6 +14,7 @@
 7. [RabbitMQ Messaging Topology](#7-rabbitmq-messaging-topology)
 8. [Deployment Blueprint (Docker Compose Topology)](#8-deployment-blueprint-docker-compose-topology)
 9. [Security & Cryptographic Boundary Diagram](#9-security--cryptographic-boundary-diagram)
+10. [Standalone Repository & Build Model](#10-standalone-repository--build-model)
 
 ---
 
@@ -371,3 +372,22 @@ graph TD
 
 - **Non-Extractable Keys**: The OCSP signing private key is generated directly inside the SoftHSM2 token (`CKA_EXTRACTABLE = FALSE`). Private key material never exists in application memory or container filesystem.
 - **Audit & Protection**: Any compromised certificate is revoked in KMS, persisted via Transactional Outbox, published to RabbitMQ, and updated in MariaDB within milliseconds.
+
+---
+
+## 10. Standalone Repository & Build Model
+
+All backend applications are completely separated, standalone Spring Boot projects without any parent POM or reactor `<modules>` aggregation:
+
+| Project | Location | Parent POM | Build Command |
+|---|---|---|---|
+| **KMS Simulator** | `kms-simulator/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd kms-simulator && mvn clean package` |
+| **OCSP Responder** | `ocsp-responder/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd ocsp-responder && mvn clean package` |
+| **OCSP Client** | `ocsp-client/` | `spring-boot-starter-parent:3.3.5` (`<relativePath/>`) | `cd ocsp-client && mvn clean package` |
+| **OCSP Console** | `ocsp-console/` | N/A (Node / Vite / Mantine v7) | `cd ocsp-console && npm run build` |
+
+### Key Characteristics:
+1. **Zero Root Reactor**: No root `pom.xml` exists. Each directory is an independent Maven/npm project with its own lifecycle, dependencies, and configuration.
+2. **Zero Shared Artifact Coupling**: Applications communicate strictly over HTTP/REST (RFC 6960 DER/base64url) and AMQP messages (RabbitMQ event bus), completely decoupled from each other at the build and artifact level.
+3. **Independent CI/CD Ready**: Any service can be modified, tested, containerized, and deployed independently in its own CI pipeline without triggering builds of other services.
+4. **Convenience Script**: The top-level `./scripts/build-all.sh` script is provided strictly as an orchestration convenience for local developer workflows.
