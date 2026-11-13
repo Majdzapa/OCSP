@@ -43,3 +43,4 @@ public class RabbitMqCertificateEventPublisher implements CertificateEventPublis
                 eventId, exchange, routingKey);
     }
 }
+

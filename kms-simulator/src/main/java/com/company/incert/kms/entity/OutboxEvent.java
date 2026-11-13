@@ -39,3 +39,4 @@ public class OutboxEvent {
     @Column(name = "sent", nullable = false)
     private boolean sent;
 }
+

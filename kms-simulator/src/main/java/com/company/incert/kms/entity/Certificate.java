@@ -74,3 +74,4 @@ public class Certificate {
     public String pemEncoded() { return pemEncoded; }
     public long sequence() { return sequence; }
 }
+

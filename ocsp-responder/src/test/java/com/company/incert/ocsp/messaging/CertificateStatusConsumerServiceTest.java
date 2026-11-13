@@ -96,3 +96,4 @@ class CertificateStatusConsumerServiceTest {
         verify(inboxRepository).save(argThat(i -> "DUPLICATE".equals(i.getProcessingStatus())));
     }
 }
+

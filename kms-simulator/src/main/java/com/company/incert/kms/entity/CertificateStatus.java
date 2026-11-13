@@ -5,3 +5,4 @@ public enum CertificateStatus {
     REVOKED,
     CERTIFICATE_HOLD
 }
+

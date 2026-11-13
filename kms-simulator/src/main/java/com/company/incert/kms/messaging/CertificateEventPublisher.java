@@ -22,3 +22,4 @@ public interface CertificateEventPublisher {
      */
     void publish(String eventId, String topic, String partitionKey, String jsonPayload);
 }
+

@@ -62,3 +62,4 @@ class CertificateTest {
         assertThat(RevocationReason.AA_COMPROMISE.getCode()).isEqualTo(10);
     }
 }
+

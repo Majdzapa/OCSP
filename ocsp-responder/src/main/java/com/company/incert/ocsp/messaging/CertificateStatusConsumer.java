@@ -20,3 +20,4 @@ public interface CertificateStatusConsumer {
      */
     void consume(String payload);
 }
+

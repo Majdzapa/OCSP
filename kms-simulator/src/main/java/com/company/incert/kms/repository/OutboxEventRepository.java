@@ -13,3 +13,4 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, String
 
     long countBySentFalse();
 }
+
