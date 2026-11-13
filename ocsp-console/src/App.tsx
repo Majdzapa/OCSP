@@ -7,6 +7,10 @@ import {
   Text,
   ThemeIcon,
   Tooltip,
+  Button,
+  Badge,
+  Avatar,
+  Divider,
 } from '@mantine/core'
 import {
   IconDashboard,
@@ -16,12 +20,16 @@ import {
   IconSearch,
   IconReceipt,
   IconCircleFilled,
+  IconLogout,
 } from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertPage } from './pages/SigningCertPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
 import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
+import { LoginPage } from './pages/LoginPage'
+import { ProtectedRoute } from './components/ProtectedRoute'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { useDashboardStats } from './hooks/useDashboardStats'
 
 const navItems = [
@@ -33,7 +41,8 @@ const navItems = [
   { label: 'Audit Log',       path: '/audit',            icon: IconReceipt },
 ]
 
-export default function App() {
+function MainLayout() {
+  const { user, logout } = useAuth()
   const { stats } = useDashboardStats(10_000)
 
   return (
@@ -111,26 +120,69 @@ export default function App() {
           </Stack>
         </Stack>
 
-        {/* Footer: Signing cert expiry badge */}
-        {stats && (
-          <Tooltip label="Days until OCSP signing cert expires">
-            <Box
-              p="xs"
-              style={{
-                borderRadius: 8,
-                backgroundColor: stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.12)' : 'rgba(99,102,241,0.08)',
-                border: `1px solid ${stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.3)' : 'rgba(99,102,241,0.2)'}`,
-              }}
+        {/* Footer: User profile & Signing cert expiry */}
+        <Stack gap="xs">
+          {stats && (
+            <Tooltip label="Days until OCSP signing cert expires">
+              <Box
+                p="xs"
+                style={{
+                  borderRadius: 8,
+                  backgroundColor: stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.12)' : 'rgba(99,102,241,0.08)',
+                  border: `1px solid ${stats.ocspSigningCertDaysRemaining <= 7 ? 'rgba(244,63,94,0.3)' : 'rgba(99,102,241,0.2)'}`,
+                }}
+              >
+                <Text fz="xs" c="dimmed">
+                  Signing cert expires in
+                </Text>
+                <Text fw={700} fz="sm" c={stats.ocspSigningCertDaysRemaining <= 7 ? 'red.5' : 'indigo.3'}>
+                  {stats.ocspSigningCertDaysRemaining} days
+                </Text>
+              </Box>
+            </Tooltip>
+          )}
+
+          <Divider color="var(--mantine-color-dark-4)" />
+
+          {/* User profile & Logout */}
+          <Box
+            p="xs"
+            style={{
+              backgroundColor: 'var(--mantine-color-dark-5)',
+              borderRadius: 8,
+              border: '1px solid var(--mantine-color-dark-4)',
+            }}
+          >
+            <Group justify="space-between" mb={6}>
+              <Group gap="xs">
+                <Avatar size="sm" radius="xl" color="indigo">
+                  {(user?.username || 'A')[0].toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Text fz="xs" fw={600} lh={1.1} c="white">
+                    {user?.username || 'admin'}
+                  </Text>
+                  <Text fz="10px" c="dimmed">
+                    {user?.apiKey ? 'API-KEY Auth' : 'Basic Auth'}
+                  </Text>
+                </Box>
+              </Group>
+              <Badge size="xs" color="indigo" variant="light">ADMIN</Badge>
+            </Group>
+
+            <Button
+              variant="subtle"
+              color="red"
+              size="xs"
+              fullWidth
+              leftSection={<IconLogout size={14} />}
+              onClick={logout}
+              mt={4}
             >
-              <Text fz="xs" c="dimmed">
-                Signing cert expires in
-              </Text>
-              <Text fw={700} fz="sm" c={stats.ocspSigningCertDaysRemaining <= 7 ? 'red.5' : 'indigo.3'}>
-                {stats.ocspSigningCertDaysRemaining} days
-              </Text>
-            </Box>
-          </Tooltip>
-        )}
+              Sign Out
+            </Button>
+          </Box>
+        </Stack>
       </AppShell.Navbar>
 
       <AppShell.Main>
@@ -145,5 +197,23 @@ export default function App() {
         </Routes>
       </AppShell.Main>
     </AppShell>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </AuthProvider>
   )
 }

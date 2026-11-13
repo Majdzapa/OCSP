@@ -29,7 +29,7 @@ public class SecurityConfig {
     @Value("${admin.username:admin}")
     private String adminUsername;
 
-    @Value("${admin.password:admin123}")
+    @Value("${admin.password:changeme}")
     private String adminPassword;
 
     @Value("${admin.api-key:incert-admin-secret-key}")
@@ -71,6 +71,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Allow CORS pre-flight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                // Static web resources & landing page
+                .requestMatchers("/", "/index.html", "/login.html", "/favicon.ico", "/static/**").permitAll()
                 // RFC 6960 OCSP endpoints MUST be public for relying parties
                 .requestMatchers("/ocsp", "/ocsp/**").permitAll()
                 // Healthcheck endpoints

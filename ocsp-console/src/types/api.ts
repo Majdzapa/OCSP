@@ -109,3 +109,21 @@ export interface OcspTestResult {
   opensslCommand: string
   error?: string | null
 }
+
+export interface AuthUser {
+  authenticated: boolean
+  username: string
+  roles?: string[]
+  apiKey?: string
+  basicAuth?: string
+}
+
+export interface LoginResponse {
+  authenticated: boolean
+  username?: string
+  roles?: string[]
+  apiKey?: string
+  basicAuth?: string
+  authType?: string
+  message?: string
+}

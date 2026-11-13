@@ -7,25 +7,71 @@ import type {
   RenewRequestResponse,
   KmsCertificate,
   OcspTestResult,
+  AuthUser,
+  LoginResponse,
 } from '../types/api'
 
 // API client for ocsp-responder (protected with X-API-KEY or Basic Auth)
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api/v1/admin',
   headers: {
     'Content-Type': 'application/json',
-    'X-API-KEY': 'incert-admin-secret-key',
   },
 })
 
-// Attach bearer token if available in localStorage
-api.interceptors.request.use(async (config) => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+// Dynamically attach credentials from localStorage
+api.interceptors.request.use((config) => {
+  const apiKey = localStorage.getItem('ocsp_api_key')
+  const basicAuth = localStorage.getItem('ocsp_basic_auth')
+
+  if (apiKey) {
+    config.headers['X-API-KEY'] = apiKey
+  } else if (basicAuth) {
+    config.headers['Authorization'] = basicAuth
   }
   return config
 })
+
+// Auto logout on 401 Unauthorized
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('ocsp_auth_user')
+      localStorage.removeItem('ocsp_api_key')
+      localStorage.removeItem('ocsp_basic_auth')
+      window.dispatchEvent(new CustomEvent('ocsp:unauthorized'))
+    }
+    return Promise.reject(error)
+  }
+)
+
+// ---- Authentication ----
+const authApi = axios.create({
+  baseURL: '/api/v1/auth',
+  headers: { 'Content-Type': 'application/json' },
+})
+
+export const loginWithCredentials = async (username: string, password: string): Promise<LoginResponse> => {
+  const res = await authApi.post<LoginResponse>('/login', { username, password })
+  return res.data
+}
+
+export const loginWithApiKey = async (apiKey: string): Promise<LoginResponse> => {
+  const res = await authApi.post<LoginResponse>('/login', { apiKey })
+  return res.data
+}
+
+export const getAuthMe = async (): Promise<AuthUser> => {
+  const apiKey = localStorage.getItem('ocsp_api_key')
+  const basicAuth = localStorage.getItem('ocsp_basic_auth')
+  const headers: Record<string, string> = {}
+  if (apiKey) headers['X-API-KEY'] = apiKey
+  if (basicAuth) headers['Authorization'] = basicAuth
+
+  const res = await authApi.get<AuthUser>('/me', { headers })
+  return res.data
+}
 
 // API client for ocsp-client testing service
 const ocspClientApi = axios.create({
