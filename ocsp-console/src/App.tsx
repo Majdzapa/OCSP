@@ -181,6 +181,68 @@ function MainLayout() {
               </a>
             </Stack>
           </Box>
+
+          <Box mt="xs">
+            <Text fz="11px" fw={700} c="dimmed" tt="uppercase" px="xs" mb={4}>
+              Swagger / OpenAPI
+            </Text>
+            <Stack gap={2}>
+              <a
+                href="http://localhost:8080/swagger-ui/index.html"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-indigo-3)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>Responder Swagger (8080)</span>
+                <IconExternalLink size={14} />
+              </a>
+              <a
+                href="http://localhost:8082/swagger-ui/index.html"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-indigo-3)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>Client Swagger (8082)</span>
+                <IconExternalLink size={14} />
+              </a>
+              <a
+                href="http://localhost:8090/swagger-ui/index.html"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-indigo-3)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>KMS Swagger (8090)</span>
+                <IconExternalLink size={14} />
+              </a>
+            </Stack>
+          </Box>
         </Stack>
 
         {/* Footer: User profile & Signing cert expiry */}

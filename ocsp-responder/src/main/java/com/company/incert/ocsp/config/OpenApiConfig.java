@@ -43,3 +43,4 @@ public class OpenApiConfig {
                                 .description("Administrative API Key header (e.g. incert-admin-secret-key)")));
     }
 }
+

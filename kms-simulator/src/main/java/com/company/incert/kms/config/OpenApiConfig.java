@@ -27,3 +27,4 @@ public class OpenApiConfig {
                                 .url("https://www.apache.org/licenses/LICENSE-2.0")));
     }
 }
+
