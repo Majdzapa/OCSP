@@ -8,11 +8,11 @@ ARG VITE_AUTH_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_AUTH_BASE_URL=$VITE_AUTH_BASE_URL
 
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN yarn build
 
 # Production stage: lightweight Nginx Alpine
 FROM nginx:1.27-alpine
