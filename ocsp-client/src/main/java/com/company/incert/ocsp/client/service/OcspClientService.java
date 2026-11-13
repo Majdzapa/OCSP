@@ -82,10 +82,29 @@ public class OcspClientService {
         log.info("No CA file found in {} yet; client will accept caller-supplied issuer PEM", pkiDir);
     }
 
+    private String resolveEffectiveUrl(String requestedUrl) {
+        if (requestedUrl == null || requestedUrl.isBlank()) {
+            return defaultResponderUrl;
+        }
+        String trimmed = requestedUrl.trim();
+        // If caller passed a host URL containing localhost/127.0.0.1, but the client is inside Docker
+        // where defaultResponderUrl targets an internal service (e.g. ocsp-responder)
+        if (defaultResponderUrl != null && defaultResponderUrl.contains("ocsp-responder")) {
+            if (trimmed.contains("localhost:8080")) {
+                return trimmed.replace("localhost:8080", "ocsp-responder:8080");
+            }
+            if (trimmed.contains("127.0.0.1:8080")) {
+                return trimmed.replace("127.0.0.1:8080", "ocsp-responder:8080");
+            }
+        }
+        return trimmed;
+    }
+
     public OcspCheckResult check(OcspCheckRequest request) {
         List<Check> checks = new ArrayList<>();
-        String responderUrl = (request.responderUrl() != null && !request.responderUrl().isBlank())
-                ? request.responderUrl() : defaultResponderUrl;
+        String effectiveUrl = resolveEffectiveUrl(request.responderUrl());
+        String displayUrl = (request.responderUrl() != null && !request.responderUrl().isBlank())
+                ? request.responderUrl().trim() : defaultResponderUrl;
         String method = (request.method() != null && !request.method().isBlank())
                 ? request.method().toUpperCase() : "POST";
 
@@ -102,7 +121,7 @@ public class OcspClientService {
 
             if (issuerCert == null) {
                 checks.add(Check.fail("Issuer CA Resolution", "No issuer CA certificate provided and none found in " + pkiDir));
-                return errorResult(responderUrl, method, 0, 0, 0, 0, null, checks, "Missing Issuer CA Certificate");
+                return errorResult(displayUrl, method, 0, 0, 0, 0, null, checks, "Missing Issuer CA Certificate");
             }
             checks.add(Check.pass("Issuer CA Resolution", "Issuer: " + issuerCert.getSubjectX500Principal().getName()));
 
@@ -134,16 +153,16 @@ public class OcspClientService {
 
             // 3. Send over HTTP
             long start = System.nanoTime();
-            ResponseEntity<byte[]> responseEntity = sendRequest(responderUrl, method, derRequest, getPath);
+            ResponseEntity<byte[]> responseEntity = sendRequest(effectiveUrl, method, derRequest, getPath);
             double latencyMs = Math.round(((System.nanoTime() - start) / 1_000_000.0) * 100.0) / 100.0;
 
             int httpStatus = responseEntity.getStatusCode().value();
             byte[] derResponse = responseEntity.getBody();
             if (derResponse == null || derResponse.length == 0) {
                 checks.add(Check.fail("HTTP Delivery", "Responder returned empty body with HTTP " + httpStatus));
-                return errorResult(responderUrl, method, httpStatus, latencyMs, derRequest.length, 0, getPath, checks, "Empty response body");
+                return errorResult(displayUrl, method, httpStatus, latencyMs, derRequest.length, 0, getPath, checks, "Empty response body");
             }
-            checks.add(Check.pass("HTTP Delivery", method + " " + responderUrl + " returned HTTP " + httpStatus + " (" + derResponse.length + " bytes)"));
+            checks.add(Check.pass("HTTP Delivery", method + " " + displayUrl + " returned HTTP " + httpStatus + " (" + derResponse.length + " bytes)"));
 
             // 4. Parse OCSPResponse
             OCSPResp ocspResp;
@@ -151,14 +170,14 @@ public class OcspClientService {
                 ocspResp = new OCSPResp(derResponse);
             } catch (Exception e) {
                 checks.add(Check.fail("ASN.1 Parsing", "Failed to parse OCSPResponse DER: " + e.getMessage()));
-                return errorResult(responderUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "ASN.1 parse error");
+                return errorResult(displayUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "ASN.1 parse error");
             }
 
             String respStatusName = mapResponseStatus(ocspResp.getStatus());
             if (ocspResp.getStatus() != OCSPRespBuilder.SUCCESSFUL) {
                 checks.add(Check.fail("Response Status", "Responder returned error status: " + respStatusName));
                 return new OcspCheckResult(
-                        false, responderUrl, method, httpStatus, respStatusName, null,
+                        false, displayUrl, method, httpStatus, respStatusName, null,
                         null, null, target.serialHex(), null, null, null, null, null,
                         request.includeNonce(), nonceSentHex, null, latencyMs,
                         derRequest.length, derResponse.length, getPath, checks,
@@ -170,7 +189,7 @@ public class OcspClientService {
             BasicOCSPResp basicResp = (BasicOCSPResp) ocspResp.getResponseObject();
             if (basicResp == null) {
                 checks.add(Check.fail("BasicOCSPResponse", "Response contains no BasicOCSPResponse"));
-                return errorResult(responderUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "No BasicOCSPResponse");
+                return errorResult(displayUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "No BasicOCSPResponse");
             }
 
             // 5. Verify cryptographic signature & responder authorization
@@ -214,7 +233,7 @@ public class OcspClientService {
             SingleResp[] responses = basicResp.getResponses();
             if (responses == null || responses.length == 0) {
                 checks.add(Check.fail("CertID Match", "No SingleResp found in BasicOCSPResponse"));
-                return errorResult(responderUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "No SingleResp");
+                return errorResult(displayUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "No SingleResp");
             }
             SingleResp single = responses[0];
             checks.add(Check.pass("CertID Match", "Response matches target serial " + target.serialHex()));
@@ -246,7 +265,7 @@ public class OcspClientService {
 
             return new OcspCheckResult(
                     overallValid,
-                    responderUrl,
+                    displayUrl,
                     method,
                     httpStatus,
                     "SUCCESSFUL",
@@ -273,7 +292,7 @@ public class OcspClientService {
         } catch (Exception e) {
             log.error("OCSP client check failed: {}", e.getMessage(), e);
             checks.add(Check.fail("Client Execution", e.getClass().getSimpleName() + ": " + e.getMessage()));
-            return errorResult(responderUrl, method, 0, 0, 0, 0, null, checks, e.getMessage());
+            return errorResult(displayUrl, method, 0, 0, 0, 0, null, checks, e.getMessage());
         }
     }
 
