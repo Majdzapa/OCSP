@@ -1,18 +1,18 @@
-# Incert OCSP Subsystem — Architecture & Blueprint (v2.0)
+# Incert OCSP Subsystem — Architecture & Blueprint (v3.0)
 
-> **Version**: 2.0 · **Stack**: Java 21 · Spring Boot 3.3 · Spring Modulith 1.2 · Apache Kafka 3.8 (KRaft) · SoftHSM2 (PKCS#11) · MariaDB 10.11 · React 18
+> **Version**: 3.0 · **Architecture**: Layered Monolith · **Stack**: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
 
 ---
 
 ## Table of Contents
 1. [Target System Blueprint](#1-target-system-blueprint)
-2. [Sequence: OCSP Request Processing & PKCS#11 Signing](#2-sequence-ocsp-request-processing--pkcs11-signing)
-3. [Sequence: Certificate Revocation via Transactional Outbox & Kafka](#3-sequence-certificate-revocation-via-transactional-outbox--kafka)
-4. [Sequence: In-Process Cache Invalidation](#4-sequence-in-process-cache-invalidation)
+2. [Sequence: OCSP Request Processing & PKCS#11 Dynamic Signing](#2-sequence-ocsp-request-processing--pkcs11-dynamic-signing)
+3. [Sequence: Certificate Revocation via Transactional Outbox & RabbitMQ](#3-sequence-certificate-revocation-via-transactional-outbox--rabbitmq)
+4. [OCSP Client & Relying Party Verification Flow](#4-ocsp-client--relying-party-verification-flow)
 5. [Database Data Models (ERDs)](#5-database-data-models-erds)
-6. [Kafka Topology](#6-kafka-topology)
+6. [RabbitMQ Messaging Topology](#6-rabbitmq-messaging-topology)
 7. [Deployment Blueprint](#7-deployment-blueprint)
-8. [Security Boundary Diagram](#8-security-boundary-diagram)
+8. [Security & Cryptographic Boundary Diagram](#8-security--cryptographic-boundary-diagram)
 
 ---
 
@@ -20,261 +20,284 @@
 
 ```mermaid
 graph TB
-    subgraph EXTERNAL["External Relying Parties"]
+    subgraph EXTERNAL["External Relying Parties & Operators"]
         RP["🌐 Relying Parties<br/>(TLS Clients, Browsers, mTLS Gateways)"]
-        OPS["👤 Security Operators"]
+        CLIENT_USER["💻 Client Apps<br/>/api/v1/client/check"]
+        OPS["👤 Security Operators<br/>Mantine Web Console :3000"]
     end
 
-    subgraph KMS_ZONE["KMS Simulator Zone"]
-        KMS["kms-simulator<br/>:8090<br/>────────────────<br/>• Certificate Inventory<br/>• Test PKI Seeder<br/>• Scheduled Revocation Job<br/>• Transactional Outbox Relay"]
+    subgraph KMS_ZONE["KMS Simulator Zone (:8090)"]
+        KMS["kms-simulator<br/>────────────────<br/>• Certificate Inventory<br/>• Test PKI Seeder<br/>• Scheduled Revocation Job<br/>• Transactional Outbox Relay"]
         KMS_DB[("MariaDB<br/>schema: kms<br/>• certificate<br/>• outbox_event<br/>• job_run")]
         KMS --> KMS_DB
     end
 
-    subgraph BROKER["Messaging Layer"]
-        KAFKA["Apache Kafka (KRaft mode)<br/>────────────────<br/>Topic: incert.certificate.status.v1 (6 partitions)<br/>DLT: incert.certificate.status.v1.dlt<br/>Key: issuerKeyHash:serial"]
+    subgraph BROKER["Message Broker (RabbitMQ :5672 / :15672)"]
+        EXCHANGE["Direct Exchange: incert.certificate.status<br/>Routing Key: incert.certificate.status.v1"]
+        QUEUE["Durable Queue: ocsp.certificate.status"]
+        DLX["DLX: incert.certificate.status.dlx"]
+        DLQ["DLQ: ocsp.certificate.status.dlq"]
+        EXCHANGE --> QUEUE
+        QUEUE -.->|Dead-Letter| DLX --> DLQ
     end
 
-    subgraph OCSP_APP["OCSP Application (Spring Modulith — ocsp-app :8080)"]
-        subgraph MODULES["Internal Hexagonal Modules"]
-            RESP["responder<br/>POST /ocsp<br/>GET /ocsp/{b64}"]
-            STATUS["status<br/>Caffeine L1 Cache<br/>StatusLookup / StatusWriter"]
-            SIGN["signing<br/>Pkcs11OcspSigner<br/>SunPKCS11 Provider"]
-            SYNC["sync<br/>Kafka Consumer<br/>Idempotent Upsert"]
-            ADMIN["admin<br/>/api/v1/admin/**<br/>Dashboard, Cache, Revocation Feed"]
+    subgraph OCSP_MONOLITH["OCSP Monolith Application (ocsp-app :8080)"]
+        subgraph CONTROLLERS["Layered Controllers"]
+            RESP_CTRL["OcspResponderController<br/>POST /ocsp<br/>GET /ocsp/{base64url}"]
+            CLIENT_CTRL["OcspClientController<br/>POST /api/v1/client/check"]
+            ADMIN_CTRL["Admin / Feed / CertCheck Controllers<br/>/api/v1/admin/**"]
+        end
+
+        subgraph SERVICES["Business Services"]
+            RESP_SVC["OcspResponderService<br/>RFC 6960 parsing & response assembly"]
+            CLIENT_SVC["OcspClientService<br/>OCSP Client validator & verifier"]
+            STATUS_SVC["CertificateStatusService<br/>Direct DB lookups & sequence validation"]
+            LISTENER["CertificateStatusListener<br/>@RabbitListener consumer"]
+            RECON_SVC["ReconciliationService<br/>Startup sync from KMS snapshot"]
         end
 
         subgraph HSM_ZONE["SoftHSM2 Token (PKCS#11) 🔒"]
             TOKEN["SoftHSM2 Token: ocsp-signing<br/>• Delegated Signing Key (RSA 3072)<br/>• Non-extractable Private Key<br/>• Delegated OCSP Certificate"]
         end
 
-        RESP --> STATUS
-        RESP --> SIGN
-        SIGN --> TOKEN
-        SYNC --> STATUS
-        ADMIN --> STATUS
-        ADMIN --> SIGN
+        RESP_CTRL --> RESP_SVC
+        CLIENT_CTRL --> CLIENT_SVC
+        ADMIN_CTRL --> STATUS_SVC
+        ADMIN_CTRL --> RESP_SVC
+
+        RESP_SVC --> STATUS_SVC
+        RESP_SVC --> TOKEN
+        CLIENT_SVC --> RESP_CTRL
+        LISTENER --> STATUS_SVC
+        RECON_SVC --> STATUS_SVC
     end
 
-    subgraph DB["OCSP Data Layer"]
-        OCSP_DB[("MariaDB<br/>schema: ocsp<br/>• revocation_status<br/>• ocsp_response_cache<br/>• ocsp_signing_cert<br/>• kafka_consumer_offset")]
+    subgraph DB["OCSP Data Layer (:3307)"]
+        OCSP_DB[("MariaDB<br/>schema: ocsp<br/>• revocation_status<br/>• ocsp_signing_cert")]
+        STATUS_SVC --> OCSP_DB
     end
 
-    subgraph UI["Management Console"]
-        CONSOLE["ocsp-console<br/>:3000<br/>React 18 + Vite + Nginx Proxy"]
+    subgraph CONSOLE["Frontend Web Console (:3000)"]
+        REACT["Mantine UI v7 Console<br/>React 18 · Vite · Tabler Icons<br/>Dashboard, KMS Manager, Feed, Cert Checker"]
     end
 
-    RP -- "RFC 6960 DER Request" --> RESP
-    KMS -- "Transactional Outbox Events" --> KAFKA
-    KAFKA -- "Consumer group: ocsp-sync" --> SYNC
-    STATUS <--> OCSP_DB
-    OPS --> CONSOLE
-    CONSOLE -- "Reverse Proxy /api/v1/admin" --> ADMIN
-    CONSOLE -- "Reverse Proxy /api/kms" --> KMS
+    RP --> RESP_CTRL
+    CLIENT_USER --> CLIENT_CTRL
+    OPS --> REACT
+    REACT --> OCSP_MONOLITH
+    REACT --> KMS
+    KMS -- "Transactional Outbox Relay" --> EXCHANGE
+    QUEUE --> LISTENER
 ```
 
 ---
 
-## 2. Sequence: OCSP Request Processing & PKCS#11 Signing
+## 2. Sequence: OCSP Request Processing & PKCS#11 Dynamic Signing
+
+Every OCSP request (whether containing a nonce or nonce-free) queries the MariaDB `revocation_status` table directly and is dynamically signed by SoftHSM2 via PKCS#11. No caching layer is present, ensuring real-time revocation consistency and zero stale responses.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant RP as Relying Party (Client)
-    participant RESP as OcspController (responder)
-    participant SVC as OcspRequestHandlerService
-    participant L1 as Caffeine Status Cache
+    actor Client as Relying Party (OpenSSL / TLS Client)
+    participant Ctrl as OcspResponderController
+    participant Svc as OcspResponderService
+    participant DB_Svc as CertificateStatusService
     participant DB as MariaDB (revocation_status)
-    participant HSM as SoftHSM2 (PKCS#11 SunPKCS11)
+    participant Signer as Pkcs11OcspSigner
+    participant HSM as SoftHSM2 (/usr/lib/softhsm/libsofthsm2.so)
 
-    RP->>RESP: POST /ocsp (DER OCSPRequest)
-    RESP->>SVC: handle(derRequest)
-    SVC->>SVC: Parse DER & extract CertID (issuer hashes + serial) + Nonce
-    SVC->>L1: findStatus(certId)
+    Client->>Ctrl: POST /ocsp (DER application/ocsp-request)
+    Ctrl->>Svc: processOcspRequest(derBytes)
+    Svc->>Svc: Parse OCSPReq (RFC 6960), extract CertID & Nonce
+    Svc->>DB_Svc: getStatus(issuerKeyHash, serialNumber)
+    DB_Svc->>DB: SELECT * FROM revocation_status WHERE serial_number_hex=?
+    DB-->>DB_Svc: Return CertificateStatus (GOOD, REVOKED, or UNKNOWN)
+    DB_Svc-->>Svc: CertificateStatusResult
 
-    alt L1 Cache Hit
-        L1-->>SVC: CertificateStatusRecord
-    else L1 Cache Miss
-        SVC->>DB: SELECT from revocation_status
-        DB-->>SVC: CertificateStatusRecord
-        SVC->>L1: Warm cache
+    Svc->>Svc: Build BasicOCSPResponse (thisUpdate=now, nextUpdate=now+24h)
+    opt Nonce present in request
+        Svc->>Svc: Echo Nonce extension into SingleResponse (RFC 6960 §4.4.1)
     end
 
-    SVC->>HSM: Sign BasicOCSPResp via SunPKCS11 (delegated key)
-    Note over HSM: Private key never leaves SoftHSM token
-    HSM-->>SVC: Cryptographic Signature
-    SVC->>SVC: Assemble OCSPResponse + Nonce Echo
-    SVC-->>RESP: DER OCSPResponse bytes
-    RESP-->>RP: 200 OK (application/ocsp-response)
+    Svc->>Signer: sign(basicOcspRespBuilder)
+    Signer->>HSM: C_SignInit(CKM_SHA256_RSA_PKCS) + C_Sign()
+    HSM-->>Signer: Digital Signature Bytes
+    Signer-->>Svc: Signed BasicOCSPResp
+    Svc->>Svc: Wrap in OCSPResp (SUCCESSFUL)
+    Svc-->>Ctrl: byte[] (DER OCSPResp)
+    Ctrl-->>Client: 200 OK (Content-Type: application/ocsp-response)
 ```
 
 ---
 
-## 3. Sequence: Certificate Revocation via Transactional Outbox & Kafka
+## 3. Sequence: Certificate Revocation via Transactional Outbox & RabbitMQ
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant OP as Operator / Scheduled Job
+    actor Admin as Operator / Scheduled Job
     participant KMS as kms-simulator
-    participant KDB as MariaDB (schema: kms)
-    participant RELAY as KafkaOutboxRelayAdapter
-    participant KAFKA as Kafka Topic (incert.certificate.status.v1)
-    participant SYNC as CertificateStatusKafkaListener (ocsp-app)
-    participant S_SVC as StatusChangeApplicationService
-    participant O_DB as MariaDB (schema: ocsp)
-    participant CACHE as Caffeine L1 Cache
+    participant KMS_DB as MariaDB (schema: kms)
+    participant Relay as RabbitMqOutboxRelayAdapter
+    participant Rabbit as RabbitMQ (Exchange: incert.certificate.status)
+    participant Listener as CertificateStatusListener (ocsp-app)
+    participant Svc as CertificateStatusService
+    participant OCSP_DB as MariaDB (schema: ocsp)
 
-    OP->>KMS: Revoke certificate (serial, reason)
-    Note over KMS,KDB: Atomic DB Transaction:
-    KMS->>KDB: UPDATE certificate SET status='REVOKED', sequence = sequence + 1
-    KMS->>KDB: INSERT into outbox_event (eventId, key, payload, sent=false)
-    KDB-->>KMS: Transaction Committed
+    Admin->>KMS: POST /kms/certificates/{serial}/revoke (reason)
+    critical Atomic DB Transaction
+        KMS->>KMS_DB: UPDATE certificate SET status='REVOKED', sequence=sequence+1
+        KMS->>KMS_DB: INSERT INTO outbox_event (event_type, payload, sent=0)
+    end
+    KMS-->>Admin: 200 OK (Certificate Revoked)
 
     loop Every 500ms
-        RELAY->>KDB: SELECT unsent events
-        RELAY->>KAFKA: Publish with idempotent producer (acks=all)
-        RELAY->>KDB: UPDATE outbox_event SET sent=true
+        Relay->>KMS_DB: SELECT * FROM outbox_event WHERE sent=0 LIMIT 50
+        KMS_DB-->>Relay: Outbox records
+        Relay->>Rabbit: amqpTemplate.convertAndSend(exchange, routingKey, jsonPayload)
+        Rabbit-->>Relay: Broker ACK
+        Relay->>KMS_DB: UPDATE outbox_event SET sent=1 WHERE id=?
     end
 
-    KAFKA->>SYNC: Deliver message (key = issuerKeyHash:serial)
-    SYNC->>S_SVC: apply(StatusChangeCommand)
-    S_SVC->>O_DB: Idempotent upsert into revocation_status (sequence check)
-    S_SVC->>CACHE: Direct In-Process Eviction: evict(certId)
-    SYNC->>KAFKA: Manual Offset Commit
+    Rabbit->>Listener: Deliver to queue 'ocsp.certificate.status'
+    Listener->>Svc: applyStatusEvent(CertificateStatusEvent)
+    Svc->>OCSP_DB: SELECT sequence FROM revocation_status WHERE serial=?
+    opt In-order sequence (event.sequence > db.sequence)
+        Svc->>OCSP_DB: INSERT/UPDATE revocation_status (status, reason, sequence)
+    end
+    Listener->>Rabbit: Auto-ACK (or Reject/Dead-Letter to DLQ on poison message)
 ```
 
 ---
 
-## 4. Sequence: In-Process Cache Invalidation
+## 4. OCSP Client & Relying Party Verification Flow
 
-Because the OCSP responder and sync worker are merged into a single modular monolith (`ocsp-app`), cache invalidation no longer requires a message broker roundtrip. When a status update is committed by `sync`, the L1 Caffeine cache in `status` is evicted directly in-memory via the `CacheEvictor` port interface.
+The monolith includes a built-in RFC 6960 OCSP Client service (`OcspClientService`) accessible via `POST /api/v1/client/check`:
+
+1. **Request Construction**: Builds an RFC 6960 `OCSPReq` using Bouncy Castle, creating the target `CertID` (SHA-1 over Issuer Name and Public Key). Generates an optional cryptographically secure random nonce.
+2. **HTTP Dispatch**: Transports the DER request via HTTP `POST` or `GET` (base64url) to the OCSP responder endpoint.
+3. **Response Parsing & Status Validation**: Decodes the `OCSPResp` and validates `responseStatus == SUCCESSFUL`.
+4. **Signature Verification**: Verifies the RSA-SHA256 signature against the responder's public key certificate.
+5. **Delegated Signer Authorization**: Enforces RFC 6960 §4.2.2.2 (responder cert must contain `id-kp-OCSPSigning` Extended Key Usage and be issued by the target CA).
+6. **Freshness & Nonce Matching**: Ensures `thisUpdate <= now <= nextUpdate` and verifies that the echoed nonce matches the transmitted nonce.
 
 ---
 
 ## 5. Database Data Models (ERDs)
 
-### KMS Schema (`kms`)
-```
-+-----------------------------------------------------------+
-|                        certificate                        |
-+-----------------------------------------------------------+
-| id                  BIGINT UNSIGNED PK AUTO_INCREMENT    |
-| serial_number_hex   VARCHAR(128) UNIQUE                  |
-| issuer_dn           VARCHAR(512)                          |
-| issuer_key_hash_hex VARCHAR(40)                           |
-| issuer_name_hash_hex VARCHAR(40)                          |
-| subject_dn          VARCHAR(512)                          |
-| not_before          DATETIME(3)                           |
-| not_after           DATETIME(3)                           |
-| status              ENUM('GOOD','REVOKED')                |
-| revocation_time     DATETIME(3) NULL                      |
-| revocation_reason   VARCHAR(30) NULL                      |
-| pem_encoded         MEDIUMTEXT                            |
-| sequence            BIGINT NOT NULL DEFAULT 0             |
-| updated_at          DATETIME(3)                           |
-+-----------------------------------------------------------+
+```mermaid
+erDiagram
+    %% KMS Schema
+    KMS_CERTIFICATE {
+        VARCHAR(64) serial_number_hex PK
+        VARCHAR(256) subject_dn
+        VARCHAR(256) issuer_dn
+        VARCHAR(64) issuer_key_hash_hex
+        VARCHAR(64) issuer_name_hash_hex
+        DATETIME not_before
+        DATETIME not_after
+        VARCHAR(16) status
+        VARCHAR(32) revocation_reason
+        DATETIME revocation_time
+        BIGINT sequence
+        TEXT pem_encoded
+    }
 
-+-----------------------------------------------------------+
-|                       outbox_event                        |
-+-----------------------------------------------------------+
-| event_id            VARCHAR(64) PK                        |
-| topic               VARCHAR(128)                          |
-| kafka_key           VARCHAR(256)                          |
-| payload             TEXT                                  |
-| created_at          DATETIME(3)                           |
-| sent_at             DATETIME(3) NULL                      |
-| sent                BOOLEAN NOT NULL DEFAULT FALSE        |
-+-----------------------------------------------------------+
-```
+    KMS_OUTBOX_EVENT {
+        VARCHAR(36) id PK
+        VARCHAR(64) event_type
+        VARCHAR(256) kafka_key
+        LONGTEXT payload
+        DATETIME created_at
+        TINYINT sent
+    }
 
-### OCSP Schema (`ocsp`)
-```
-+-----------------------------------------------------------+
-|                     revocation_status                     |
-+-----------------------------------------------------------+
-| id                  BIGINT UNSIGNED PK AUTO_INCREMENT    |
-| issuer_name_hash    BINARY(20) NOT NULL                   |
-| issuer_key_hash     BINARY(20) NOT NULL                   |
-| serial_number       VARBINARY(64) NOT NULL                |
-| status              ENUM('GOOD','REVOKED','UNKNOWN')      |
-| revocation_time     DATETIME(3) NULL                      |
-| revocation_reason   VARCHAR(30) NULL                      |
-| this_update         DATETIME(3)                           |
-| updated_at          DATETIME(3)                           |
-| source_event_id     VARCHAR(64) UNIQUE                    |
-| sequence            BIGINT NOT NULL DEFAULT 0             |
-| UQ (issuer_name_hash, issuer_key_hash, serial_number)     |
-+-----------------------------------------------------------+
+    %% OCSP Subsystem Schema
+    OCSP_REVOCATION_STATUS {
+        VARCHAR(64) serial_number_hex PK
+        VARCHAR(64) issuer_key_hash_hex
+        VARCHAR(16) status
+        VARCHAR(32) revocation_reason
+        DATETIME revocation_time
+        BIGINT sequence
+        DATETIME this_update
+        DATETIME next_update
+        DATETIME updated_at
+    }
 
-+-----------------------------------------------------------+
-|                    ocsp_signing_cert                      |
-+-----------------------------------------------------------+
-| id                  BIGINT UNSIGNED PK AUTO_INCREMENT    |
-| serial_number       VARBINARY(64)                         |
-| not_before          DATETIME(3)                           |
-| not_after           DATETIME(3)                           |
-| is_active           BOOLEAN NOT NULL DEFAULT TRUE         |
-| hsm_key_label       VARCHAR(128)                          |
-| created_at          DATETIME(3)                           |
-+-----------------------------------------------------------+
-
-+-----------------------------------------------------------+
-|                   ocsp_response_cache (L2)                |
-+-----------------------------------------------------------+
-| cache_key           VARCHAR(128) PK (hex issuerKeyHash:sn)|
-| der_response        LONGBLOB NOT NULL (pre-signed response|
-| this_update         DATETIME(3)                           |
-| next_update         DATETIME(3)                           |
-| created_at          DATETIME(3)                           |
-| INDEX idx_next_update (next_update)                       |
-+-----------------------------------------------------------+
+    OCSP_SIGNING_CERT {
+        VARCHAR(64) serial_number_hex PK
+        VARCHAR(256) key_reference
+        DATETIME not_before
+        DATETIME not_after
+        TINYINT active
+        TEXT pem_encoded
+    }
 ```
 
 ---
 
-## 6. Kafka Topology
+## 6. RabbitMQ Messaging Topology
 
-- **Topic**: `incert.certificate.status.v1`
-  - Partitions: 6
-  - Key: `issuerKeyHash:serialNumber` (guarantees strict per-certificate ordering)
-  - Retention: 7 days
-- **Dead Letter Topic**: `incert.certificate.status.v1.dlt`
-  - Partitions: 1
-  - Purpose: Poison message quarantine with header metadata
+| Component | Identifier | Details |
+|---|---|---|
+| **Direct Exchange** | `incert.certificate.status` | Durable direct exchange for PKI events |
+| **Routing Key** | `incert.certificate.status.v1` | Routing key for status update events |
+| **Durable Queue** | `ocsp.certificate.status` | Consumer queue with DLX bound |
+| **Dead-Letter Exchange (DLX)** | `incert.certificate.status.dlx` | Direct exchange for rejected/poison messages |
+| **Dead-Letter Queue (DLQ)** | `ocsp.certificate.status.dlq` | Durable queue capturing failed consumer deliveries |
 
 ---
 
 ## 7. Deployment Blueprint
 
-The target deployment operates 5 Docker containers:
-1. `ocsp-mariadb`: Hosts databases `ocsp` and `kms` on port 3307/3306.
-2. `ocsp-kafka`: Apache Kafka in KRaft mode (no ZooKeeper) on port 9092.
-3. `ocsp-kms`: KMS simulator running seed PKI, REST management, and outbox relay on port 8090.
-4. `ocsp-app`: Modulith containing responder, status cache, PKCS#11 signer, and sync consumer on port 8080.
-5. `ocsp-console`: React 18 admin interface served via Nginx reverse proxy on port 3000.
+```mermaid
+graph LR
+    subgraph DOCKER_COMPOSE["Docker Compose Environment"]
+        MARIADB["ocsp-mariadb<br/>mariadb:10.11<br/>Port 3307"]
+        RABBIT["ocsp-rabbitmq<br/>rabbitmq:3.13-management<br/>Ports 5672, 15672"]
+        KMS_SVC["ocsp-kms<br/>kms-simulator:local<br/>Port 8090"]
+        APP_SVC["ocsp-app<br/>ocsp/app:local<br/>Port 8080"]
+        WEB_SVC["ocsp-console<br/>ocsp/console:local<br/>Port 3000"]
+    end
+
+    APP_SVC --> MARIADB
+    APP_SVC --> RABBIT
+    KMS_SVC --> MARIADB
+    KMS_SVC --> RABBIT
+    APP_SVC --> KMS_SVC
+    WEB_SVC --> APP_SVC
+    WEB_SVC --> KMS_SVC
+```
 
 ---
 
-## 8. Security Boundary Diagram
+## 8. Security & Cryptographic Boundary Diagram
 
 ```mermaid
-graph LR
-    subgraph PUBLIC["Public Zone"]
-        EP["/ocsp Endpoint<br/>Port 8080"]
-    end
-
-    subgraph APP["ocsp-app Container"]
-        subgraph HSM["HSM Boundary 🔒"]
-            KEY["SoftHSM2 Token<br/>RSA 3072 Key Pair<br/>CKA_EXTRACTABLE=false<br/>Private key NEVER leaves token"]
+graph TD
+    subgraph CONTAINER["ocsp-app Container Sandbox Boundary"]
+        subgraph PROCESS["JVM (Java 21)"]
+            APP_CODE["Monolith Code (Responder + Client + Admin)"]
+            SUN_PKCS11["SunPKCS11 Provider<br/>sun.security.pkcs11.SunPKCS11"]
         end
-        SIGN["Pkcs11OcspSigner<br/>SunPKCS11 Provider"]
-        SIGN --> KEY
+
+        subgraph SOFTHSM["SoftHSM2 Security Module"]
+            LIB["libsofthsm2.so"]
+            TOKEN_STORE["Encrypted Token Storage: /var/lib/softhsm/tokens"]
+            PRIV_KEY["🔒 Delegated OCSP Private Key (RSA 3072)<br/>CKA_PRIVATE = TRUE<br/>CKA_SENSITIVE = TRUE<br/>CKA_EXTRACTABLE = FALSE"]
+        end
+
+        APP_CODE --> SUN_PKCS11
+        SUN_PKCS11 --> LIB
+        LIB --> TOKEN_STORE
+        TOKEN_STORE --- PRIV_KEY
     end
 
-    subgraph ADMIN_ZONE["Internal Admin Zone"]
-        ADMIN_API["/api/v1/admin/**<br/>OAuth2 / OIDC Protected"]
-    end
-
-    EP --> SIGN
+    style PRIV_KEY fill:#ff4d4f,stroke:#fff,stroke-width:2px,color:#fff
+    style TOKEN_STORE fill:#391085,stroke:#722ed1,stroke-width:1px,color:#fff
 ```
+
+- **Non-Extractable Keys**: The OCSP signing private key is generated directly inside the SoftHSM2 token (`CKA_EXTRACTABLE = FALSE`). Private key material never exists in application memory or container filesystem.
+- **Audit & Protection**: Any compromised certificate is revoked in KMS, persisted via Transactional Outbox, published to RabbitMQ, and updated in MariaDB within milliseconds.

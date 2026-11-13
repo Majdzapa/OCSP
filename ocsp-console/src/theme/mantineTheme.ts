@@ -24,3 +24,4 @@ export const mantineTheme = createTheme({
     xl: '0 12px 40px rgba(0, 0, 0, 0.6)',
   },
 })
+

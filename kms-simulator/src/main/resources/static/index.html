@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KMS Certificate Manager — Incert PKI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #0f172a;
+      --card-border: #1e293b;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --teal: #10b981;
+      --red: #f43f5e;
+      --yellow: #f59e0b;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 1200px;
+    }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-teal { background: rgba(16, 185, 129, 0.15); color: var(--teal); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-red { background: rgba(244, 63, 94, 0.15); color: var(--red); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-yellow { background: rgba(245, 158, 11, 0.15); color: var(--yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text);
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: #1e293b; }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border: none;
+      color: white;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger {
+      border-color: rgba(244, 63, 94, 0.4);
+      color: var(--red);
+      background: rgba(244, 63, 94, 0.08);
+    }
+    .btn-danger:hover { background: rgba(244, 63, 94, 0.2); }
+    .btn-warning {
+      background: var(--yellow);
+      border: none;
+      color: #000;
+      font-weight: 700;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .grid { display: grid; gap: 16px; }
+    .grid-5 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .kpi-title { font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; font-weight: 700; }
+    .kpi-val { font-size: 1.6rem; font-weight: 700; }
+    .search-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    input, select {
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-size: 0.85rem;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+    th {
+      color: var(--text-dim);
+      font-weight: 600;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .serial-mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #a5b4fc;
+      cursor: pointer;
+    }
+    .alert-banner {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #c7d2fe;
+    }
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    .modal-box {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1><span>🔐</span> KMS Certificate Manager</h1>
+        <p style="color: var(--text-dim); font-size: 0.85rem; mt: 4px;">
+          Source of truth certificate inventory — Incert Test PKI simulation with Transactional Outbox event publishing
+        </p>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn" onclick="fetchCertificates()">🔄 Refresh</button>
+        <button class="btn btn-primary" onclick="triggerRevocationJob()">⚡ Run Revocation Job</button>
+      </div>
+    </header>
+
+    <div class="alert-banner">
+      <span>📡</span>
+      <div>
+        <strong>Transactional Outbox Active:</strong> Any revocation or un-revocation event is saved atomically to <code>outbox_event</code> and asynchronously published to RabbitMQ exchange <code>incert.certificate.status</code>.
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="grid grid-5" style="margin-bottom: 20px;">
+      <div class="card" style="padding: 16px; margin-bottom: 0;">
+        <div class="kpi-title">Total Certificates</div>
+        <div class="kpi-val" id="metricTotal">--</div>
+      </div>
+      <div class="card" style="padding: 16px; margin-bottom: 0;">
+        <div class="kpi-title">Good / Active</div>
+        <div class="kpi-val" id="metricGood" style="color: var(--teal);">--</div>
+      </div>
+      <div class="card" style="padding: 16px; margin-bottom: 0;">
+        <div class="kpi-title">Revoked (Total)</div>
+        <div class="kpi-val" id="metricRevoked" style="color: var(--red);">--</div>
+      </div>
+      <div class="card" style="padding: 16px; margin-bottom: 0;">
+        <div class="kpi-title">On Hold (Suspended)</div>
+        <div class="kpi-val" id="metricHold" style="color: var(--yellow);">--</div>
+      </div>
+      <div class="card" style="padding: 16px; margin-bottom: 0;">
+        <div class="kpi-title">Near Expiry (≤30d)</div>
+        <div class="kpi-val" id="metricExpiring" style="color: var(--blue);">--</div>
+      </div>
+    </div>
+
+    <!-- Search & Filter Card -->
+    <div class="card" style="padding: 14px 20px;">
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="Search by Serial Hex or Subject DN..." style="flex: 1; min-width: 250px;" oninput="applyFilters()">
+        <select id="statusFilter" onchange="applyFilters()">
+          <option value="ALL">All Certificates</option>
+          <option value="GOOD">Good / Active</option>
+          <option value="REVOKED">Revoked</option>
+          <option value="HOLD">On Hold / Suspended</option>
+        </select>
+        <span id="countText" style="font-size: 0.8rem; color: var(--text-dim);">Showing -- of --</span>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table id="certTable">
+        <thead>
+          <tr>
+            <th>Serial Number</th>
+            <th>Subject DN</th>
+            <th>Validity Window</th>
+            <th>Status / Reason</th>
+            <th style="width: 70px;">Seq</th>
+            <th style="text-align: right; width: 170px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-dim);">Loading certificates...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Revoke Modal -->
+  <div id="revokeModal" class="modal-backdrop">
+    <div class="modal-box">
+      <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 12px;">Revoke Certificate (RFC 5280)</h2>
+      <div style="background: #080d1a; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem;">
+        <div style="color: var(--text-dim); font-size: 0.75rem;">TARGET CERTIFICATE:</div>
+        <div id="revokeModalSubject" style="font-weight: 600; margin: 2px 0;">--</div>
+        <div id="revokeModalSerial" class="serial-mono" style="cursor: default;">--</div>
+      </div>
+
+      <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 6px;">
+        REVOCATION REASON (RFC 5280)
+      </label>
+      <select id="revokeReasonSelect" style="width: 100%; margin-bottom: 20px;">
+        <option value="KEY_COMPROMISE">Key Compromise (1) — Private key compromised or suspected compromised</option>
+        <option value="CA_COMPROMISE">CA Compromise (2) — CA private key compromised</option>
+        <option value="AFFILIATION_CHANGED">Affiliation Changed (3) — Subject identity / organization changed</option>
+        <option value="SUPERSEDED">Superseded (4) — Replaced by a new certificate</option>
+        <option value="CESSATION_OF_OPERATION">Cessation of Operation (5) — Service ceased operation</option>
+        <option value="CERTIFICATE_HOLD">Certificate Hold / Suspension (6) — Temporary suspension (can be unrevoked)</option>
+        <option value="PRIVILEGE_WITHDRAWN">Privilege Withdrawn (9) — Credentials revoked</option>
+        <option value="AA_COMPROMISE">AA Compromise (10) — Attribute Authority compromised</option>
+        <option value="UNSPECIFIED">Unspecified (0) — No specific reason given</option>
+      </select>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn" onclick="closeRevokeModal()">Cancel</button>
+        <button class="btn btn-primary" style="background: var(--red);" onclick="confirmRevocation()">Confirm Revocation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Details & PEM Modal -->
+  <div id="detailsModal" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 700px;">
+      <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 12px;">Certificate Details &amp; PEM</h2>
+      <div id="detailsContent" style="font-size: 0.82rem; margin-bottom: 16px;"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn" onclick="copyPem()" id="btnCopyPem">Copy PEM</button>
+        <button class="btn" onclick="downloadPemFile()">Download .crt</button>
+        <button class="btn" onclick="closeDetailsModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let certificates = [];
+    let targetRevokeCert = null;
+    let targetDetailsCert = null;
+
+    async function fetchCertificates() {
+      try {
+        const res = await fetch('/kms/certificates');
+        certificates = await res.json();
+        updateMetrics();
+        applyFilters();
+      } catch (err) {
+        document.getElementById('tableBody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--red); padding: 40px;">Failed to load certificates: ${err.message}</td></tr>`;
+      }
+    }
+
+    function updateMetrics() {
+      let good = 0, revoked = 0, hold = 0, expiring = 0;
+      const now = new Date();
+      certificates.forEach(c => {
+        if (c.status === 'GOOD') good++;
+        else if (c.status === 'REVOKED') {
+          revoked++;
+          if (c.revocationReason === 'CERTIFICATE_HOLD') hold++;
+        }
+        try {
+          const diffDays = Math.ceil((new Date(c.notAfter) - now) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 30 && diffDays >= 0) expiring++;
+        } catch (_) {}
+      });
+      document.getElementById('metricTotal').innerText = certificates.length;
+      document.getElementById('metricGood').innerText = good;
+      document.getElementById('metricRevoked').innerText = revoked;
+      document.getElementById('metricHold').innerText = hold;
+      document.getElementById('metricExpiring').innerText = expiring;
+    }
+
+    function applyFilters() {
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const st = document.getElementById('statusFilter').value;
+
+      const filtered = certificates.filter(c => {
+        if (st === 'GOOD' && c.status !== 'GOOD') return false;
+        if (st === 'REVOKED' && c.status !== 'REVOKED') return false;
+        if (st === 'HOLD' && !(c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD')) return false;
+
+        if (q) {
+          const mSerial = c.serialNumberHex.toLowerCase().includes(q);
+          const mSubject = c.subjectDn.toLowerCase().includes(q);
+          if (!mSerial && !mSubject) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('countText').innerText = `Showing ${filtered.length} of ${certificates.length}`;
+      renderTable(filtered);
+    }
+
+    function renderTable(list) {
+      const tb = document.getElementById('tableBody');
+      if (list.length === 0) {
+        tb.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-dim);">No certificates found.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = list.map(c => {
+        const isGood = c.status === 'GOOD';
+        const isHold = c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD';
+        const serialShort = c.serialNumberHex.length > 16 
+          ? c.serialNumberHex.substring(0, 8) + '...' + c.serialNumberHex.substring(c.serialNumberHex.length - 8)
+          : c.serialNumberHex;
+
+        let statusBadge = isGood
+          ? `<span class="badge badge-teal">GOOD</span>`
+          : isHold
+          ? `<span class="badge badge-yellow">ON HOLD</span>`
+          : `<span class="badge badge-red">REVOKED</span>`;
+
+        let reasonText = (!isGood && c.revocationReason) ? `<div style="font-size: 0.72rem; color: var(--red); margin-top: 3px;">${c.revocationReason}</div>` : '';
+
+        let actions = '';
+        if (isGood) {
+          actions += `<button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="openRevokeModal('${c.serialNumberHex}')">Revoke</button>`;
+        }
+        if (isHold) {
+          actions += `<button class="btn btn-warning" style="padding: 4px 10px; font-size: 0.75rem;" onclick="unrevoke('${c.serialNumberHex}')">Release Hold</button>`;
+        }
+        actions += ` <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openDetails('${c.serialNumberHex}')">👁️</button>`;
+
+        return `
+          <tr>
+            <td>
+              <span class="serial-mono" onclick="openDetails('${c.serialNumberHex}')">${serialShort}</span>
+            </td>
+            <td>
+              <div style="font-weight: 500;">${escapeHtml(c.subjectDn)}</div>
+              <div style="font-size: 0.72rem; color: var(--text-dim);">Issuer: ${escapeHtml(c.issuerDn)}</div>
+            </td>
+            <td style="font-size: 0.78rem; color: var(--text-dim);">
+              ${c.notBefore?.substring(0, 10)} &rarr; ${c.notAfter?.substring(0, 10)}
+            </td>
+            <td>${statusBadge}${reasonText}</td>
+            <td><span class="badge" style="background:#1e293b; color:var(--text-dim);">v${c.sequence}</span></td>
+            <td style="text-align: right;">${actions}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openRevokeModal(serial) {
+      targetRevokeCert = certificates.find(c => c.serialNumberHex === serial);
+      if (!targetRevokeCert) return;
+      document.getElementById('revokeModalSubject').innerText = targetRevokeCert.subjectDn;
+      document.getElementById('revokeModalSerial').innerText = targetRevokeCert.serialNumberHex;
+      document.getElementById('revokeModal').style.display = 'flex';
+    }
+
+    function closeRevokeModal() {
+      document.getElementById('revokeModal').style.display = 'none';
+      targetRevokeCert = null;
+    }
+
+    async function confirmRevocation() {
+      if (!targetRevokeCert) return;
+      const reason = document.getElementById('revokeReasonSelect').value;
+      try {
+        const res = await fetch(`/kms/certificates/${targetRevokeCert.serialNumberHex}/revoke?reason=${reason}`, {
+          method: 'POST'
+        });
+        if (!res.ok) throw new Error(await res.text());
+        closeRevokeModal();
+        fetchCertificates();
+      } catch (err) {
+        alert('Revocation failed: ' + err.message);
+      }
+    }
+
+    async function unrevoke(serial) {
+      try {
+        const res = await fetch(`/kms/certificates/${serial}/unrevoke`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        fetchCertificates();
+      } catch (err) {
+        alert('Unrevoke failed: ' + err.message);
+      }
+    }
+
+    async function triggerRevocationJob() {
+      try {
+        await fetch('/kms/jobs/revocation/run', { method: 'POST' });
+        setTimeout(fetchCertificates, 600);
+      } catch (err) {
+        alert('Job execution failed: ' + err.message);
+      }
+    }
+
+    function openDetails(serial) {
+      targetDetailsCert = certificates.find(c => c.serialNumberHex === serial);
+      if (!targetDetailsCert) return;
+
+      const html = `
+        <div style="background: #080d1a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+          <div><strong>Serial:</strong> <span class="serial-mono">${targetDetailsCert.serialNumberHex}</span></div>
+          <div style="margin-top: 4px;"><strong>Subject DN:</strong> ${escapeHtml(targetDetailsCert.subjectDn)}</div>
+          <div style="margin-top: 4px;"><strong>Issuer DN:</strong> ${escapeHtml(targetDetailsCert.issuerDn)}</div>
+          <div style="margin-top: 4px;"><strong>Status:</strong> ${targetDetailsCert.status} ${targetDetailsCert.revocationReason ? '(' + targetDetailsCert.revocationReason + ')' : ''}</div>
+          <div style="margin-top: 4px;"><strong>Sequence:</strong> v${targetDetailsCert.sequence}</div>
+        </div>
+        <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 4px;">PEM CERTIFICATE:</div>
+        <pre style="background: #050811; padding: 12px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #a5b4fc; max-height: 200px; overflow-y: auto; white-space: pre-wrap;">${targetDetailsCert.pemEncoded}</pre>
+      `;
+      document.getElementById('detailsContent').innerHTML = html;
+      document.getElementById('detailsModal').style.display = 'flex';
+    }
+
+    function closeDetailsModal() {
+      document.getElementById('detailsModal').style.display = 'none';
+      targetDetailsCert = null;
+    }
+
+    function copyPem() {
+      if (!targetDetailsCert) return;
+      navigator.clipboard.writeText(targetDetailsCert.pemEncoded);
+      const btn = document.getElementById('btnCopyPem');
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy PEM', 1500);
+    }
+
+    function downloadPemFile() {
+      if (!targetDetailsCert) return;
+      const blob = new Blob([targetDetailsCert.pemEncoded], { type: 'application/x-x509-ca-cert' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `cert-${targetDetailsCert.serialNumberHex.substring(0, 8)}.crt`;
+      a.click();
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    fetchCertificates();
+  </script>
+</body>
+</html>

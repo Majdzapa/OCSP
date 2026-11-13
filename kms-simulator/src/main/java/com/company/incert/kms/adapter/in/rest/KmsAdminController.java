@@ -26,6 +26,7 @@ import java.util.Map;
 @RequestMapping("/kms")
 @Profile("dev")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class KmsAdminController {
 
     private final RevokeCertificateUseCase revokeUseCase;

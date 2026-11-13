@@ -93,19 +93,19 @@ export interface OcspTestResult {
   cacheKey?: string
   method: string
   includeNonce: boolean
-  nonceSent: string
-  nonceEchoed: string
-  nonceMatched: boolean
-  cacheVerdict: string
-  l2Hit: boolean
+  nonceSent?: string | null
+  nonceEchoed?: string | null
+  nonceMatched?: boolean
+  cacheVerdict?: string
+  l2Hit?: boolean
   latencyMs: number
-  certStatus: 'GOOD' | 'REVOKED' | 'UNKNOWN'
-  revocationTime: string
-  revocationReason: string
-  thisUpdate: string
-  nextUpdate: string
-  responseSizeBytes: number
-  base64UrlPath: string
+  certStatus: 'GOOD' | 'REVOKED' | 'UNKNOWN' | string
+  revocationTime?: string | null
+  revocationReason?: string | null
+  thisUpdate?: string | null
+  nextUpdate?: string | null
+  responseSizeBytes?: number
+  base64UrlPath?: string
   opensslCommand: string
-  error?: string
+  error?: string | null
 }

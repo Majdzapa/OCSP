@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCSP Client — RFC 6960 Test Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #0f172a;
+      --card-border: #1e293b;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --teal: #10b981;
+      --red: #f43f5e;
+      --yellow: #f59e0b;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 960px;
+    }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-teal { background: rgba(16, 185, 129, 0.15); color: var(--teal); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-red { background: rgba(244, 63, 94, 0.15); color: var(--red); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-yellow { background: rgba(245, 158, 11, 0.15); color: var(--yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .grid { display: grid; gap: 16px; }
+    @media (min-width: 768px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    input[type="text"] {
+      width: 100%;
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: 'JetBrains Mono', monospace;
+      outline: none;
+      transition: border 0.15s ease;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .preset-btn {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+    .options-box {
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155;
+      transition: .3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(20px); }
+    .method-selector {
+      display: flex;
+      gap: 8px;
+    }
+    .method-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      background: #0f172a;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .method-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .btn-submit {
+      width: 100%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: opacity 0.2s ease;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-submit:hover { opacity: 0.9; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .kpi-card {
+      background: #080d1a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .kpi-title { font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+    .kpi-val { font-size: 1.1rem; font-weight: 700; }
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #1e293b;
+      font-size: 0.85rem;
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { color: var(--text-dim); }
+    .detail-val { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #a5b4fc; word-break: break-all; }
+    .cmd-box {
+      background: #050811;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #818cf8;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 8px;
+      position: relative;
+    }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>
+          <span>⚡</span> Incert OCSP Client
+        </h1>
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 4px;">
+          Standalone RFC 6960 Client &amp; Verification Console — Nonce vs Nonce-Free testing
+        </p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <span class="badge badge-teal">RFC 6960</span>
+        <span class="badge badge-indigo">RFC 8954 Nonce</span>
+        <span class="badge badge-yellow">SoftHSM2 PKCS#11</span>
+      </div>
+    </header>
+
+    <!-- Request Form -->
+    <div class="card">
+      <h2 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 16px;">Configure OCSP Request</h2>
+      
+      <div class="grid" style="margin-bottom: 16px;">
+        <div>
+          <label for="serialInput">Certificate Serial Number (hex)</label>
+          <input type="text" id="serialInput" value="00b59d41baf78afe0de1bbe7ae28c0450f" placeholder="e.g. 00b59d41baf78afe0de1bbe7ae28c0450f">
+          <div class="presets">
+            <span style="font-size: 0.72rem; color: var(--text-dim); line-height: 24px;">Presets:</span>
+            <button class="preset-btn" onclick="setSerial('00b59d41baf78afe0de1bbe7ae28c0450f')">ee-01 (GOOD)</button>
+            <button class="preset-btn" onclick="setSerial('008a5232e619344f2ebdb9b35f93e6a70d')">ee-02 (REVOKED)</button>
+            <button class="preset-btn" onclick="setSerial('00dcd6e3751e8e68a43f3fc6561007e833')">ee-03 (HOLD / GOOD)</button>
+          </div>
+        </div>
+
+        <div>
+          <label for="responderUrl">OCSP Responder URL</label>
+          <input type="text" id="responderUrl" value="http://localhost:8080/ocsp">
+        </div>
+      </div>
+
+      <div class="options-box">
+        <!-- Nonce switch -->
+        <div class="toggle-group">
+          <label class="switch" style="margin-bottom: 0;">
+            <input type="checkbox" id="nonceToggle" onchange="updateNonceLabel()">
+            <span class="slider"></span>
+          </label>
+          <div>
+            <div style="font-weight: 600; font-size: 0.85rem;" id="nonceStatusText">⚡ Nonce-Free Request</div>
+            <div style="font-size: 0.72rem; color: var(--text-dim);" id="nonceHelpText">Standard RFC 6960 query without nonce</div>
+          </div>
+        </div>
+
+        <!-- Method selector -->
+        <div>
+          <label style="margin-bottom: 4px;">Transport Protocol</label>
+          <div class="method-selector">
+            <button class="method-btn active" id="btnPost" onclick="setMethod('POST')">POST (DER binary)</button>
+            <button class="method-btn" id="btnGet" onclick="setMethod('GET')">GET (base64url)</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-submit" id="btnSend" onclick="sendOcspRequest()">
+        <span>🚀</span> Send OCSP Request
+      </button>
+    </div>
+
+    <!-- Results Section -->
+    <div id="resultsCard" class="card" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span id="statusBadge" class="badge" style="font-size: 0.9rem; padding: 6px 14px;">GOOD</span>
+          <h2 style="font-size: 1.1rem; font-weight: 700;">OCSP Response Received</h2>
+        </div>
+        <span id="latencyBadge" class="badge badge-teal" style="font-size: 0.85rem;">-- ms</span>
+      </div>
+
+      <!-- KPI Banners -->
+      <div class="grid grid-3" style="margin-bottom: 16px;">
+        <div class="kpi-card">
+          <div class="kpi-title">Nonce Status</div>
+          <div class="kpi-val" id="kpiNonce" style="font-size: 0.95rem; color: var(--teal);">--</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Signature Verification</div>
+          <div class="kpi-val" id="kpiSig" style="font-size: 0.95rem; color: var(--teal);">Verified (RSA-SHA256)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Response Size</div>
+          <div class="kpi-val" id="kpiSize" style="font-size: 0.95rem;">-- bytes</div>
+        </div>
+      </div>
+
+      <!-- Details -->
+      <div style="margin-bottom: 16px;">
+        <div class="detail-row">
+          <span class="detail-label">Target Serial</span>
+          <span class="detail-val" id="resSerial">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Certificate Status</span>
+          <span class="detail-val" id="resStatus">--</span>
+        </div>
+        <div class="detail-row" id="rowRevTime" style="display: none;">
+          <span class="detail-label">Revocation Time</span>
+          <span class="detail-val" id="resRevTime">--</span>
+        </div>
+        <div class="detail-row" id="rowRevReason" style="display: none;">
+          <span class="detail-label">Revocation Reason</span>
+          <span class="detail-val" id="resRevReason">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">This Update</span>
+          <span class="detail-val" id="resThisUpdate">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Next Update</span>
+          <span class="detail-val" id="resNextUpdate">--</span>
+        </div>
+        <div class="detail-row" id="rowNonceSent" style="display: none;">
+          <span class="detail-label">Nonce Sent</span>
+          <span class="detail-val" id="resNonceSent">--</span>
+        </div>
+        <div class="detail-row" id="rowNonceEchoed" style="display: none;">
+          <span class="detail-label">Nonce Echoed</span>
+          <span class="detail-val" id="resNonceEchoed">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Signer Subject</span>
+          <span class="detail-val" id="resSigner">--</span>
+        </div>
+      </div>
+
+      <!-- Verification Steps Checklist -->
+      <div style="margin-top: 16px; border-top: 1px solid var(--card-border); padding-top: 14px;">
+        <h3 style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;">
+          Verification Checks (RFC 6960 §4.2)
+        </h3>
+        <div id="checksList"></div>
+      </div>
+
+      <!-- OpenSSL Equivalent -->
+      <div style="margin-top: 16px; border-top: 1px solid var(--card-border); padding-top: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.75rem; font-weight: 700; color: #818cf8; text-transform: uppercase;">
+            Terminal / OpenSSL Equivalent
+          </span>
+          <button class="preset-btn" onclick="copyOpensslCmd()" id="btnCopyCmd">Copy Command</button>
+        </div>
+        <div class="cmd-box" id="opensslCmd"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentMethod = 'POST';
+
+    function setSerial(hex) {
+      document.getElementById('serialInput').value = hex;
+    }
+
+    function setMethod(method) {
+      currentMethod = method;
+      document.getElementById('btnPost').classList.toggle('active', method === 'POST');
+      document.getElementById('btnGet').classList.toggle('active', method === 'GET');
+    }
+
+    function updateNonceLabel() {
+      const checked = document.getElementById('nonceToggle').checked;
+      const statusText = document.getElementById('nonceStatusText');
+      const helpText = document.getElementById('nonceHelpText');
+      if (checked) {
+        statusText.innerHTML = '⚠️ Nonce Included (RFC 6960 §4.4.1)';
+        statusText.style.color = '#f59e0b';
+        helpText.innerText = 'Injects an 8-byte random nonce. Responder echoes it in signature.';
+      } else {
+        statusText.innerHTML = '⚡ Nonce-Free Request';
+        statusText.style.color = '#e2e8f0';
+        helpText.innerText = 'Standard RFC 6960 query without nonce';
+      }
+    }
+
+    async function sendOcspRequest() {
+      const serial = document.getElementById('serialInput').value.trim();
+      const responderUrl = document.getElementById('responderUrl').value.trim();
+      const includeNonce = document.getElementById('nonceToggle').checked;
+      const btn = document.getElementById('btnSend');
+
+      if (!serial) {
+        alert('Please enter a certificate serial number');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = '⏳ Sending Request…';
+
+      try {
+        const payload = {
+          serialHex: serial,
+          responderUrl: responderUrl,
+          includeNonce: includeNonce,
+          method: currentMethod
+        };
+
+        const res = await fetch('/api/v1/client/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        renderResults(data);
+      } catch (err) {
+        alert('Failed to connect to OCSP client service: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀</span> Send OCSP Request';
+      }
+    }
+
+    function renderResults(data) {
+      const card = document.getElementById('resultsCard');
+      card.style.display = 'block';
+
+      // Status Badge
+      const statusBadge = document.getElementById('statusBadge');
+      statusBadge.innerText = data.certStatus || 'ERROR';
+      if (data.certStatus === 'GOOD') {
+        statusBadge.className = 'badge badge-teal';
+      } else if (data.certStatus === 'REVOKED') {
+        statusBadge.className = 'badge badge-red';
+      } else {
+        statusBadge.className = 'badge badge-yellow';
+      }
+
+      // Latency
+      document.getElementById('latencyBadge').innerText = data.latencyMs + ' ms';
+
+      // KPI Nonce
+      const kpiNonce = document.getElementById('kpiNonce');
+      if (data.includeNonce) {
+        const match = data.nonceSent && data.nonceEchoed && data.nonceSent.toLowerCase() === data.nonceEchoed.toLowerCase();
+        kpiNonce.innerText = match ? '✅ Echoed & Matched' : '❌ Nonce Mismatch';
+        kpiNonce.style.color = match ? 'var(--teal)' : 'var(--red)';
+      } else {
+        kpiNonce.innerText = 'Nonce-Free Mode';
+        kpiNonce.style.color = 'var(--text-dim)';
+      }
+
+      // KPI Size
+      document.getElementById('kpiSize').innerText = (data.responseSizeBytes || 0) + ' bytes (DER)';
+
+      // Rows
+      document.getElementById('resSerial').innerText = data.serialHex || '--';
+      document.getElementById('resStatus').innerText = data.certStatus || '--';
+      document.getElementById('resThisUpdate').innerText = data.thisUpdate || '--';
+      document.getElementById('resNextUpdate').innerText = data.nextUpdate || '--';
+      document.getElementById('resSigner').innerText = data.signerSubject || '--';
+
+      // Revocation details
+      const rowRevTime = document.getElementById('rowRevTime');
+      const rowRevReason = document.getElementById('rowRevReason');
+      if (data.revocationTime) {
+        rowRevTime.style.display = 'flex';
+        document.getElementById('resRevTime').innerText = data.revocationTime;
+      } else {
+        rowRevTime.style.display = 'none';
+      }
+      if (data.revocationReason) {
+        rowRevReason.style.display = 'flex';
+        document.getElementById('resRevReason').innerText = data.revocationReason;
+      } else {
+        rowRevReason.style.display = 'none';
+      }
+
+      // Nonce details
+      const rowNonceSent = document.getElementById('rowNonceSent');
+      const rowNonceEchoed = document.getElementById('rowNonceEchoed');
+      if (data.nonceSent) {
+        rowNonceSent.style.display = 'flex';
+        document.getElementById('resNonceSent').innerText = '0x' + data.nonceSent;
+      } else {
+        rowNonceSent.style.display = 'none';
+      }
+      if (data.nonceEchoed) {
+        rowNonceEchoed.style.display = 'flex';
+        document.getElementById('resNonceEchoed').innerText = '0x' + data.nonceEchoed;
+      } else {
+        rowNonceEchoed.style.display = 'none';
+      }
+
+      // Checks list
+      const checksDiv = document.getElementById('checksList');
+      checksDiv.innerHTML = '';
+      if (data.checks && data.checks.length > 0) {
+        data.checks.forEach(c => {
+          const item = document.createElement('div');
+          item.className = 'check-item';
+          const icon = c.outcome === 'PASS' ? '<span style="color:var(--teal)">✓</span>' :
+                       c.outcome === 'FAIL' ? '<span style="color:var(--red)">✗</span>' :
+                       '<span style="color:var(--text-dim)">○</span>';
+          item.innerHTML = `${icon} <strong>${c.name}:</strong> <span style="color:var(--text-dim); font-size:0.8rem;">${c.detail}</span>`;
+          checksDiv.appendChild(item);
+        });
+      }
+
+      // OpenSSL command
+      const cleanSerial = (data.serialHex || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+      const nonceFlag = data.includeNonce ? ' -nonce' : ' -no_nonce';
+      const cmd = `openssl ocsp -issuer data/pki/intermediate-ca-cert.pem -serial 0x${cleanSerial} -url ${data.responderUrl || 'http://localhost:8080/ocsp'} -CAfile data/pki/ca-chain.pem -resp_text${nonceFlag}`;
+      document.getElementById('opensslCmd').innerText = cmd;
+
+      card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function copyOpensslCmd() {
+      const text = document.getElementById('opensslCmd').innerText;
+      navigator.clipboard.writeText(text);
+      const btn = document.getElementById('btnCopyCmd');
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy Command', 2000);
+    }
+  </script>
+</body>
+</html>

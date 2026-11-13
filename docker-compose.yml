@@ -1,15 +1,16 @@
 # =============================================================================
-# Incert OCSP Subsystem — Monolith Architecture Docker Compose
-# Architecture: RabbitMQ + Monolith App (ocsp-app: Responder & Client) + SoftHSM2 (PKCS#11) + KMS Simulator
+# Incert OCSP Subsystem — Decoupled Architecture Docker Compose
+# Architecture: RabbitMQ + Separated OCSP Responder + Separated OCSP Client + SoftHSM2 (PKCS#11) + KMS Simulator
 # =============================================================================
 # One-click startup:
 #   docker compose up --build -d
 #
-# Services (5 services total):
+# Services:
 #   mariadb          MariaDB 10.11 (schemas: ocsp, kms) (host 3307, internal 3306)
 #   rabbitmq         RabbitMQ 3.13 + Management UI      (host 5672, 15672)
 #   kms-simulator    KMS & CA simulator + event outbox  (host 8090, internal 8090)
-#   ocsp-app         OCSP Monolith (Responder & Client) (host 8080, internal 8080)
+#   ocsp-responder   RFC 6960 OCSP Responder + Auth    (host 8080, internal 8080)
+#   ocsp-client      RFC 6960 Client + Test Web UI      (host 8082, internal 8082)
 #   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3000)
 # =============================================================================
 
@@ -76,7 +77,7 @@ services:
       start_period: 20s
 
   # ============================================================
-  # KMS Simulator (Event Source & Test PKI Generator)
+  # KMS Simulator (Event Source & Test PKI Generator + Frontend)
   # ============================================================
   kms-simulator:
     build:
@@ -117,22 +118,20 @@ services:
       retries: 6
 
   # ============================================================
-  # OCSP App (Monolith: Responder & Client with SoftHSM2)
+  # OCSP Responder (RFC 6960 Responder + SoftHSM2 + Auth)
   # ============================================================
-  ocsp-app:
+  ocsp-responder:
     build:
       context: .
-      dockerfile: ocsp-app/Dockerfile
-    image: ocsp/app:local
-    container_name: ocsp-app
+      dockerfile: ocsp-responder/Dockerfile
+    image: ocsp/responder:local
+    container_name: ocsp-responder
     restart: unless-stopped
     networks: [ocsp-net]
     depends_on:
       mariadb:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy
-      kms-simulator:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -147,10 +146,9 @@ services:
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      KMS_HOST: kms-simulator
-      KMS_PORT: 8090
-      OCSP_RESPONDER_HOST: localhost
-      OCSP_RESPONDER_PORT: 8080
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: changeme
+      ADMIN_API_KEY: incert-admin-secret-key
       HSM_ENABLED: "true"
       HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
       HSM_TOKEN_LABEL: ocsp-signing
@@ -163,6 +161,37 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
       start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ============================================================
+  # OCSP Client (RFC 6960 Client + Web Test Interface)
+  # ============================================================
+  ocsp-client:
+    build:
+      context: .
+      dockerfile: ocsp-client/Dockerfile
+    image: ocsp/client:local
+    container_name: ocsp-client
+    restart: unless-stopped
+    networks: [ocsp-net]
+    depends_on:
+      ocsp-responder:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *spring-opts
+      SERVER_PORT: 8082
+      OCSP_RESPONDER_URL: http://ocsp-responder:8080/ocsp
+      PKI_DIR: /data/pki
+    volumes:
+      - pki-data:/data/pki
+      - ./data/pki:/app/data/pki
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
+      start_period: 25s
       interval: 10s
       timeout: 5s
       retries: 6
@@ -182,7 +211,9 @@ services:
     restart: unless-stopped
     networks: [ocsp-net]
     depends_on:
-      ocsp-app:
+      ocsp-responder:
+        condition: service_healthy
+      ocsp-client:
         condition: service_healthy
     ports:
       - "3000:80"
