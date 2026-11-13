@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -51,6 +52,11 @@ public class CertificateStatusService {
     @Transactional(readOnly = true)
     public long countAll() {
         return repository.count();
+    }
+
+    @Transactional(readOnly = true)
+    public List<RevocationStatus> findAll() {
+        return repository.findAll();
     }
 
     @Transactional(readOnly = true)

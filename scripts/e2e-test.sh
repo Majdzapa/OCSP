@@ -267,6 +267,25 @@ if [ "${KMS_WEB_HTTP}" -ne 200 ]; then
 fi
 pass "Test k: KMS Simulator Web UI verified (HTTP 200)"
 
+# -----------------------------------------------------------------------------
+# Test l: KMS Status Update, Responder Inbox Table, and Parity Reconciliation
+# -----------------------------------------------------------------------------
+info "Test l: Verifying KMS status update API, responder inbox, and reconciliation..."
+
+EE4_SERIAL=$(openssl x509 -in "${PKI_DIR}/ee-04.pem" -noout -serial | cut -d= -f2 | tr '[:upper:]' '[:lower:]')
+UPDATE_RES=$(curl -s -X POST "${KMS_URL}/certificates/${EE4_SERIAL}/status" \
+    -H "Content-Type: application/json" \
+    -d '{"status":"REVOKED","reason":"SUPERSEDED"}')
+echo "${UPDATE_RES}" | grep -q '"status":"REVOKED"' || fail "Test l: Failed to update certificate status in KMS: ${UPDATE_RES}"
+
+sleep 1
+INBOX_RES=$(curl -s -u admin:changeme "http://localhost:8080/api/v1/admin/inbox?serial=00${EE4_SERIAL}")
+echo "${INBOX_RES}" | grep -q 'PROCESSED' || echo "${INBOX_RES}" | grep -q 'SKIPPED' || fail "Test l: Event was not recorded in responder inbox: ${INBOX_RES}"
+
+RECON_RES=$(curl -s -u admin:changeme "http://localhost:8080/api/v1/admin/reconciliation/verify")
+echo "${RECON_RES}" | grep -q '"synchronized":true' || fail "Test l: Reconciliation check failed: ${RECON_RES}"
+pass "Test l: KMS status update, Responder inbox table, and Parity reconciliation verified"
+
 info "========================================================================="
 echo -e "${GREEN}ALL END-TO-END TESTS PASSED SUCCESSFULLY!${NC}"
 info "========================================================================="

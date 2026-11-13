@@ -16,7 +16,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     open-in-view: false
     properties:
       hibernate:
@@ -85,6 +85,7 @@ ocsp:
     cron: "0 0/15 * * * *"
 
 kms:
+  url: http://${KMS_HOST:localhost}:${KMS_PORT:8090}
   snapshot:
     url: http://${KMS_HOST:localhost}:${KMS_PORT:8090}/kms/snapshot
 

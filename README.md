@@ -79,6 +79,8 @@ docker compose up --build -d
 | **KMS Simulator Portal** | `8090` | [http://localhost:8090](http://localhost:8090) (Certificate management UI) | Public UI |
 | **OCSP Responder Protocol** | `8080` | [http://localhost:8080/ocsp](http://localhost:8080/ocsp) (`POST` DER · `GET /{b64url}`) | Public (RFC 6960) |
 | **OCSP Responder Admin API** | `8080` | [http://localhost:8080/api/v1/admin](http://localhost:8080/api/v1/admin) (Stats, Revocations) | **Basic Auth** or **API Key** |
+| **OCSP Responder Inbox API** | `8080` | [http://localhost:8080/api/v1/admin/inbox](http://localhost:8080/api/v1/admin/inbox) (Event Stream & Received Inbox) | **Basic Auth** or **API Key** |
+| **OCSP Reconciliation API** | `8080` | [http://localhost:8080/api/v1/admin/reconciliation/verify](http://localhost:8080/api/v1/admin/reconciliation/verify) (KMS vs Responder Parity) | **Basic Auth** or **API Key** |
 | **OCSP Responder Auth API** | `8080` | [http://localhost:8080/api/v1/auth/login](http://localhost:8080/api/v1/auth/login) | Public auth endpoint |
 | **OCSP Responder Login Page** | `8080` | [http://localhost:8080/login.html](http://localhost:8080/login.html) (Direct browser login tester) | Embedded UI |
 | **RabbitMQ Management** | `15672` | [http://localhost:15672](http://localhost:15672) (Web Management UI) | `guest` / `guest` |

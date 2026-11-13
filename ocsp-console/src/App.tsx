@@ -22,12 +22,14 @@ import {
   IconCircleFilled,
   IconLogout,
   IconExternalLink,
+  IconInbox,
 } from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertPage } from './pages/SigningCertPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
 import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
+import { InboxAuditPage } from './pages/InboxAuditPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -36,6 +38,7 @@ import { useDashboardStats } from './hooks/useDashboardStats'
 const navItems = [
   { label: 'Dashboard',       path: '/dashboard',        icon: IconDashboard },
   { label: 'KMS Inventory',   path: '/kms-certificates', icon: IconKey },
+  { label: 'Responder Inbox', path: '/inbox',            icon: IconInbox },
   { label: 'Revocations',     path: '/revocations',      icon: IconShieldX },
   { label: 'Signing Cert',    path: '/signing-cert',     icon: IconCertificate },
   { label: 'Cert Checker',    path: '/cert-checker',     icon: IconSearch },
@@ -315,6 +318,7 @@ function MainLayout() {
           <Route path="/"                 element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"        element={<DashboardPage />} />
           <Route path="/kms-certificates" element={<KmsCertificatesPage />} />
+          <Route path="/inbox"            element={<InboxAuditPage />} />
           <Route path="/revocations"      element={<RevocationFeed />} />
           <Route path="/signing-cert"     element={<SigningCertPage />} />
           <Route path="/cert-checker"     element={<CertCheckerPage />} />

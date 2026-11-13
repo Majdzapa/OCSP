@@ -127,3 +127,36 @@ export interface LoginResponse {
   authType?: string
   message?: string
 }
+
+export interface InboxEventItem {
+  eventId: string
+  eventType: string
+  certificateSerial: string
+  status: 'GOOD' | 'REVOKED' | string
+  revocationReason?: string | null
+  revocationTime?: string | null
+  sequence: number
+  payload?: string | null
+  receivedAt: string
+  processedAt?: string | null
+  processingStatus: 'RECEIVED' | 'PROCESSED' | 'DUPLICATE' | 'SKIPPED' | 'FAILED' | string
+  errorMessage?: string | null
+}
+
+export interface ReconciliationReport {
+  synchronized: boolean
+  kmsTotal: number
+  responderTotal: number
+  inboxEventsReceived: number
+  matchedCount: number
+  missingCount: number
+  missingSerials: string[]
+  mismatchCount: number
+  statusMismatches: Array<{
+    serialNumberHex: string
+    kmsStatus: string
+    responderStatus: string
+    subjectDn?: string
+  }>
+  verifiedAt: string
+}

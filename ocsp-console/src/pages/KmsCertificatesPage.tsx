@@ -42,6 +42,7 @@ import {
   getKmsCertificates,
   revokeKmsCertificate,
   unrevokeKmsCertificate,
+  updateKmsCertificateStatus,
   triggerKmsRevocationJob,
 } from '../api/client'
 import type { KmsCertificate, KmsRevocationReason } from '../types/api'
@@ -165,6 +166,53 @@ export function KmsCertificatesPage() {
   const [targetCert, setTargetCert] = useState<KmsCertificate | null>(null)
   const [revokeReason, setRevokeReason] = useState<string>('KEY_COMPROMISE')
   const [actionLoading, setActionLoading] = useState<boolean>(false)
+
+  // Status Update Dialog (Any status: GOOD, REVOKED, HOLD)
+  const [statusModalOpen, setStatusModalOpen] = useState<boolean>(false)
+  const [statusModalCert, setStatusModalCert] = useState<KmsCertificate | null>(null)
+  const [targetStatus, setTargetStatus] = useState<'GOOD' | 'REVOKED' | 'CERTIFICATE_HOLD'>('REVOKED')
+  const [targetReason, setTargetReason] = useState<string>('KEY_COMPROMISE')
+  const [targetRevTime, setTargetRevTime] = useState<string>('')
+
+  const openStatusUpdateModal = (cert: KmsCertificate) => {
+    setStatusModalCert(cert)
+    const initialStatus =
+      cert.status === 'GOOD'
+        ? 'REVOKED'
+        : cert.revocationReason === 'CERTIFICATE_HOLD'
+        ? 'CERTIFICATE_HOLD'
+        : 'GOOD'
+    setTargetStatus(initialStatus)
+    setTargetReason(cert.revocationReason || 'KEY_COMPROMISE')
+    setTargetRevTime(cert.revocationTime ? cert.revocationTime.slice(0, 16) : '')
+    setStatusModalOpen(true)
+  }
+
+  const handleUpdateStatusSubmit = async () => {
+    if (!statusModalCert) return
+    setActionLoading(true)
+    try {
+      await updateKmsCertificateStatus(
+        statusModalCert.serialNumberHex,
+        targetStatus,
+        targetStatus === 'GOOD' ? undefined : targetReason,
+        targetStatus === 'GOOD' ? undefined : (targetRevTime ? new Date(targetRevTime).toISOString() : new Date().toISOString())
+      )
+      setAlert({
+        type: 'teal',
+        message: `Status for ${statusModalCert.serialNumberHex.slice(0, 8)}... updated to ${targetStatus}!`,
+      })
+      setStatusModalOpen(false)
+      fetchCertificates()
+    } catch (err: any) {
+      setAlert({
+        type: 'red',
+        message: `Failed to update status: ${err.response?.data?.error || err.message}`,
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   // Details & PEM Dialog
   const [detailsDialogOpen, setDetailsDialogOpen] = useState<boolean>(false)
@@ -719,6 +767,14 @@ export function KmsCertificatesPage() {
                               </Button>
                             )}
 
+                            <Button
+                              size="compact-xs"
+                              variant="default"
+                              onClick={() => openStatusUpdateModal(cert)}
+                            >
+                              Edit Status
+                            </Button>
+
                             <Tooltip
                               label="View Certificate Details & PEM"
                               withArrow
@@ -836,6 +892,112 @@ export function KmsCertificatesPage() {
                 leftSection={<IconShieldX size={16} />}
               >
                 Confirm Revocation
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* =================================================================== */}
+      {/* Update Certificate Status Modal (GOOD, REVOKED, HOLD)               */}
+      {/* =================================================================== */}
+      <Modal
+        opened={statusModalOpen}
+        onClose={() => setStatusModalOpen(false)}
+        size="md"
+        title={
+          <Group gap="xs">
+            <IconKey size={20} color="#818cf8" />
+            <Text fw={700} fz="md">
+              Update Certificate Status
+            </Text>
+          </Group>
+        }
+        centered
+        radius="md"
+        styles={{
+          content: {
+            backgroundColor: 'var(--mantine-color-dark-6)',
+            border: '1px solid var(--mantine-color-dark-4)',
+          },
+        }}
+      >
+        {statusModalCert && (
+          <Stack gap="md">
+            <Paper
+              p="sm"
+              radius="sm"
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-5)',
+                border: '1px solid var(--mantine-color-dark-4)',
+              }}
+            >
+              <Text fz="xs" c="dimmed">TARGET CERTIFICATE</Text>
+              <Text fw={600} fz="sm" c="white" mt={2}>{statusModalCert.subjectDn}</Text>
+              <Text fz="xs" ff="monospace" c="indigo.3" mt={2}>
+                Serial: {statusModalCert.serialNumberHex}
+              </Text>
+              <Text fz="xs" c="dimmed" mt={2}>
+                Current Status: <strong>{statusModalCert.status}</strong> (Seq: v{statusModalCert.sequence})
+              </Text>
+            </Paper>
+
+            <Select
+              label="Target Status"
+              value={targetStatus}
+              onChange={(val) => setTargetStatus((val as any) || 'REVOKED')}
+              data={[
+                { value: 'GOOD', label: 'GOOD (Active / Valid / Restored)' },
+                { value: 'REVOKED', label: 'REVOKED (Revoked)' },
+                { value: 'CERTIFICATE_HOLD', label: 'CERTIFICATE_HOLD (Temporary Suspension)' },
+              ]}
+            />
+
+            {targetStatus !== 'GOOD' && (
+              <Select
+                label="Revocation Reason (RFC 5280)"
+                value={targetReason}
+                onChange={(val) => setTargetReason(val || 'KEY_COMPROMISE')}
+                data={RFC_5280_REASONS.map((r) => ({
+                  value: r.code,
+                  label: r.label,
+                }))}
+              />
+            )}
+
+            {targetStatus !== 'GOOD' && (
+              <TextInput
+                label="Revocation Timestamp (ISO / Local)"
+                placeholder="YYYY-MM-DDTHH:MM:SS"
+                value={targetRevTime}
+                onChange={(e) => setTargetRevTime(e.currentTarget.value)}
+                description="Leave blank to use current timestamp"
+              />
+            )}
+
+            <Alert
+              icon={<IconAlertTriangle size={18} />}
+              color="indigo"
+              title="Transactional Outbox Synchronization"
+            >
+              Submitting updates status in KMS, increments monotonic sequence to <strong>v{statusModalCert.sequence + 1}</strong>, and automatically publishes an event to RabbitMQ for OCSP Responder ingestion.
+            </Alert>
+
+            <Group justify="flex-end" mt="md">
+              <Button
+                variant="default"
+                onClick={() => setStatusModalOpen(false)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                color="indigo"
+                onClick={handleUpdateStatusSubmit}
+                loading={actionLoading}
+                leftSection={<IconCheck size={16} />}
+              >
+                Save Status Update
               </Button>
             </Group>
           </Stack>

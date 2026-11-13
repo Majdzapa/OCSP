@@ -9,6 +9,8 @@ import type {
   OcspTestResult,
   AuthUser,
   LoginResponse,
+  InboxEventItem,
+  ReconciliationReport,
 } from '../types/api'
 
 // API client for ocsp-responder (protected with X-API-KEY or Basic Auth)
@@ -124,6 +126,25 @@ export const testOcspRequest = (
     }
   })
 
+// ---- Inbox & Reconciliation (Responder) ----
+export const getInboxEvents = (
+  page = 0,
+  size = 50,
+  serial?: string
+): Promise<{ events: InboxEventItem[]; total: number; page: number; size: number }> =>
+  api.get('/inbox', { params: { page, size, serial } }).then((r) => r.data)
+
+export const getInboxStats = (): Promise<{
+  totalReceived: number
+  processed: number
+  duplicate: number
+  skipped: number
+  failed: number
+}> => api.get('/inbox/stats').then((r) => r.data)
+
+export const verifyReconciliation = (): Promise<ReconciliationReport> =>
+  api.get('/reconciliation/verify').then((r) => r.data)
+
 // ---- KMS Simulator (Certificate Inventory & Lifecycle) ----
 const kmsApi = axios.create({
   baseURL: '/api/kms',
@@ -141,6 +162,29 @@ export const revokeKmsCertificate = (
 
 export const unrevokeKmsCertificate = (serialHex: string): Promise<KmsCertificate> =>
   kmsApi.post(`/certificates/${serialHex}/unrevoke`).then((r) => r.data)
+
+export const updateKmsCertificateStatus = (
+  serialHex: string,
+  status: 'GOOD' | 'REVOKED' | 'CERTIFICATE_HOLD',
+  reason?: string,
+  revocationTime?: string
+): Promise<KmsCertificate> =>
+  kmsApi.post(`/certificates/${serialHex}/status`, { status, reason, revocationTime }).then((r) => r.data)
+
+export const getKmsSyncStatus = (): Promise<{
+  totalCertificates: number
+  goodCertificates: number
+  revokedCertificates: number
+  totalOutboxEvents: number
+  sentOutboxEvents: number
+  pendingOutboxEvents: number
+}> => kmsApi.get('/audit/sync-status').then((r) => r.data)
+
+export const syncAllKmsCertificates = (): Promise<{
+  status: string
+  certificatesQueued: number
+  message: string
+}> => kmsApi.post('/audit/sync-all').then((r) => r.data)
 
 export const triggerKmsRevocationJob = (): Promise<{ status: string }> =>
   kmsApi.post('/jobs/revocation/run').then((r) => r.data)

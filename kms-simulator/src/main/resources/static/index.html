@@ -36,7 +36,7 @@
       max-width: 1200px;
     }
     header {
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
@@ -49,6 +49,37 @@
       display: flex;
       align-items: center;
       gap: 12px;
+    }
+    /* Tab Navigation */
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+    }
+    .nav-tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .nav-tab:hover {
+      color: var(--text);
+      background: #1e293b;
+    }
+    .nav-tab.active {
+      color: #fff;
+      background: rgba(99, 102, 241, 0.2);
+      border-color: rgba(99, 102, 241, 0.4);
     }
     .badge {
       display: inline-flex;
@@ -96,6 +127,12 @@
       color: #000;
       font-weight: 700;
     }
+    .btn-success {
+      background: var(--teal);
+      border: none;
+      color: #000;
+      font-weight: 700;
+    }
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -106,6 +143,9 @@
     }
     .grid { display: grid; gap: 16px; }
     .grid-5 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
     .kpi-title { font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; font-weight: 700; }
     .kpi-val { font-size: 1.6rem; font-weight: 700; }
     .search-bar {
@@ -114,16 +154,16 @@
       align-items: center;
       flex-wrap: wrap;
     }
-    input, select {
+    input, select, textarea {
       background: #080d1a;
       border: 1px solid var(--card-border);
       border-radius: 8px;
-      padding: 8px 12px;
+      padding: 10px 12px;
       color: var(--text);
       font-size: 0.85rem;
       outline: none;
     }
-    input:focus, select:focus { border-color: var(--accent); }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -180,6 +220,16 @@
       max-width: 600px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
     }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
   </style>
 </head>
 <body>
@@ -187,8 +237,8 @@
     <header>
       <div>
         <h1><span>🔐</span> KMS Certificate Manager</h1>
-        <p style="color: var(--text-dim); font-size: 0.85rem; mt: 4px;">
-          Source of truth certificate inventory — Incert Test PKI simulation with Transactional Outbox event publishing
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 4px;">
+          Source of truth certificate inventory · Dynamic status management · RabbitMQ Transactional Outbox
         </p>
       </div>
       <div style="display: flex; gap: 10px;">
@@ -197,72 +247,228 @@
       </div>
     </header>
 
-    <div class="alert-banner">
-      <span>📡</span>
-      <div>
-        <strong>Transactional Outbox Active:</strong> Any revocation or un-revocation event is saved atomically to <code>outbox_event</code> and asynchronously published to RabbitMQ exchange <code>incert.certificate.status</code>.
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="tabInventory" onclick="switchTab('inventory')">
+        📋 Certificate Inventory
+      </button>
+      <button class="nav-tab" id="tabUpdateStatus" onclick="switchTab('updateStatus')">
+        ✏️ Update Certificate Status
+      </button>
+      <button class="nav-tab" id="tabReconciliation" onclick="switchTab('reconciliation')">
+        🔍 Sync &amp; Reconciliation Audit
+      </button>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- SCREEN 1: CERTIFICATE INVENTORY                                       -->
+    <!-- ===================================================================== -->
+    <div id="screenInventory">
+      <div class="alert-banner">
+        <span>📡</span>
+        <div>
+          <strong>Transactional Outbox Active:</strong> Any revocation or status update event is saved atomically to <code>outbox_event</code> and asynchronously published to RabbitMQ exchange <code>incert.certificate.status</code>.
+        </div>
+      </div>
+
+      <!-- Metrics -->
+      <div class="grid grid-5" style="margin-bottom: 20px;">
+        <div class="card" style="padding: 16px; margin-bottom: 0;">
+          <div class="kpi-title">Total Certificates</div>
+          <div class="kpi-val" id="metricTotal">--</div>
+        </div>
+        <div class="card" style="padding: 16px; margin-bottom: 0;">
+          <div class="kpi-title">Good / Active</div>
+          <div class="kpi-val" id="metricGood" style="color: var(--teal);">--</div>
+        </div>
+        <div class="card" style="padding: 16px; margin-bottom: 0;">
+          <div class="kpi-title">Revoked (Total)</div>
+          <div class="kpi-val" id="metricRevoked" style="color: var(--red);">--</div>
+        </div>
+        <div class="card" style="padding: 16px; margin-bottom: 0;">
+          <div class="kpi-title">On Hold (Suspended)</div>
+          <div class="kpi-val" id="metricHold" style="color: var(--yellow);">--</div>
+        </div>
+        <div class="card" style="padding: 16px; margin-bottom: 0;">
+          <div class="kpi-title">Near Expiry (≤30d)</div>
+          <div class="kpi-val" id="metricExpiring" style="color: var(--blue);">--</div>
+        </div>
+      </div>
+
+      <!-- Search & Filter Card -->
+      <div class="card" style="padding: 14px 20px;">
+        <div class="search-bar">
+          <input type="text" id="searchInput" placeholder="Search by Serial Hex or Subject DN..." style="flex: 1; min-width: 250px;" oninput="applyFilters()">
+          <select id="statusFilter" onchange="applyFilters()">
+            <option value="ALL">All Certificates</option>
+            <option value="GOOD">Good / Active</option>
+            <option value="REVOKED">Revoked</option>
+            <option value="HOLD">On Hold / Suspended</option>
+          </select>
+          <span id="countText" style="font-size: 0.8rem; color: var(--text-dim);">Showing -- of --</span>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <table id="certTable">
+          <thead>
+            <tr>
+              <th>Serial Number</th>
+              <th>Subject DN</th>
+              <th>Validity Window</th>
+              <th>Status / Reason</th>
+              <th style="width: 70px;">Seq</th>
+              <th style="text-align: right; width: 220px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-dim);">Loading certificates...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Metrics -->
-    <div class="grid grid-5" style="margin-bottom: 20px;">
-      <div class="card" style="padding: 16px; margin-bottom: 0;">
-        <div class="kpi-title">Total Certificates</div>
-        <div class="kpi-val" id="metricTotal">--</div>
-      </div>
-      <div class="card" style="padding: 16px; margin-bottom: 0;">
-        <div class="kpi-title">Good / Active</div>
-        <div class="kpi-val" id="metricGood" style="color: var(--teal);">--</div>
-      </div>
-      <div class="card" style="padding: 16px; margin-bottom: 0;">
-        <div class="kpi-title">Revoked (Total)</div>
-        <div class="kpi-val" id="metricRevoked" style="color: var(--red);">--</div>
-      </div>
-      <div class="card" style="padding: 16px; margin-bottom: 0;">
-        <div class="kpi-title">On Hold (Suspended)</div>
-        <div class="kpi-val" id="metricHold" style="color: var(--yellow);">--</div>
-      </div>
-      <div class="card" style="padding: 16px; margin-bottom: 0;">
-        <div class="kpi-title">Near Expiry (≤30d)</div>
-        <div class="kpi-val" id="metricExpiring" style="color: var(--blue);">--</div>
+    <!-- ===================================================================== -->
+    <!-- SCREEN 2: UPDATE CERTIFICATE STATUS                                   -->
+    <!-- ===================================================================== -->
+    <div id="screenUpdateStatus" style="display: none;">
+      <div class="card">
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">
+          Update Certificate Status &amp; Reason
+        </h2>
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">
+          Modify the lifecycle status of any certificate (GOOD, REVOKED, or CERTIFICATE_HOLD). The update increments the monotonic sequence counter and automatically writes to the Transactional Outbox for propagation to the OCSP Responder.
+        </p>
+
+        <div class="grid grid-2">
+          <!-- Form Section -->
+          <div>
+            <div class="form-group">
+              <label class="form-label">SELECT TARGET CERTIFICATE</label>
+              <select id="updateTargetSelect" style="width: 100%;" onchange="onTargetCertSelected()">
+                <option value="">-- Choose a certificate from inventory --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">OR ENTER SERIAL NUMBER (HEX)</label>
+              <input type="text" id="updateSerialInput" placeholder="e.g. 008a5232e619344f2ebdb9b35f93e6a70d" style="width: 100%;" oninput="onCustomSerialInput()">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">TARGET STATUS</label>
+              <select id="updateStatusSelect" style="width: 100%;" onchange="onStatusSelectChanged()">
+                <option value="GOOD">GOOD (Active / Restored)</option>
+                <option value="REVOKED" selected>REVOKED (Revoked)</option>
+                <option value="CERTIFICATE_HOLD">CERTIFICATE_HOLD (Temporary Suspension)</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="groupRevocationReason">
+              <label class="form-label">REVOCATION REASON (RFC 5280)</label>
+              <select id="updateReasonSelect" style="width: 100%;">
+                <option value="KEY_COMPROMISE">Key Compromise (1) — Private key compromised or suspected</option>
+                <option value="CA_COMPROMISE">CA Compromise (2) — CA private key compromised</option>
+                <option value="AFFILIATION_CHANGED">Affiliation Changed (3) — Subject identity / organization changed</option>
+                <option value="SUPERSEDED">Superseded (4) — Replaced by a new certificate</option>
+                <option value="CESSATION_OF_OPERATION">Cessation of Operation (5) — Service ceased operation</option>
+                <option value="CERTIFICATE_HOLD">Certificate Hold (6) — Temporary suspension</option>
+                <option value="PRIVILEGE_WITHDRAWN">Privilege Withdrawn (9) — Credentials revoked</option>
+                <option value="AA_COMPROMISE">AA Compromise (10) — Attribute Authority compromised</option>
+                <option value="UNSPECIFIED">Unspecified (0) — No specific reason given</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="groupRevocationTime">
+              <label class="form-label">REVOCATION TIMESTAMP</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="datetime-local" id="updateTimeInput" style="flex: 1;">
+                <button class="btn" type="button" onclick="setNowTimestamp()">Now</button>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; padding: 12px; margin-top: 10px;" onclick="submitStatusUpdate()">
+              ⚡ Commit Status Update to Outbox
+            </button>
+          </div>
+
+          <!-- Live Preview & Result Section -->
+          <div>
+            <div class="card" style="background: #080d1a; border-color: #1e293b; height: 100%;">
+              <div class="kpi-title">CURRENT CERTIFICATE DETAILS</div>
+              <div id="previewCard" style="margin-top: 12px; font-size: 0.85rem;">
+                <p style="color: var(--text-dim); text-align: center; padding: 30px 0;">
+                  Select a certificate from the left dropdown or enter a serial number to inspect its current status.
+                </p>
+              </div>
+
+              <div id="updateResultAlert" style="display: none; margin-top: 20px;"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Search & Filter Card -->
-    <div class="card" style="padding: 14px 20px;">
-      <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="Search by Serial Hex or Subject DN..." style="flex: 1; min-width: 250px;" oninput="applyFilters()">
-        <select id="statusFilter" onchange="applyFilters()">
-          <option value="ALL">All Certificates</option>
-          <option value="GOOD">Good / Active</option>
-          <option value="REVOKED">Revoked</option>
-          <option value="HOLD">On Hold / Suspended</option>
-        </select>
-        <span id="countText" style="font-size: 0.8rem; color: var(--text-dim);">Showing -- of --</span>
-      </div>
-    </div>
+    <!-- ===================================================================== -->
+    <!-- SCREEN 3: SYNC & RECONCILIATION AUDIT                                -->
+    <!-- ===================================================================== -->
+    <div id="screenReconciliation" style="display: none;">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <h2 style="font-size: 1.25rem; font-weight: 700;">
+              KMS ↔ Responder Synchronization &amp; Audit
+            </h2>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 4px;">
+              Verify that 100% of managed certificates in KMS are broadcast through RabbitMQ and acknowledged in the Responder database and inbox.
+            </p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-primary" onclick="verifyResponderSync()">
+              🔍 Verify Sync with Responder
+            </button>
+            <button class="btn btn-warning" onclick="syncAllCertificatesToOutbox()">
+              📤 Sync All to Responder
+            </button>
+          </div>
+        </div>
 
-    <!-- Table -->
-    <div class="card" style="padding: 0; overflow: hidden;">
-      <table id="certTable">
-        <thead>
-          <tr>
-            <th>Serial Number</th>
-            <th>Subject DN</th>
-            <th>Validity Window</th>
-            <th>Status / Reason</th>
-            <th style="width: 70px;">Seq</th>
-            <th style="text-align: right; width: 170px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody">
-          <tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-dim);">Loading certificates...</td></tr>
-        </tbody>
-      </table>
+        <!-- Outbox stats -->
+        <div class="grid grid-4" style="margin-bottom: 20px;">
+          <div class="card" style="background: #080d1a; padding: 16px; margin-bottom: 0;">
+            <div class="kpi-title">KMS Managed Certificates</div>
+            <div class="kpi-val" id="auditKmsTotal">--</div>
+          </div>
+          <div class="card" style="background: #080d1a; padding: 16px; margin-bottom: 0;">
+            <div class="kpi-title">Total Outbox Events</div>
+            <div class="kpi-val" id="auditOutboxTotal" style="color: #818cf8;">--</div>
+          </div>
+          <div class="card" style="background: #080d1a; padding: 16px; margin-bottom: 0;">
+            <div class="kpi-title">Relayed to RabbitMQ</div>
+            <div class="kpi-val" id="auditOutboxSent" style="color: var(--teal);">--</div>
+          </div>
+          <div class="card" style="background: #080d1a; padding: 16px; margin-bottom: 0;">
+            <div class="kpi-title">Pending in Outbox</div>
+            <div class="kpi-val" id="auditOutboxPending" style="color: var(--yellow);">--</div>
+          </div>
+        </div>
+
+        <!-- Reconciliation Report Card -->
+        <div id="reconResultBox" style="background: #080d1a; border: 1px solid var(--card-border); border-radius: 8px; padding: 18px; margin-top: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-weight: 700; font-size: 0.95rem;">LIVE RECONCILIATION AUDIT STATUS</div>
+            <div id="reconBadge"><span class="badge" style="background: #1e293b; color: var(--text-dim);">NOT RUN YET</span></div>
+          </div>
+          <div id="reconDetails" style="font-size: 0.85rem; color: var(--text-dim);">
+            Click <strong>"Verify Sync with Responder"</strong> to run an automated end-to-end reconciliation check against the OCSP Responder API (Port 8080).
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Revoke Modal -->
+  <!-- Revoke Quick Modal -->
   <div id="revokeModal" class="modal-backdrop">
     <div class="modal-box">
       <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 12px;">Revoke Certificate (RFC 5280)</h2>
@@ -281,7 +487,7 @@
         <option value="AFFILIATION_CHANGED">Affiliation Changed (3) — Subject identity / organization changed</option>
         <option value="SUPERSEDED">Superseded (4) — Replaced by a new certificate</option>
         <option value="CESSATION_OF_OPERATION">Cessation of Operation (5) — Service ceased operation</option>
-        <option value="CERTIFICATE_HOLD">Certificate Hold / Suspension (6) — Temporary suspension (can be unrevoked)</option>
+        <option value="CERTIFICATE_HOLD">Certificate Hold / Suspension (6) — Temporary suspension</option>
         <option value="PRIVILEGE_WITHDRAWN">Privilege Withdrawn (9) — Credentials revoked</option>
         <option value="AA_COMPROMISE">AA Compromise (10) — Attribute Authority compromised</option>
         <option value="UNSPECIFIED">Unspecified (0) — No specific reason given</option>
@@ -311,6 +517,21 @@
     let certificates = [];
     let targetRevokeCert = null;
     let targetDetailsCert = null;
+    let selectedUpdateCert = null;
+
+    function switchTab(tab) {
+      document.getElementById('screenInventory').style.display = tab === 'inventory' ? 'block' : 'none';
+      document.getElementById('screenUpdateStatus').style.display = tab === 'updateStatus' ? 'block' : 'none';
+      document.getElementById('screenReconciliation').style.display = tab === 'reconciliation' ? 'block' : 'none';
+
+      document.getElementById('tabInventory').classList.toggle('active', tab === 'inventory');
+      document.getElementById('tabUpdateStatus').classList.toggle('active', tab === 'updateStatus');
+      document.getElementById('tabReconciliation').classList.toggle('active', tab === 'reconciliation');
+
+      if (tab === 'reconciliation') {
+        fetchSyncStatus();
+      }
+    }
 
     async function fetchCertificates() {
       try {
@@ -318,6 +539,7 @@
         certificates = await res.json();
         updateMetrics();
         applyFilters();
+        populateUpdateDropdown();
       } catch (err) {
         document.getElementById('tableBody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--red); padding: 40px;">Failed to load certificates: ${err.message}</td></tr>`;
       }
@@ -342,6 +564,7 @@
       document.getElementById('metricRevoked').innerText = revoked;
       document.getElementById('metricHold').innerText = hold;
       document.getElementById('metricExpiring').innerText = expiring;
+      document.getElementById('auditKmsTotal').innerText = certificates.length;
     }
 
     function applyFilters() {
@@ -386,14 +609,14 @@
 
         let reasonText = (!isGood && c.revocationReason) ? `<div style="font-size: 0.72rem; color: var(--red); margin-top: 3px;">${c.revocationReason}</div>` : '';
 
-        let actions = '';
+        let actions = `<button class="btn" style="padding: 4px 10px; font-size: 0.75rem;" onclick="navigateToUpdate('${c.serialNumberHex}')">Edit Status</button> `;
         if (isGood) {
-          actions += `<button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="openRevokeModal('${c.serialNumberHex}')">Revoke</button>`;
+          actions += `<button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="openRevokeModal('${c.serialNumberHex}')">Revoke</button> `;
         }
         if (isHold) {
-          actions += `<button class="btn btn-warning" style="padding: 4px 10px; font-size: 0.75rem;" onclick="unrevoke('${c.serialNumberHex}')">Release Hold</button>`;
+          actions += `<button class="btn btn-warning" style="padding: 4px 10px; font-size: 0.75rem;" onclick="unrevoke('${c.serialNumberHex}')">Release Hold</button> `;
         }
-        actions += ` <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openDetails('${c.serialNumberHex}')">👁️</button>`;
+        actions += `<button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openDetails('${c.serialNumberHex}')">👁️</button>`;
 
         return `
           <tr>
@@ -415,6 +638,250 @@
       }).join('');
     }
 
+    // =========================================================================
+    // UPDATE STATUS SCREEN LOGIC
+    // =========================================================================
+    function populateUpdateDropdown() {
+      const select = document.getElementById('updateTargetSelect');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">-- Choose a certificate from inventory --</option>' + 
+        certificates.map(c => `
+          <option value="${c.serialNumberHex}">
+            ${c.serialNumberHex.substring(0, 10)}... | ${escapeHtml(c.subjectDn)} [${c.status}]
+          </option>
+        `).join('');
+      if (currentVal) select.value = currentVal;
+    }
+
+    function navigateToUpdate(serial) {
+      switchTab('updateStatus');
+      const select = document.getElementById('updateTargetSelect');
+      select.value = serial;
+      onTargetCertSelected();
+    }
+
+    function onTargetCertSelected() {
+      const serial = document.getElementById('updateTargetSelect').value;
+      if (!serial) {
+        selectedUpdateCert = null;
+        renderPreviewCard();
+        return;
+      }
+      document.getElementById('updateSerialInput').value = serial;
+      selectedUpdateCert = certificates.find(c => c.serialNumberHex.toLowerCase() === serial.toLowerCase());
+      renderPreviewCard();
+    }
+
+    function onCustomSerialInput() {
+      const serial = document.getElementById('updateSerialInput').value.trim();
+      document.getElementById('updateTargetSelect').value = '';
+      selectedUpdateCert = certificates.find(c => c.serialNumberHex.toLowerCase() === serial.toLowerCase());
+      renderPreviewCard();
+    }
+
+    function onStatusSelectChanged() {
+      const st = document.getElementById('updateStatusSelect').value;
+      const isRev = st === 'REVOKED';
+      const isHold = st === 'CERTIFICATE_HOLD';
+      document.getElementById('groupRevocationReason').style.display = (isRev || isHold) ? 'block' : 'none';
+      document.getElementById('groupRevocationTime').style.display = (isRev || isHold) ? 'block' : 'none';
+      if (isHold) {
+        document.getElementById('updateReasonSelect').value = 'CERTIFICATE_HOLD';
+      }
+    }
+
+    function setNowTimestamp() {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('updateTimeInput').value = now.toISOString().slice(0, 16);
+    }
+
+    function renderPreviewCard() {
+      const card = document.getElementById('previewCard');
+      document.getElementById('updateResultAlert').style.display = 'none';
+
+      if (!selectedUpdateCert) {
+        const customSerial = document.getElementById('updateSerialInput').value.trim();
+        if (customSerial) {
+          card.innerHTML = `
+            <div style="padding: 12px; background: rgba(99, 102, 241, 0.08); border-radius: 8px;">
+              <div style="font-weight: 600;">Custom Serial Target:</div>
+              <div class="serial-mono" style="margin-top: 4px;">${escapeHtml(customSerial)}</div>
+              <div style="margin-top: 8px; color: var(--yellow); font-size: 0.78rem;">⚠️ Serial not currently cached in local view; update will query database directly.</div>
+            </div>
+          `;
+        } else {
+          card.innerHTML = `<p style="color: var(--text-dim); text-align: center; padding: 30px 0;">Select a certificate or enter a serial number to inspect its current status.</p>`;
+        }
+        return;
+      }
+
+      const c = selectedUpdateCert;
+      const isGood = c.status === 'GOOD';
+      const isHold = c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD';
+
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div>
+            ${isGood ? '<span class="badge badge-teal">CURRENT: GOOD</span>' : isHold ? '<span class="badge badge-yellow">CURRENT: ON HOLD</span>' : '<span class="badge badge-red">CURRENT: REVOKED</span>'}
+          </div>
+          <div><span class="badge" style="background:#1e293b; color:var(--text-dim);">Sequence: v${c.sequence}</span></div>
+        </div>
+        <div style="margin-bottom: 6px;"><strong>Subject DN:</strong> ${escapeHtml(c.subjectDn)}</div>
+        <div style="margin-bottom: 6px;"><strong>Issuer DN:</strong> ${escapeHtml(c.issuerDn)}</div>
+        <div style="margin-bottom: 6px;"><strong>Serial Hex:</strong> <span class="serial-mono">${c.serialNumberHex}</span></div>
+        <div style="margin-bottom: 6px;"><strong>Validity:</strong> ${c.notBefore?.substring(0, 10)} to ${c.notAfter?.substring(0, 10)}</div>
+        ${c.revocationReason ? `<div style="margin-bottom: 6px; color: var(--red);"><strong>Reason:</strong> ${c.revocationReason}</div>` : ''}
+        ${c.revocationTime ? `<div style="margin-bottom: 6px; color: var(--text-dim);"><strong>Revocation Time:</strong> ${c.revocationTime}</div>` : ''}
+      `;
+    }
+
+    async function submitStatusUpdate() {
+      const serial = document.getElementById('updateSerialInput').value.trim();
+      if (!serial) {
+        alert('Please select or enter a certificate serial number.');
+        return;
+      }
+
+      const status = document.getElementById('updateStatusSelect').value;
+      const reason = document.getElementById('updateReasonSelect').value;
+      const timeInput = document.getElementById('updateTimeInput').value;
+
+      let revocationTime = null;
+      if (timeInput) {
+        try {
+          revocationTime = new Date(timeInput).toISOString();
+        } catch (_) {}
+      }
+
+      const payload = {
+        status: status === 'CERTIFICATE_HOLD' ? 'REVOKED' : status,
+        reason: status === 'GOOD' ? null : (status === 'CERTIFICATE_HOLD' ? 'CERTIFICATE_HOLD' : reason),
+        revocationTime: status === 'GOOD' ? null : (revocationTime || new Date().toISOString())
+      };
+
+      try {
+        const res = await fetch(`/kms/certificates/${serial}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Update failed');
+        }
+
+        const updated = await res.json();
+        const alertBox = document.getElementById('updateResultAlert');
+        alertBox.style.display = 'block';
+        alertBox.innerHTML = `
+          <div style="padding: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px;">
+            <div style="font-weight: 700; color: var(--teal); margin-bottom: 4px;">✓ Status Successfully Updated!</div>
+            <div style="font-size: 0.82rem; color: #e2e8f0;">
+              Serial <code>${updated.serialNumberHex.substring(0, 12)}...</code> updated to <strong>${updated.status}</strong> (Seq: <strong>v${updated.sequence}</strong>).
+              Transactional Outbox event published to RabbitMQ.
+            </div>
+          </div>
+        `;
+
+        fetchCertificates();
+      } catch (err) {
+        const alertBox = document.getElementById('updateResultAlert');
+        alertBox.style.display = 'block';
+        alertBox.innerHTML = `
+          <div style="padding: 12px; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; color: var(--red);">
+            <strong>Update Error:</strong> ${escapeHtml(err.message)}
+          </div>
+        `;
+      }
+    }
+
+    // =========================================================================
+    // RECONCILIATION & SYNC AUDIT LOGIC
+    // =========================================================================
+    async function fetchSyncStatus() {
+      try {
+        const res = await fetch('/kms/audit/sync-status');
+        const data = await res.json();
+        document.getElementById('auditKmsTotal').innerText = data.totalCertificates;
+        document.getElementById('auditOutboxTotal').innerText = data.totalOutboxEvents;
+        document.getElementById('auditOutboxSent').innerText = data.sentOutboxEvents;
+        document.getElementById('auditOutboxPending').innerText = data.pendingOutboxEvents;
+      } catch (e) {
+        console.error('Failed to fetch sync status', e);
+      }
+    }
+
+    async function syncAllCertificatesToOutbox() {
+      if (!confirm('Re-queue and publish status events for ALL managed certificates to RabbitMQ outbox?')) return;
+      try {
+        const res = await fetch('/kms/audit/sync-all', { method: 'POST' });
+        const data = await res.json();
+        alert(`Sync Triggered: ${data.message}`);
+        fetchSyncStatus();
+      } catch (e) {
+        alert('Sync all failed: ' + e.message);
+      }
+    }
+
+    async function verifyResponderSync() {
+      document.getElementById('reconBadge').innerHTML = '<span class="badge badge-yellow">VERIFYING...</span>';
+      document.getElementById('reconDetails').innerHTML = 'Querying OCSP Responder reconciliation audit endpoint...';
+
+      try {
+        // First try calling Responder directly via port 8080
+        const resp = await fetch('http://localhost:8080/api/v1/admin/reconciliation/verify', {
+          headers: {
+            'Authorization': 'Basic ' + btoa('admin:changeme')
+          }
+        });
+
+        if (!resp.ok) throw new Error('Responder returned HTTP ' + resp.status);
+        const rep = await resp.json();
+
+        if (rep.synchronized) {
+          document.getElementById('reconBadge').innerHTML = '<span class="badge badge-teal">100% SYNCHRONIZED</span>';
+          document.getElementById('reconDetails').innerHTML = `
+            <div style="color: var(--teal); font-weight: 600; margin-bottom: 8px;">
+              ✓ All ${rep.kmsTotal} KMS certificates are received and matched in the OCSP Responder!
+            </div>
+            <table style="width: 100%; border: 1px solid var(--card-border); font-size: 0.8rem; margin-top: 8px;">
+              <tr><td style="width: 250px;">KMS Inventory Count</td><td><strong>${rep.kmsTotal}</strong> certificates</td></tr>
+              <tr><td>Responder Status Count</td><td><strong>${rep.responderTotal}</strong> certificates</td></tr>
+              <tr><td>Responder Inbox Events Received</td><td><strong>${rep.inboxEventsReceived}</strong> events</td></tr>
+              <tr><td>Perfect Status Matches</td><td><strong>${rep.matchedCount}</strong> / ${rep.kmsTotal}</td></tr>
+              <tr><td>Missing in Responder</td><td><strong>${rep.missingCount}</strong></td></tr>
+              <tr><td>Status Mismatches</td><td><strong>${rep.mismatchCount}</strong></td></tr>
+              <tr><td>Audit Timestamp</td><td><code>${rep.verifiedAt}</code></td></tr>
+            </table>
+          `;
+        } else {
+          document.getElementById('reconBadge').innerHTML = '<span class="badge badge-red">SYNC DISCREPANCY</span>';
+          document.getElementById('reconDetails').innerHTML = `
+            <div style="color: var(--red); font-weight: 600; margin-bottom: 8px;">
+              ⚠️ Discrepancies detected between KMS and Responder:
+            </div>
+            <div>Missing Serials: ${rep.missingSerials?.join(', ') || 'None'}</div>
+            <div>Mismatched Statuses: ${rep.mismatchCount}</div>
+            <div style="margin-top: 10px;">
+              <button class="btn btn-warning" onclick="syncAllCertificatesToOutbox()">Click here to Force Resync All</button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        document.getElementById('reconBadge').innerHTML = '<span class="badge badge-red">AUDIT ERROR</span>';
+        document.getElementById('reconDetails').innerHTML = `
+          Failed to query Responder reconciliation endpoint directly: ${escapeHtml(err.message)}.
+          <div style="margin-top: 8px; font-size: 0.78rem;">
+            Tip: You can also verify synchronization directly by running:
+            <code>curl -u admin:changeme http://localhost:8080/api/v1/admin/reconciliation/verify</code>
+          </div>
+        `;
+      }
+    }
+
+    // Modal helpers
     function openRevokeModal(serial) {
       targetRevokeCert = certificates.find(c => c.serialNumberHex === serial);
       if (!targetRevokeCert) return;
@@ -508,8 +975,9 @@
       return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
+    // Initial load
     fetchCertificates();
+    setNowTimestamp();
   </script>
 </body>
 </html>
-
