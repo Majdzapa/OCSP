@@ -15,27 +15,27 @@
                       └───────┬───────────────────────┬───────┘
        (Admin API + Auth)     │                       │ (RFC 6960 Test Checks)
                               ▼                       ▼
-                  ┌───────────────────────┐       ┌───────────────────────┐
-                  │    ocsp-responder     │       │      ocsp-client      │
-                  │      (Port 8080)      │       │      (Port 8082)      │
-                  │  Spring Security Auth │       │  Test Web Interface   │
-                  │  SoftHSM2 Dynamic PKI │       │  RFC 6960 Verifier    │
-                  └──────────▲────────────┘       └───────────▲───────────┘
-                             │                                │
-                       (AMQP Events)                    (RFC 6960 /ocsp)
-                             │                                │
-                  ┌──────────┴────────────┐                   │
-                  │     RabbitMQ Bus      │                   │
-                  │      (Port 5672)      │                   │
-                  └──────────▲────────────┘                   │
-                             │                                │
-                       (AMQP Outbox)                          │
-                             │                                │
-                  ┌──────────┴────────────┐                   │
-                  │     kms-simulator     │                   │
-                  │      (Port 8090)      │                   │
-                  │   Web UI & Test PKI   │───────────────────┘
-                  └───────────────────────┘
+┌──────────────────┐      ┌───────────────────────┐       ┌───────────────────────┐
+│     ocsp-hsm     │◄─────┤    ocsp-responder     │       │      ocsp-client      │
+│  (Dedicated HSM  │ PKCS │      (Port 8080)      │       │      (Port 8082)      │
+│    Container)    │ #11  │  Spring Security Auth │       │  Test Web Interface   │
+└──────────────────┘      │  Configured via YML   │       │  RFC 6960 Verifier    │
+                          └──────────▲────────────┘       └───────────▲───────────┘
+                                     │                                │
+                               (AMQP Events)                    (RFC 6960 /ocsp)
+                                     │                                │
+                          ┌──────────┴────────────┐                   │
+                          │     RabbitMQ Bus      │                   │
+                          │      (Port 5672)      │                   │
+                          └──────────▲────────────┘                   │
+                                     │                                │
+                               (AMQP Outbox)                          │
+                                     │                                │
+                          ┌──────────┴────────────┐                   │
+                          │     kms-simulator     │                   │
+                          │      (Port 8090)      │                   │
+                          │   Web UI & Test PKI   │───────────────────┘
+                          └───────────────────────┘
 ```
 
 ---
@@ -107,7 +107,8 @@ docker compose up --build -d
 
 | Module | Port | Description |
 |---|---|---|
-| [`ocsp-responder`](./ocsp-responder) | `8080` | RFC 6960 OCSP responder with dynamic SoftHSM2 PKCS#11 signing (RSA-3072 / SHA256withRSA), RabbitMQ listener collecting status events into MariaDB, Spring Security protecting admin endpoints, and embedded login portal. |
+| [`hsm`](./hsm) | N/A | Dedicated containerized Hardware Security Module (SoftHSM2) running in Docker, managing non-extractable RSA-3072 delegated signing keys, tokens, and PKCS#11 storage. |
+| [`ocsp-responder`](./ocsp-responder) | `8080` | RFC 6960 OCSP responder connecting directly to the dedicated HSM via application properties (no startup scripts), RabbitMQ listener with transactional inbox table, Spring Security protecting admin endpoints, and embedded login portal. |
 | [`ocsp-client`](./ocsp-client) | `8082` | Standalone OCSP Client application with embedded web UI for testing RFC 6960 requests (with/without nonce, POST/GET) and verifying cryptographic signatures against the CA cert. |
 | [`kms-simulator`](./kms-simulator) | `8090` | Source of truth for certificates and revocation lifecycle. Test PKI generator, transactional outbox pattern, embedded web UI, and RabbitMQ publisher. |
 | [`ocsp-console`](./ocsp-console) | `3000` | Full administrative React 18 single page application with Mantine v7 components, protected by authentication gate (`/login`) with user session management, auto-logout on 401, and navbar user status. |

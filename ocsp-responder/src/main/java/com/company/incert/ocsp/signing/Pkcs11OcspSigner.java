@@ -29,14 +29,20 @@ public class Pkcs11OcspSigner implements OcspSigner {
     private final AtomicReference<SignerState> stateRef = new AtomicReference<>();
 
     public Pkcs11OcspSigner(String libraryPath, String tokenLabel, String pin, String keyLabel) {
+        this(libraryPath, tokenLabel, pin, keyLabel, 0, null);
+    }
+
+    public Pkcs11OcspSigner(String libraryPath, String tokenLabel, String pin, String keyLabel, int slotListIndex, String configPath) {
         this.tokenLabel = tokenLabel;
         this.pin = pin != null ? pin.toCharArray() : new char[0];
         this.keyLabel = keyLabel;
-        this.pkcs11ConfigPath = createConfigFileIfNecessary(libraryPath, tokenLabel);
+        this.pkcs11ConfigPath = (configPath != null && !configPath.isBlank())
+                ? configPath
+                : createConfigFileIfNecessary(libraryPath, tokenLabel, slotListIndex);
         load();
     }
 
-    private String createConfigFileIfNecessary(String libraryPath, String tokenLabel) {
+    private String createConfigFileIfNecessary(String libraryPath, String tokenLabel, int slotListIndex) {
         if (libraryPath != null && libraryPath.endsWith(".cfg")) {
             return libraryPath;
         }
@@ -46,9 +52,7 @@ public class Pkcs11OcspSigner implements OcspSigner {
             try (FileWriter fw = new FileWriter(cfgFile)) {
                 fw.write("name = SoftHSM\n");
                 fw.write("library = " + (libraryPath != null ? libraryPath : "/usr/lib/softhsm/libsofthsm2.so") + "\n");
-                if (tokenLabel != null && !tokenLabel.isBlank()) {
-                    fw.write("slotListIndex = 0\n");
-                }
+                fw.write("slotListIndex = " + slotListIndex + "\n");
             }
             return cfgFile.getAbsolutePath();
         } catch (Exception e) {

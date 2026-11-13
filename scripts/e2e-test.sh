@@ -157,6 +157,13 @@ pass "Test e: Both POST (DER) and GET (base64url) work with nonce echo"
 # Test f: PKCS#11 signing & no private keys in container
 # -----------------------------------------------------------------------------
 info "Test f: Verifying PKCS#11 signing and private key protection in container..."
+
+# Verify dedicated HSM container is running and healthy
+HSM_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ocsp-hsm 2>/dev/null || echo "unknown")
+if [ "${HSM_STATUS}" != "healthy" ]; then
+    fail "Test f: Dedicated HSM container ocsp-hsm is not healthy (status: ${HSM_STATUS})!"
+fi
+
 CONTAINER_LOGS=$(docker logs ocsp-responder 2>&1 || true)
 echo "${CONTAINER_LOGS}" | grep -Ei "(PKCS#11|SoftHSM)" || fail "Test f: No PKCS#11 activity found in ocsp-responder logs!"
 

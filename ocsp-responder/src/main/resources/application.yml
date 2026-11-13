@@ -93,8 +93,10 @@ hsm:
   enabled: ${HSM_ENABLED:true}
   pkcs11-library: ${HSM_PKCS11_LIBRARY:/usr/lib/softhsm/libsofthsm2.so}
   token-label: ${HSM_TOKEN_LABEL:ocsp-signing}
+  slot-index: ${HSM_SLOT_INDEX:0}
   pin: ${HSM_PIN:1234}
   key-label: ${HSM_KEY_LABEL:ocsp-signing-key}
+  config-path: ${HSM_CONFIG_PATH:}
 
 logging:
   level:

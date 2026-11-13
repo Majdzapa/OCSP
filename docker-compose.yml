@@ -9,6 +9,7 @@
 #   mariadb          MariaDB 10.11 (schemas: ocsp, kms) (host 3307, internal 3306)
 #   rabbitmq         RabbitMQ 3.13 + Management UI      (host 5672, 15672)
 #   kms-simulator    KMS & CA simulator + event outbox  (host 8090, internal 8090)
+#   hsm              SoftHSM2 Dedicated HSM Container   (PKCS#11 Token & Key Module)
 #   ocsp-responder   RFC 6960 OCSP Responder + Auth    (host 8080, internal 8080)
 #   ocsp-client      RFC 6960 Client + Test Web UI      (host 8082, internal 8082)
 #   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3000)
@@ -21,6 +22,8 @@ networks:
 volumes:
   mariadb-data:
   pki-data:
+  hsm-tokens:
+  hsm-conf:
 
 x-spring-opts: &spring-opts
   JAVA_OPTS: >-
@@ -118,7 +121,39 @@ services:
       retries: 6
 
   # ============================================================
-  # OCSP Responder (RFC 6960 Responder + SoftHSM2 + Auth)
+  # Dedicated SoftHSM2 Container (PKCS#11 Hardware Security Module)
+  # ============================================================
+  hsm:
+    build:
+      context: .
+      dockerfile: hsm/Dockerfile
+    image: ocsp/hsm:local
+    container_name: ocsp-hsm
+    restart: unless-stopped
+    networks: [ocsp-net]
+    depends_on:
+      kms-simulator:
+        condition: service_healthy
+    environment:
+      HSM_TOKEN_LABEL: ocsp-signing
+      HSM_PIN: "1234"
+      HSM_SO_PIN: "12345678"
+      HSM_KEY_LABEL: ocsp-signing-key
+      HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
+      PKI_DIR: /data/pki
+    volumes:
+      - hsm-tokens:/var/lib/softhsm/tokens
+      - hsm-conf:/etc/softhsm2
+      - pki-data:/data/pki
+    healthcheck:
+      test: ["CMD-SHELL", "pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label ocsp-signing --login --pin 1234 --list-objects 2>/dev/null | grep -q ocsp-signing-key || exit 1"]
+      start_period: 15s
+      interval: 5s
+      timeout: 5s
+      retries: 6
+
+  # ============================================================
+  # OCSP Responder (RFC 6960 Responder + PKCS#11 via application.properties)
   # ============================================================
   ocsp-responder:
     build:
@@ -132,6 +167,8 @@ services:
       mariadb:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      hsm:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -156,10 +193,12 @@ services:
       HSM_TOKEN_LABEL: ocsp-signing
       HSM_PIN: "1234"
       HSM_KEY_LABEL: ocsp-signing-key
+      SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
       PKI_DIR: /data/pki
     volumes:
-      - pki-data:/data/pki
-      - ./data/pki:/app/data/pki
+      - hsm-tokens:/var/lib/softhsm/tokens
+      - hsm-conf:/etc/softhsm2
+      - pki-data:/data/pki:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
       start_period: 40s

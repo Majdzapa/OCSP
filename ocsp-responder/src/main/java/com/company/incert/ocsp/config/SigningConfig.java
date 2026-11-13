@@ -55,12 +55,19 @@ public class SigningConfig {
     @Value("${hsm.key-label:ocsp-signing-key}")
     private String keyLabel;
 
+    @Value("${hsm.slot-index:0}")
+    private int slotIndex;
+
+    @Value("${hsm.config-path:}")
+    private String configPath;
+
     @Bean
     @ConditionalOnProperty(name = "hsm.enabled", havingValue = "true", matchIfMissing = true)
     public OcspSigner pkcs11OcspSigner() {
         try {
-            log.info("Attempting to initialize PKCS#11 signer from library: {}", pkcs11Library);
-            return new Pkcs11OcspSigner(pkcs11Library, tokenLabel, pin, keyLabel);
+            log.info("Connecting to HSM via PKCS#11 properties: library={}, token={}, keyLabel={}, slotIndex={}",
+                    pkcs11Library, tokenLabel, keyLabel, slotIndex);
+            return new Pkcs11OcspSigner(pkcs11Library, tokenLabel, pin, keyLabel, slotIndex, configPath);
         } catch (Exception e) {
             log.warn("PKCS#11 initialization failed ({}). Falling back to software signer for dev/test.", e.getMessage());
             return createFallbackSoftwareSigner();
