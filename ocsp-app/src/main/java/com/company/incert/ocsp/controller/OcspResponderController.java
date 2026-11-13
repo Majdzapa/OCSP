@@ -52,3 +52,4 @@ public class OcspResponderController {
                 .body(der);
     }
 }
+

@@ -120,3 +120,4 @@ class CertificateStatusServiceTest {
         assertThat(existing.getStatus()).isEqualTo(CertificateStatus.REVOKED);
     }
 }
+

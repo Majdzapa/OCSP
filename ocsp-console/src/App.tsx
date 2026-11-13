@@ -6,7 +6,6 @@ import {
 import {
   DashboardOutlined,
   GppBadOutlined,
-  StorageOutlined,
   ReceiptLongOutlined,
   VerifiedUserOutlined,
   ManageSearchOutlined,
@@ -14,7 +13,6 @@ import {
   Circle,
 } from '@mui/icons-material'
 import { DashboardPage }  from './pages/DashboardPage'
-import { CacheExplorer }  from './pages/CacheExplorer'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertPage } from './pages/SigningCertPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
@@ -27,7 +25,6 @@ const navItems = [
   { label: 'Dashboard',       path: '/dashboard',        icon: <DashboardOutlined /> },
   { label: 'KMS Inventory',   path: '/kms-certificates', icon: <KeyOutlined /> },
   { label: 'Revocations',     path: '/revocations',      icon: <GppBadOutlined /> },
-  { label: 'Cache',           path: '/cache',            icon: <StorageOutlined /> },
   { label: 'Signing Cert',    path: '/signing-cert',     icon: <VerifiedUserOutlined /> },
   { label: 'Cert Checker',    path: '/cert-checker',     icon: <ManageSearchOutlined /> },
   { label: 'Audit Log',       path: '/audit',            icon: <ReceiptLongOutlined /> },
@@ -165,7 +162,6 @@ export default function App() {
           <Route path="/dashboard"        element={<DashboardPage />} />
           <Route path="/kms-certificates" element={<KmsCertificatesPage />} />
           <Route path="/revocations"      element={<RevocationFeed />} />
-          <Route path="/cache"            element={<CacheExplorer />} />
           <Route path="/signing-cert"     element={<SigningCertPage />} />
           <Route path="/cert-checker"     element={<CertCheckerPage />} />
           <Route path="/audit"            element={<RevocationFeed />} />

@@ -62,3 +62,4 @@ public class RabbitMqConfig {
             .to(certificateStatusDeadLetterExchange()).with(deadLetterQueue);
     }
 }
+

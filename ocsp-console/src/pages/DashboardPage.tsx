@@ -97,18 +97,16 @@ export function DashboardPage() {
             accent: '#6366f1',
           },
           {
-            title: 'L1 Cache Hit',
-            value: loading ? '—' : `${(stats!.l1HitRatio * 100).toFixed(1)}%`,
-            subtitle: 'In-JVM Caffeine cache',
+            title: 'Architecture',
+            value: 'Monolith',
+            subtitle: 'Direct DB & SoftHSM2 signing',
             accent: '#22c55e',
-            progress: loading ? undefined : stats!.l1HitRatio,
           },
           {
-            title: 'L2 Cache Hit',
-            value: loading ? '—' : `${(stats!.l2HitRatio * 100).toFixed(1)}%`,
-            subtitle: 'Shared MariaDB cache',
-            accent: '#a78bfa',
-            progress: loading ? undefined : stats!.l2HitRatio,
+            title: 'Message Broker',
+            value: 'RabbitMQ',
+            subtitle: 'Direct exchange & durable queue',
+            accent: '#f97316',
           },
           {
             title: 'Avg Signing Latency',
@@ -172,25 +170,25 @@ export function DashboardPage() {
           </Card>
         </Grid>
 
-        {/* Cache hit ratio bar chart */}
+        {/* Dynamic Signing Activity bar chart */}
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2, fontSize: '0.95rem' }}>
-                Cache Hit Ratio
+                PKCS#11 Signing Ops
               </Typography>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={CHART_DATA.slice(-8)}>
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 150]} />
                   <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
-                  <Bar dataKey="cacheHit" name="Hit %" radius={[4, 4, 0, 0]}
-                    fill="url(#cacheGrad)">
+                  <Bar dataKey="requests" name="Sign Ops/s" radius={[4, 4, 0, 0]}
+                    fill="url(#signGrad)">
                     <defs>
-                      <linearGradient id="cacheGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#8b5cf6" />
-                        <stop offset="100%" stopColor="#6366f1" />
+                      <linearGradient id="signGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#059669" />
                       </linearGradient>
                     </defs>
                   </Bar>

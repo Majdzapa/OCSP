@@ -58,7 +58,7 @@ services:
   # RabbitMQ with Management UI
   # ============================================================
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    image: rabbitmq:3.13-management
     container_name: ocsp-rabbitmq
     restart: unless-stopped
     networks: [ocsp-net]
@@ -147,6 +147,10 @@ services:
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      KMS_HOST: kms-simulator
+      KMS_PORT: 8090
+      OCSP_RESPONDER_HOST: localhost
+      OCSP_RESPONDER_PORT: 8080
       HSM_ENABLED: "true"
       HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
       HSM_TOKEN_LABEL: ocsp-signing

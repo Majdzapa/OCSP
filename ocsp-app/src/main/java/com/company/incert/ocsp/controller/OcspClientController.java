@@ -27,3 +27,4 @@ public class OcspClientController {
         return ResponseEntity.ok(result);
     }
 }
+

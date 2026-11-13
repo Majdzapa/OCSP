@@ -31,11 +31,11 @@ public class AdminDashboardController {
             Map.entry("goodCertificates", goodCerts),
             Map.entry("signingCertDaysUntilExpiry", signingCertDaysLeft),
             Map.entry("requestsPerSecond", 15.0),
-            Map.entry("l1HitRatio", 0.0), // No caching enabled
-            Map.entry("l2HitRatio", 0.0), // No pre-signed caching
+            Map.entry("cachingEnabled", false),
+            Map.entry("architecture", "Monolith"),
+            Map.entry("messagingBroker", "RabbitMQ"),
             Map.entry("avgSigningLatencyMs", 0.9),
             Map.entry("errorRate", 0.0),
-            Map.entry("activeCacheEntries", 0),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft),
             Map.entry("lastReconciliationOk", reconciliationService.isLastReconciliationOk()),
             Map.entry("lastReconciliationTime", reconciliationService.getLastReconciliationTime() != null ? reconciliationService.getLastReconciliationTime().toString() : "")
@@ -66,3 +66,4 @@ public class AdminDashboardController {
         ));
     }
 }
+

@@ -2,14 +2,16 @@
 
 export interface DashboardStats {
   requestsPerSecond: number
-  l1HitRatio: number
-  l2HitRatio: number
   avgSigningLatencyMs: number
   errorRate: number
-  activeCacheEntries: number
   revokedCertificates: number
+  goodCertificates?: number
+  totalCertificates?: number
   ocspSigningCertDaysRemaining: number
   lastReconciliationOk: boolean
+  cachingEnabled?: boolean
+  architecture?: string
+  messagingBroker?: string
 }
 
 export interface CacheEntry {

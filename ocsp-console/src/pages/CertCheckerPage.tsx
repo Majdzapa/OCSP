@@ -181,7 +181,7 @@ export function CertCheckerPage() {
       <Box sx={{ mb: 3 }}>
         <Typography variant="h5" fontWeight={700}>Certificate & OCSP Testing</Typography>
         <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-          Test real RFC 6960 OCSP requests (Nonce vs Nonce-Free) to inspect L1/L2 cache hits and SoftHSM2 signing, or check DB status.
+          Test real RFC 6960 OCSP requests (Nonce vs Nonce-Free) to inspect dynamic SoftHSM2 signing and verification, or check DB status.
         </Typography>
       </Box>
 
@@ -212,7 +212,7 @@ export function CertCheckerPage() {
                 Configure OCSP Request
               </Typography>
               <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-                Constructs a standard DER-encoded RFC 6960 OCSP request and measures the response latency, L2 cache hit, and nonce echoing.
+                Constructs a standard DER-encoded RFC 6960 OCSP request and measures the response latency, signature verification, and nonce echoing.
               </Typography>
 
               {/* Quick sample buttons */}
@@ -301,8 +301,8 @@ export function CertCheckerPage() {
 
                     <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: includeNonce ? '#f59e0b' : '#22c55e' }}>
                       {includeNonce
-                        ? '⚠️ NONCE INCLUDED: Injects an 8-byte unique random nonce. Responder echoes it back in the signature. L2 Response Cache is BYPASSED because nonces are single-use.'
-                        : '⚡ NONCE-FREE (DEFAULT FOR BROWSERS & STAPLING): Requests without nonces are stored into the L2 Pre-Signed Response Cache. Running this a second time will trigger an instant L2 Cache HIT!'}
+                        ? '⚠️ NONCE INCLUDED: Injects an 8-byte unique random nonce. Responder echoes it back in the signature.'
+                        : '⚡ NONCE-FREE: Standard RFC 6960 query without nonce.'}
                     </Typography>
                   </Paper>
                 </Grid>
@@ -358,12 +358,12 @@ export function CertCheckerPage() {
                 {/* Result KPI banner */}
                 <Grid container spacing={2} sx={{ mb: 3 }}>
                   <Grid item xs={12} sm={4}>
-                    <Paper sx={{ p: 2, bgcolor: testResult.l2Hit ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${testResult.l2Hit ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)'}` }}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>L2 Cache Status</Typography>
+                    <Paper sx={{ p: 2, bgcolor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
+                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Signing Architecture</Typography>
                       <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <StorageOutlined sx={{ color: testResult.l2Hit ? '#22c55e' : '#818cf8', fontSize: 20 }} />
-                        <Typography variant="body2" fontWeight={700} sx={{ color: testResult.l2Hit ? '#22c55e' : '#e2e8f0' }}>
-                          {testResult.l2Hit ? '⚡ L2 CACHE HIT' : testResult.includeNonce ? '🚫 BYPASSED (Nonce)' : '📥 L2 MISS (Saved to L2)'}
+                        <StorageOutlined sx={{ color: '#22c55e', fontSize: 20 }} />
+                        <Typography variant="body2" fontWeight={700} sx={{ color: '#22c55e' }}>
+                          ⚡ DIRECT SIGNING (NO CACHE)
                         </Typography>
                       </Box>
                     </Paper>
@@ -408,10 +408,7 @@ export function CertCheckerPage() {
                 {testResult.nonceEchoed && (
                   <Row label="Nonce Echoed" value={`0x${testResult.nonceEchoed}`} mono />
                 )}
-                {testResult.cacheKey && (
-                  <Row label="L2 Cache Key" value={testResult.cacheKey} mono />
-                )}
-                <Row label="Cache Explanation" value={testResult.cacheVerdict} />
+                <Row label="Signing Mode" value={testResult.cacheVerdict} />
 
                 {/* Terminal commands box */}
                 <Box sx={{ mt: 3 }}>

@@ -1,7 +1,6 @@
 import axios from 'axios'
 import type {
   DashboardStats,
-  CacheEntry,
   RevocationEvent,
   Page,
   CertStatusResponse,
@@ -67,16 +66,6 @@ api.interceptors.response.use(undefined, async (error) => {
 // ---- Dashboard ----
 export const getDashboardStats = (): Promise<DashboardStats> =>
   api.get('/dashboard/stats').then((r) => r.data)
-
-// ---- Cache ----
-export const getCacheEntries = (page = 0, size = 25): Promise<Page<CacheEntry>> =>
-  api.get('/cache', { params: { page, size } }).then((r) => r.data)
-
-export const findCacheBySerial = (serialHex: string): Promise<CacheEntry> =>
-  api.get(`/cache/serial/${serialHex}`).then((r) => r.data)
-
-export const invalidateCacheEntry = (cacheKey: string): Promise<void> =>
-  api.delete(`/cache/${cacheKey}`).then(() => undefined)
 
 // ---- Revocation Activity ----
 export const getRevocationEvents = (page = 0, size = 25): Promise<Page<RevocationEvent>> =>
