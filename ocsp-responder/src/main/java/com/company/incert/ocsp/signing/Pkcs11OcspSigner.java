@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * PKCS#11 (SoftHSM2) backed OcspSigner.
  * Accesses keys in the token using SunPKCS11 provider.
  * Private key is non-extractable and never leaves the token.
+ * Supports dynamic switching of the active signing certificate/key at runtime.
  */
 @Slf4j
 public class Pkcs11OcspSigner implements OcspSigner {
@@ -24,7 +25,10 @@ public class Pkcs11OcspSigner implements OcspSigner {
     private final String pkcs11ConfigPath;
     private final String tokenLabel;
     private final char[] pin;
-    private final String keyLabel;
+    private volatile String keyLabel;
+
+    private volatile KeyStore keyStore;
+    private volatile Provider provider;
 
     private final AtomicReference<SignerState> stateRef = new AtomicReference<>();
 
@@ -70,42 +74,73 @@ public class Pkcs11OcspSigner implements OcspSigner {
             if (sunPkcs11 == null) {
                 throw new IllegalStateException("SunPKCS11 provider not available in JDK");
             }
-            Provider provider = sunPkcs11.configure(pkcs11ConfigPath);
-            Security.addProvider(provider);
+            this.provider = sunPkcs11.configure(pkcs11ConfigPath);
+            Security.addProvider(this.provider);
 
-            KeyStore ks = KeyStore.getInstance("PKCS11", provider);
-            ks.load(null, pin);
+            this.keyStore = KeyStore.getInstance("PKCS11", this.provider);
+            this.keyStore.load(null, pin);
 
-            PrivateKey privateKey = (PrivateKey) ks.getKey(keyLabel, pin);
+            updateActiveCertificate(this.keyLabel, null);
+        } catch (Exception e) {
+            log.error("Failed to load PKCS#11 signing key: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to load PKCS#11 signing key: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public synchronized void updateActiveCertificate(String newKeyLabel, X509CertificateHolder certificate) {
+        if (newKeyLabel != null && !newKeyLabel.isBlank()) {
+            this.keyLabel = newKeyLabel;
+        }
+
+        try {
+            if (this.keyStore == null) {
+                log.warn("PKCS#11 keyStore was null, reloading...");
+                load();
+                return;
+            }
+
+            PrivateKey privateKey = (PrivateKey) keyStore.getKey(this.keyLabel, pin);
             if (privateKey == null) {
                 log.warn("Key '{}' not found in PKCS#11 keystore. Available aliases: {}",
-                    keyLabel, java.util.Collections.list(ks.aliases()));
-                throw new IllegalStateException("Key '" + keyLabel + "' not found in PKCS#11 keystore");
+                    this.keyLabel, java.util.Collections.list(keyStore.aliases()));
+                throw new IllegalStateException("Key '" + this.keyLabel + "' not found in PKCS#11 keystore");
             }
 
-            java.security.cert.Certificate cert = ks.getCertificate(keyLabel);
-            if (cert == null) {
-                throw new IllegalStateException("Certificate for key '" + keyLabel + "' not found in PKCS#11 keystore");
+            X509CertificateHolder holder = certificate;
+            if (holder == null) {
+                java.security.cert.Certificate cert = keyStore.getCertificate(this.keyLabel);
+                if (cert == null) {
+                    throw new IllegalStateException("Certificate for key '" + this.keyLabel + "' not found in PKCS#11 keystore");
+                }
+                holder = new X509CertificateHolder(cert.getEncoded());
             }
 
-            X509Certificate x509 = (X509Certificate) cert;
-            X509CertificateHolder holder = new X509CertificateHolder(x509.getEncoded());
-            String algorithm = x509.getPublicKey().getAlgorithm().equalsIgnoreCase("EC")
-                ? "SHA256withECDSA" : "SHA256withRSA";
+            String algorithm = "SHA256withRSA";
+            try {
+                if (holder.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId().contains("1.2.840.10045")) {
+                    algorithm = "SHA256withECDSA";
+                }
+            } catch (Exception ignored) {}
 
             stateRef.set(new SignerState(
                 privateKey,
                 new X509CertificateHolder[]{holder},
                 algorithm,
-                x509.getNotAfter().toInstant(),
-                provider
+                holder.getNotAfter().toInstant(),
+                this.provider
             ));
-            log.info("PKCS#11 signer loaded successfully: keyLabel={} algorithm={} notAfter={}",
-                keyLabel, algorithm, x509.getNotAfter());
+            log.info("Active PKCS#11 signing certificate updated: keyLabel={} algorithm={} notAfter={}",
+                this.keyLabel, algorithm, holder.getNotAfter());
         } catch (Exception e) {
-            log.error("Failed to load PKCS#11 signing key: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to load PKCS#11 signing key: " + e.getMessage(), e);
+            log.error("Failed to update active signing certificate: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update active signing certificate: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public String getActiveKeyLabel() {
+        return this.keyLabel;
     }
 
     @Override
@@ -149,4 +184,3 @@ public class Pkcs11OcspSigner implements OcspSigner {
         Provider provider
     ) {}
 }
-

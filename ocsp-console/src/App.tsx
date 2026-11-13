@@ -26,7 +26,7 @@ import {
 } from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
-import { SigningCertPage } from './pages/SigningCertPage'
+import { SigningCertificatesPage } from './pages/SigningCertificatesPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
 import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
 import { InboxAuditPage } from './pages/InboxAuditPage'
@@ -320,7 +320,8 @@ function MainLayout() {
           <Route path="/kms-certificates" element={<KmsCertificatesPage />} />
           <Route path="/inbox"            element={<InboxAuditPage />} />
           <Route path="/revocations"      element={<RevocationFeed />} />
-          <Route path="/signing-cert"     element={<SigningCertPage />} />
+          <Route path="/signing-cert"     element={<SigningCertificatesPage />} />
+          <Route path="/signing-certificates" element={<SigningCertificatesPage />} />
           <Route path="/cert-checker"     element={<CertCheckerPage />} />
           <Route path="/audit"            element={<RevocationFeed />} />
         </Routes>

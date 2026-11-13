@@ -174,3 +174,28 @@ export interface ReconciliationReport {
   }>
   verifiedAt: string
 }
+
+export interface SigningCertificateDto {
+  id: number
+  alias: string
+  keyLabel: string
+  subjectDn: string
+  issuerDn: string
+  serialNumber: string
+  notBefore: string
+  notAfter: string
+  signatureAlgorithm: string
+  active: boolean
+  daysUntilExpiry: number
+  expired: boolean
+  createdAt: string
+  activatedAt?: string | null
+  certificatePem: string
+}
+
+export interface AddSigningCertificateRequest {
+  alias: string
+  keyLabel?: string
+  certificatePem: string
+  activateImmediately?: boolean
+}

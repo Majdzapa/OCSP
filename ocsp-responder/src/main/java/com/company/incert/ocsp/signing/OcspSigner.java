@@ -31,4 +31,15 @@ public interface OcspSigner {
 
     /** Human-readable signer/adapter type, e.g. "PKCS11", "SOFTWARE", "AWS_KMS", "AZURE_KV". */
     String type();
+
+    /**
+     * Dynamically updates the active signing certificate and associated key label in the HSM/keystore.
+     * Takes effect immediately for subsequent signing calls without restarting the service.
+     */
+    default void updateActiveCertificate(String keyLabel, X509CertificateHolder certificate) {}
+
+    /** Returns the key label / alias currently active for signing. */
+    default String getActiveKeyLabel() {
+        return "ocsp-signing-key";
+    }
 }

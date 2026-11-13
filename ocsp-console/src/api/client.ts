@@ -12,6 +12,8 @@ import type {
   InboxEventItem,
   ReconciliationReport,
   AuthConfig,
+  SigningCertificateDto,
+  AddSigningCertificateRequest,
 } from '../types/api'
 
 // API client for ocsp-responder (protected with X-API-KEY, Basic Auth, or Keycloak Bearer token)
@@ -225,3 +227,21 @@ export const syncAllKmsCertificates = (): Promise<{
 
 export const triggerKmsRevocationJob = (): Promise<{ status: string }> =>
   kmsApi.post('/jobs/revocation/run').then((r) => r.data)
+
+// ---- Signing Certificates Management ----
+export const getSigningCertificates = (): Promise<SigningCertificateDto[]> =>
+  api.get('/signing-certificates').then((r) => r.data)
+
+export const getActiveSigningCertificate = (): Promise<SigningCertificateDto> =>
+  api.get('/signing-certificates/active').then((r) => r.data)
+
+export const addSigningCertificate = (
+  req: AddSigningCertificateRequest
+): Promise<SigningCertificateDto> =>
+  api.post('/signing-certificates', req).then((r) => r.data)
+
+export const activateSigningCertificate = (id: number): Promise<SigningCertificateDto> =>
+  api.put(`/signing-certificates/${id}/activate`).then((r) => r.data)
+
+export const deleteSigningCertificate = (id: number): Promise<void> =>
+  api.delete(`/signing-certificates/${id}`).then((r) => r.data)
