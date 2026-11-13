@@ -1,5 +1,5 @@
 security:
-  auth-mode: ${AUTH_MODE:SELF_MANAGED} # SELF_MANAGED or KEYCLOCK
+  auth-mode: ${AUTH_MODE:KEYCLOCK} # SELF_MANAGED or KEYCLOCK
 
 keycloak:
   auth-server-url: ${KEYCLOAK_URL:http://localhost:8081}
