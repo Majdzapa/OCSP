@@ -25,7 +25,6 @@
     <properties>
         <java.version>25</java.version>
         <bouncycastle.version>1.78.1</bouncycastle.version>
-        <archunit.version>1.5.1</archunit.version>
         <testcontainers.version>1.20.3</testcontainers.version>
         <springdoc.version>2.6.0</springdoc.version>
         <lombok.version>1.18.48</lombok.version>
@@ -148,12 +147,7 @@
             <artifactId>mariadb</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
-            <version>${archunit.version}</version>
-            <scope>test</scope>
-        </dependency>
+
     </dependencies>
 
     <build>
