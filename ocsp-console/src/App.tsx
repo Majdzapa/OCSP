@@ -21,6 +21,7 @@ import {
   IconReceipt,
   IconCircleFilled,
   IconLogout,
+  IconExternalLink,
 } from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
@@ -118,6 +119,68 @@ function MainLayout() {
               )
             })}
           </Stack>
+
+          <Box mt="xs">
+            <Text fz="11px" fw={700} c="dimmed" tt="uppercase" px="xs" mb={4}>
+              Direct Portals
+            </Text>
+            <Stack gap={2}>
+              <a
+                href="http://localhost:8090"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-dark-2)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>KMS Portal (8090)</span>
+                <IconExternalLink size={14} />
+              </a>
+              <a
+                href="http://localhost:8082"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-dark-2)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>OCSP Test Tool (8082)</span>
+                <IconExternalLink size={14} />
+              </a>
+              <a
+                href="http://localhost:15672"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: 'var(--mantine-color-dark-2)',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <span>RabbitMQ (15672)</span>
+                <IconExternalLink size={14} />
+              </a>
+            </Stack>
+          </Box>
         </Stack>
 
         {/* Footer: User profile & Signing cert expiry */}

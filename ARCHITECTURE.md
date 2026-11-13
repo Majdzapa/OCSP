@@ -1,6 +1,6 @@
-# Incert OCSP Subsystem — Architecture & Blueprint (v3.0)
+# Incert OCSP Subsystem — Architecture & Blueprint (v4.0)
 
-> **Version**: 3.0 · **Architecture**: Layered Monolith · **Stack**: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
+> **Version**: 4.0 · **Architecture**: Standalone Distributed Services & Pure Event Bus · **Stack**: Java 21 · Spring Boot 3.3 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
 
 ---
 
@@ -8,11 +8,12 @@
 1. [Target System Blueprint](#1-target-system-blueprint)
 2. [Sequence: OCSP Request Processing & PKCS#11 Dynamic Signing](#2-sequence-ocsp-request-processing--pkcs11-dynamic-signing)
 3. [Sequence: Certificate Revocation via Transactional Outbox & RabbitMQ](#3-sequence-certificate-revocation-via-transactional-outbox--rabbitmq)
-4. [OCSP Client & Relying Party Verification Flow](#4-ocsp-client--relying-party-verification-flow)
-5. [Database Data Models (ERDs)](#5-database-data-models-erds)
-6. [RabbitMQ Messaging Topology](#6-rabbitmq-messaging-topology)
-7. [Deployment Blueprint](#7-deployment-blueprint)
-8. [Security & Cryptographic Boundary Diagram](#8-security--cryptographic-boundary-diagram)
+4. [Standalone OCSP Client & Relying Party Verification Flow](#4-standalone-ocsp-client--relying-party-verification-flow)
+5. [Authentication, Authorization & Console Security](#5-authentication-authorization--console-security)
+6. [Database Data Models (ERDs)](#6-database-data-models-erds)
+7. [RabbitMQ Messaging Topology](#7-rabbitmq-messaging-topology)
+8. [Deployment Blueprint (Docker Compose Topology)](#8-deployment-blueprint-docker-compose-topology)
+9. [Security & Cryptographic Boundary Diagram](#9-security--cryptographic-boundary-diagram)
 
 ---
 
@@ -22,12 +23,12 @@
 graph TB
     subgraph EXTERNAL["External Relying Parties & Operators"]
         RP["🌐 Relying Parties<br/>(TLS Clients, Browsers, mTLS Gateways)"]
-        CLIENT_USER["💻 Client Apps<br/>/api/v1/client/check"]
+        CLIENT_USER["💻 Client Testers<br/>http://localhost:8082"]
         OPS["👤 Security Operators<br/>Mantine Web Console :3000"]
     end
 
     subgraph KMS_ZONE["KMS Simulator Zone (:8090)"]
-        KMS["kms-simulator<br/>────────────────<br/>• Certificate Inventory<br/>• Test PKI Seeder<br/>• Scheduled Revocation Job<br/>• Transactional Outbox Relay"]
+        KMS["kms-simulator<br/>────────────────<br/>• Web Management UI (:8090)<br/>• Certificate Authority Inventory<br/>• Test PKI Seeder (/data/pki)<br/>• Scheduled / Manual Revocations<br/>• Transactional Outbox Relay"]
         KMS_DB[("MariaDB<br/>schema: kms<br/>• certificate<br/>• outbox_event<br/>• job_run")]
         KMS --> KMS_DB
     end
@@ -41,19 +42,24 @@ graph TB
         QUEUE -.->|Dead-Letter| DLX --> DLQ
     end
 
-    subgraph OCSP_MONOLITH["OCSP Monolith Application (ocsp-app :8080)"]
-        subgraph CONTROLLERS["Layered Controllers"]
-            RESP_CTRL["OcspResponderController<br/>POST /ocsp<br/>GET /ocsp/{base64url}"]
-            CLIENT_CTRL["OcspClientController<br/>POST /api/v1/client/check"]
-            ADMIN_CTRL["Admin / Feed / CertCheck Controllers<br/>/api/v1/admin/**"]
+    subgraph RESPONDER_APP["OCSP Responder Service (ocsp-responder :8080)"]
+        subgraph SECURITY_LAYER["Spring Security & Auth Gate"]
+            AUTH_CTRL["AuthController<br/>POST /api/v1/auth/login<br/>GET /api/v1/auth/me"]
+            API_KEY_FILTER["ApiKeyAuthFilter<br/>X-API-KEY validation"]
+            BASIC_AUTH["HttpBasicFilter<br/>admin / changeme"]
+            SEC_CONFIG["SecurityConfig<br/>Public: /ocsp, /auth/**<br/>Protected: /api/v1/admin/**"]
         end
 
-        subgraph SERVICES["Business Services"]
-            RESP_SVC["OcspResponderService<br/>RFC 6960 parsing & response assembly"]
-            CLIENT_SVC["OcspClientService<br/>OCSP Client validator & verifier"]
-            STATUS_SVC["CertificateStatusService<br/>Direct DB lookups & sequence validation"]
+        subgraph RESP_CONTROLLERS["Protocol & Admin Controllers"]
+            RESP_CTRL["OcspResponderController<br/>POST /ocsp (DER)<br/>GET /ocsp/{base64url}"]
+            ADMIN_CTRL["Admin / Feed / CertCheck<br/>/api/v1/admin/**"]
+            STATIC_LOGIN["Static Login Tester<br/>GET /login.html"]
+        end
+
+        subgraph RESP_SERVICES["Business Logic & Messaging"]
+            RESP_SVC["OcspResponderService<br/>RFC 6960 parsing & assembly"]
+            STATUS_SVC["CertificateStatusService<br/>Direct DB lookup & sequence check"]
             LISTENER["CertificateStatusListener<br/>@RabbitListener consumer"]
-            RECON_SVC["ReconciliationService<br/>Startup sync from KMS snapshot"]
         end
 
         subgraph HSM_ZONE["SoftHSM2 Token (PKCS#11) 🔒"]
@@ -61,15 +67,20 @@ graph TB
         end
 
         RESP_CTRL --> RESP_SVC
-        CLIENT_CTRL --> CLIENT_SVC
         ADMIN_CTRL --> STATUS_SVC
         ADMIN_CTRL --> RESP_SVC
 
         RESP_SVC --> STATUS_SVC
         RESP_SVC --> TOKEN
-        CLIENT_SVC --> RESP_CTRL
         LISTENER --> STATUS_SVC
-        RECON_SVC --> STATUS_SVC
+    end
+
+    subgraph CLIENT_APP["OCSP Client & Verifier Service (ocsp-client :8082)"]
+        CLIENT_UI["Embedded Test Web UI<br/>http://localhost:8082"]
+        CLIENT_CTRL["OcspClientController<br/>POST /api/v1/client/check"]
+        CLIENT_SVC["OcspClientService<br/>• RFC 6960 Request Generator<br/>• Nonce Injector (Optional)<br/>• HTTP POST/GET Transporter<br/>• CA Signature Validator<br/>• Nonce Echo Matcher"]
+        CLIENT_UI --> CLIENT_CTRL
+        CLIENT_CTRL --> CLIENT_SVC
     end
 
     subgraph DB["OCSP Data Layer (:3307)"]
@@ -78,14 +89,19 @@ graph TB
     end
 
     subgraph CONSOLE["Frontend Web Console (:3000)"]
-        REACT["Mantine UI v7 Console<br/>React 18 · Vite · Tabler Icons<br/>Dashboard, KMS Manager, Feed, Cert Checker"]
+        LOGIN_PAGE["LoginPage (/login)<br/>Credentials / API Key Tabs"]
+        PROT_ROUTE["ProtectedRoute<br/>AuthContext & Session Guard"]
+        REACT["Mantine UI v7 Console<br/>Dashboard, KMS Inventory, Live Tests"]
+        LOGIN_PAGE --> PROT_ROUTE --> REACT
     end
 
     RP --> RESP_CTRL
-    CLIENT_USER --> CLIENT_CTRL
-    OPS --> REACT
-    REACT --> OCSP_MONOLITH
-    REACT --> KMS
+    CLIENT_USER --> CLIENT_UI
+    CLIENT_SVC -->|RFC 6960 /ocsp| RESP_CTRL
+    OPS --> LOGIN_PAGE
+    REACT -->|Admin API + Auth| RESPONDER_APP
+    REACT -->|Client Test Check| CLIENT_APP
+    REACT -->|KMS Management| KMS
     KMS -- "Transactional Outbox Relay" --> EXCHANGE
     QUEUE --> LISTENER
 ```
@@ -94,18 +110,18 @@ graph TB
 
 ## 2. Sequence: OCSP Request Processing & PKCS#11 Dynamic Signing
 
-Every OCSP request (whether containing a nonce or nonce-free) queries the MariaDB `revocation_status` table directly and is dynamically signed by SoftHSM2 via PKCS#11. No caching layer is present, ensuring real-time revocation consistency and zero stale responses.
+Every OCSP request (whether containing a nonce or nonce-free) queries the MariaDB `revocation_status` table directly and is dynamically signed by SoftHSM2 via PKCS#11. Responses are generated on-the-fly without stale cache windows, guaranteeing instantaneous consistency with revocations emitted via RabbitMQ.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Relying Party (OpenSSL / TLS Client)
-    participant Ctrl as OcspResponderController
+    actor Client as Relying Party (OpenSSL / ocsp-client)
+    participant Ctrl as OcspResponderController (:8080)
     participant Svc as OcspResponderService
     participant DB_Svc as CertificateStatusService
-    participant DB as MariaDB (revocation_status)
+    participant DB as MariaDB (schema: ocsp)
     participant Signer as Pkcs11OcspSigner
-    participant HSM as SoftHSM2 (/usr/lib/softhsm/libsofthsm2.so)
+    participant HSM as SoftHSM2 (libsofthsm2.so)
 
     Client->>Ctrl: POST /ocsp (DER application/ocsp-request)
     Ctrl->>Svc: processOcspRequest(derBytes)
@@ -133,15 +149,17 @@ sequenceDiagram
 
 ## 3. Sequence: Certificate Revocation via Transactional Outbox & RabbitMQ
 
+Zero HTTP reconciliation or polling is performed. All revocation mutations in KMS are atomically persisted alongside an outbox event, asynchronously relayed to RabbitMQ, and ingested in real time by the Responder.
+
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin as Operator / Scheduled Job
-    participant KMS as kms-simulator
+    actor Admin as Operator / Scheduled Simulation Job
+    participant KMS as kms-simulator (:8090)
     participant KMS_DB as MariaDB (schema: kms)
     participant Relay as RabbitMqOutboxRelayAdapter
     participant Rabbit as RabbitMQ (Exchange: incert.certificate.status)
-    participant Listener as CertificateStatusListener (ocsp-app)
+    participant Listener as CertificateStatusListener (ocsp-responder :8080)
     participant Svc as CertificateStatusService
     participant OCSP_DB as MariaDB (schema: ocsp)
 
@@ -171,20 +189,70 @@ sequenceDiagram
 
 ---
 
-## 4. OCSP Client & Relying Party Verification Flow
+## 4. Standalone OCSP Client & Relying Party Verification Flow
 
-The monolith includes a built-in RFC 6960 OCSP Client service (`OcspClientService`) accessible via `POST /api/v1/client/check`:
+The `ocsp-client` application is an independent service running on port `8082` that acts as a real-world relying party:
 
-1. **Request Construction**: Builds an RFC 6960 `OCSPReq` using Bouncy Castle, creating the target `CertID` (SHA-1 over Issuer Name and Public Key). Generates an optional cryptographically secure random nonce.
-2. **HTTP Dispatch**: Transports the DER request via HTTP `POST` or `GET` (base64url) to the OCSP responder endpoint.
-3. **Response Parsing & Status Validation**: Decodes the `OCSPResp` and validates `responseStatus == SUCCESSFUL`.
-4. **Signature Verification**: Verifies the RSA-SHA256 signature against the responder's public key certificate.
-5. **Delegated Signer Authorization**: Enforces RFC 6960 §4.2.2.2 (responder cert must contain `id-kp-OCSPSigning` Extended Key Usage and be issued by the target CA).
-6. **Freshness & Nonce Matching**: Ensures `thisUpdate <= now <= nextUpdate` and verifies that the echoed nonce matches the transmitted nonce.
+1. **RFC 6960 Request Construction**:
+   - Computes SHA-1 hash over Issuer Name and Public Key to generate the `CertID`.
+   - Injects a cryptographically secure 16-byte random Nonce when configured.
+2. **Transport Layer Flexibility**:
+   - Supports both HTTP `POST` (binary DER body with `Content-Type: application/ocsp-request`) and HTTP `GET` (RFC 6960 Appendix A `/{base64url}` format).
+3. **Response Validation**:
+   - Verifies response status code `SUCCESSFUL`.
+   - Cryptographically validates the RSA-3072 signature against the trusted CA certificate loaded at `/data/pki/intermediate-ca-cert.pem`.
+   - Validates RFC 6960 §4.2.2.2 requirements (delegated signer certificate contains `id-kp-OCSPSigning` Extended Key Usage and is signed by the CA).
+   - Validates temporal freshness: `thisUpdate <= now <= nextUpdate`.
+   - Validates Nonce matching: verifies that `nonceSent == nonceEchoed`.
+4. **Interactive Web Interface**:
+   - Serves an embedded UI at `http://localhost:8082` with toggles for Nonce (ON/OFF), HTTP Method (POST/GET), and presets for rapid verification.
 
 ---
 
-## 5. Database Data Models (ERDs)
+## 5. Authentication, Authorization & Console Security
+
+Administrative access to the subsystem is guarded by a multi-layered security architecture:
+
+```mermaid
+graph TD
+    subgraph INGRESS["Client / Browser Ingress"]
+        REQ["Incoming HTTP Request"]
+    end
+
+    subgraph GATE["Spring Security Gate (ocsp-responder)"]
+        PATH_CHECK{"Request Path?"}
+        PUBLIC_PATH["/ocsp, /ocsp/**<br/>/actuator/health<br/>/api/v1/auth/**<br/>/login.html"]
+        ADMIN_PATH["/api/v1/admin/**"]
+
+        AUTH_FILTER{"Auth Header Present?"}
+        API_KEY["X-API-KEY: incert-admin-secret-key"]
+        BASIC["Authorization: Basic admin:changeme"]
+        ANONYMOUS["No Auth Header"]
+
+        ALLOW["200 OK / Process Request"]
+        DENY["401 Unauthorized"]
+    end
+
+    REQ --> PATH_CHECK
+    PATH_CHECK -->|Public Endpoint| PUBLIC_PATH --> ALLOW
+    PATH_CHECK -->|Admin Endpoint| ADMIN_PATH --> AUTH_FILTER
+    AUTH_FILTER -->|Matches API Key| ALLOW
+    AUTH_FILTER -->|Matches Basic Auth| ALLOW
+    AUTH_FILTER -->|Invalid / Missing| DENY
+```
+
+### Security Layers:
+1. **RFC 6960 Public Endpoint**: `/ocsp` and `/ocsp/**` remain unauthenticated and globally reachable.
+2. **Admin API Security**: `/api/v1/admin/**` requires `ROLE_ADMIN`, authenticated via `X-API-KEY: incert-admin-secret-key` or HTTP Basic (`admin` / `changeme`).
+3. **Mantine Web Console Gate**:
+   - The React SPA enforces authentication via `<ProtectedRoute>` around all dashboard views.
+   - Users authenticate on the `/login` page with username/password or API key.
+   - Stored credentials in `localStorage` are automatically injected into Axios requests.
+   - Any `401 Unauthorized` response immediately flushes local state and redirects to `/login`.
+
+---
+
+## 6. Database Data Models (ERDs)
 
 ```mermaid
 erDiagram
@@ -238,7 +306,7 @@ erDiagram
 
 ---
 
-## 6. RabbitMQ Messaging Topology
+## 7. RabbitMQ Messaging Topology
 
 | Component | Identifier | Details |
 |---|---|---|
@@ -250,36 +318,38 @@ erDiagram
 
 ---
 
-## 7. Deployment Blueprint
+## 8. Deployment Blueprint (Docker Compose Topology)
 
 ```mermaid
 graph LR
-    subgraph DOCKER_COMPOSE["Docker Compose Environment"]
-        MARIADB["ocsp-mariadb<br/>mariadb:10.11<br/>Port 3307"]
+    subgraph DOCKER_COMPOSE["Docker Compose Environment (Network: ocsp-net)"]
+        MARIADB["ocsp-mariadb<br/>mariadb:10.11<br/>Port 3307:3306<br/>Schemas: ocsp, kms"]
         RABBIT["ocsp-rabbitmq<br/>rabbitmq:3.13-management<br/>Ports 5672, 15672"]
-        KMS_SVC["ocsp-kms<br/>kms-simulator:local<br/>Port 8090"]
-        APP_SVC["ocsp-app<br/>ocsp/app:local<br/>Port 8080"]
-        WEB_SVC["ocsp-console<br/>ocsp/console:local<br/>Port 3000"]
+        KMS_SVC["ocsp-kms<br/>kms-simulator:local<br/>Port 8090:8090<br/>UI & Outbox Relay"]
+        RESP_SVC["ocsp-responder<br/>ocsp/responder:local<br/>Port 8080:8080<br/>SoftHSM2 + Auth"]
+        CLIENT_SVC["ocsp-client<br/>ocsp/client:local<br/>Port 8082:8082<br/>Verifier & Test UI"]
+        CONSOLE_SVC["ocsp-console<br/>ocsp/console:local<br/>Port 3000:80<br/>Mantine UI v7"]
     end
 
-    APP_SVC --> MARIADB
-    APP_SVC --> RABBIT
+    RESP_SVC --> MARIADB
+    RESP_SVC --> RABBIT
     KMS_SVC --> MARIADB
     KMS_SVC --> RABBIT
-    APP_SVC --> KMS_SVC
-    WEB_SVC --> APP_SVC
-    WEB_SVC --> KMS_SVC
+    CONSOLE_SVC -->|/api/ -> :8080| RESP_SVC
+    CONSOLE_SVC -->|/api/v1/client/ -> :8082| CLIENT_SVC
+    CONSOLE_SVC -->|/api/kms/ -> :8090| KMS_SVC
+    CLIENT_SVC -->|/ocsp -> :8080| RESP_SVC
 ```
 
 ---
 
-## 8. Security & Cryptographic Boundary Diagram
+## 9. Security & Cryptographic Boundary Diagram
 
 ```mermaid
 graph TD
-    subgraph CONTAINER["ocsp-app Container Sandbox Boundary"]
+    subgraph CONTAINER["ocsp-responder Container Sandbox Boundary"]
         subgraph PROCESS["JVM (Java 21)"]
-            APP_CODE["Monolith Code (Responder + Client + Admin)"]
+            APP_CODE["Responder Code (Protocol + Admin + Auth)"]
             SUN_PKCS11["SunPKCS11 Provider<br/>sun.security.pkcs11.SunPKCS11"]
         end
 
