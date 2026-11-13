@@ -267,3 +267,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 4
+
+  # ============================================================
+  # Keycloak IAM (Optional Service via profile: `docker compose --profile keycloak up`)
+  # ============================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: ocsp-keycloak
+    profiles: ["keycloak"]
+    restart: unless-stopped
+    networks: [ocsp-net]
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8081
+    ports:
+      - "8081:8081"
