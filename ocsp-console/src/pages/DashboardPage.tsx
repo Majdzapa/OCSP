@@ -14,8 +14,6 @@ import {
 } from '@mantine/core'
 import {
   IconAlertCircle,
-  IconCheck,
-  IconX,
 } from '@tabler/icons-react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
@@ -241,19 +239,13 @@ export function DashboardPage() {
             <Skeleton height={28} width={300} />
           ) : (
             <>
-              <Badge color="teal" variant="light" size="lg">OCSP Responder & Client ✓</Badge>
-              <Badge color="teal" variant="light" size="lg">Sync Service ✓</Badge>
-              <Badge color="teal" variant="light" size="lg">MariaDB ✓</Badge>
-              <Badge color="orange" variant="light" size="lg">RabbitMQ ✓</Badge>
-              <Badge
-                color={stats?.lastReconciliationOk ? 'teal' : 'red'}
-                variant="light"
-                size="lg"
-                leftSection={stats?.lastReconciliationOk ? <IconCheck size={12} /> : <IconX size={12} />}
-              >
-                Reconciliation {stats?.lastReconciliationOk ? 'OK' : 'FAILED'}
-              </Badge>
-              <Badge color="gray" variant="outline" size="lg">Direct Signing (Cache Disabled)</Badge>
+              <Badge color="indigo" variant="light" size="lg">OCSP Responder (:8080) ✓</Badge>
+              <Badge color="cyan" variant="light" size="lg">OCSP Client (:8082) ✓</Badge>
+              <Badge color="violet" variant="light" size="lg">KMS Simulator (:8090) ✓</Badge>
+              <Badge color="teal" variant="light" size="lg">MariaDB (:3307) ✓</Badge>
+              <Badge color="orange" variant="light" size="lg">RabbitMQ (:5672) ✓</Badge>
+              <Badge color="teal" variant="outline" size="lg">Pure Event Sync (RabbitMQ) ✓</Badge>
+              <Badge color="indigo" variant="outline" size="lg">SoftHSM2 PKCS#11 (Direct Signing) ✓</Badge>
             </>
           )}
         </Group>

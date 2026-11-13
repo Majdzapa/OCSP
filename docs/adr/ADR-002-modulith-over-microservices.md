@@ -1,7 +1,7 @@
 # ADR-002: Modular Monolith (Spring Modulith) over Separate Microservices
 
 ## Status
-Accepted
+Superseded by ADR-006: Decoupling OCSP Responder and OCSP Client into Standalone Applications
 
 ## Context
 The previous system decomposed the OCSP subsystem into four distinct microservices: `ocsp-responder`, `ocsp-sync-service`, `ocsp-admin-api`, and `kms-mock`.
