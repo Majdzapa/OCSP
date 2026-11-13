@@ -18,3 +18,4 @@ public class HttpClientConfig {
         return RestClient.builder().requestFactory(factory);
     }
 }
+

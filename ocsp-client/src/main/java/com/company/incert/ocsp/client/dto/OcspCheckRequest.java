@@ -18,3 +18,4 @@ public record OcspCheckRequest(
     String method,
     String responderUrl
 ) {}
+

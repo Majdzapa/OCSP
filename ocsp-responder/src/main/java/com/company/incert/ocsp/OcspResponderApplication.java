@@ -11,3 +11,4 @@ public class OcspResponderApplication {
         SpringApplication.run(OcspResponderApplication.class, args);
     }
 }
+

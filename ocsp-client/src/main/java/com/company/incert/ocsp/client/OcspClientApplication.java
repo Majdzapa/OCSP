@@ -19,3 +19,4 @@ public class OcspClientApplication {
         SpringApplication.run(OcspClientApplication.class, args);
     }
 }
+
