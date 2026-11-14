@@ -580,7 +580,7 @@ export function CertCheckerPage() {
                       )
                     }
                     onClick={() => {
-                      navigator.clipboard.writeText(testResult.opensslCommand)
+                      navigator.clipboard.writeText(testResult.opensslCommand ?? '')
                       setCopiedCmd(true)
                       setTimeout(() => setCopiedCmd(false), 2000)
                     }}

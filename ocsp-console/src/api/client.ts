@@ -169,8 +169,8 @@ export const testOcspRequest = (
       method: data.method || method,
       httpMethod: data.method || method,
       responseSizeBytes: data.responseSizeBytes,
-      opensslCommand: `openssl ocsp -issuer data/pki/intermediate-ca-cert.pem -serial 0x${data.serialHex} -url ${data.responderUrl} -CAfile data/pki/ca-chain.pem -resp_text${data.includeNonce ? ' -nonce' : ' -no_nonce'}`,
-      cacheVerdict: 'DIRECT_SIGNING (SoftHSM2 PKCS#11)',
+      opensslCommand: data.opensslCommand ?? null,
+      cacheVerdict: data.cacheVerdict ?? 'DIRECT_SIGNING',
       error: data.error,
     }
   })

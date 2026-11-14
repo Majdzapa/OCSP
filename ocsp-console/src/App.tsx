@@ -36,6 +36,16 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { useDashboardStats } from './hooks/useDashboardStats'
 
+// Portal links driven by build-time env vars; safe defaults for local dev only.
+const PORTAL_LINKS = {
+  kmsUi:              import.meta.env.VITE_PORTAL_KMS_UI              ?? 'http://localhost:8090',
+  clientUi:           import.meta.env.VITE_PORTAL_CLIENT_UI           ?? 'http://localhost:8082',
+  rabbitMq:           import.meta.env.VITE_PORTAL_RABBITMQ            ?? 'http://localhost:15672',
+  responderSwagger:   import.meta.env.VITE_PORTAL_RESPONDER_SWAGGER   ?? 'http://localhost:8080/swagger-ui/index.html',
+  clientSwagger:      import.meta.env.VITE_PORTAL_CLIENT_SWAGGER      ?? 'http://localhost:8082/swagger-ui/index.html',
+  kmsSwagger:         import.meta.env.VITE_PORTAL_KMS_SWAGGER         ?? 'http://localhost:8090/swagger-ui/index.html',
+} as const
+
 const navItems = [
   { label: 'Dashboard',       path: '/dashboard',        icon: IconDashboard },
   { label: 'KMS Inventory',   path: '/kms-certificates', icon: IconKey },
@@ -153,7 +163,7 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href="http://localhost:8090"
+                href={PORTAL_LINKS.kmsUi}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -171,7 +181,7 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href="http://localhost:8082"
+                href={PORTAL_LINKS.clientUi}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -189,7 +199,7 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href="http://localhost:15672"
+                href={PORTAL_LINKS.rabbitMq}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -215,7 +225,7 @@ function MainLayout() {
             </Text>
             <Stack gap={2}>
               <a
-                href="http://localhost:8080/swagger-ui/index.html"
+                href={PORTAL_LINKS.responderSwagger}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -233,7 +243,7 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href="http://localhost:8082/swagger-ui/index.html"
+                href={PORTAL_LINKS.clientSwagger}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -251,7 +261,7 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href="http://localhost:8090/swagger-ui/index.html"
+                href={PORTAL_LINKS.kmsSwagger}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -308,18 +318,20 @@ function MainLayout() {
             <Group justify="space-between" mb={6}>
               <Group gap="xs">
                 <Avatar size="sm" radius="xl" color="indigo">
-                  {(user?.username || 'A')[0].toUpperCase()}
+                  {(user?.username ?? '?')[0].toUpperCase()}
                 </Avatar>
                 <Box>
                   <Text fz="xs" fw={600} lh={1.1} c="white">
-                    {user?.username || 'admin'}
+                    {user?.username ?? '—'}
                   </Text>
                   <Text fz="10px" c="dimmed">
-                    {user?.apiKey ? 'API-KEY Auth' : 'Basic Auth'}
+                    {user?.authMode ?? (user?.apiKey ? 'API-KEY' : 'Basic')}
                   </Text>
                 </Box>
               </Group>
-              <Badge size="xs" color="indigo" variant="light">ADMIN</Badge>
+              <Badge size="xs" color="indigo" variant="light">
+                {user?.roles?.includes('ROLE_ADMIN') ? 'ADMIN' : (user?.roles?.[0] ?? 'USER')}
+              </Badge>
             </Group>
 
             <Button

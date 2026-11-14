@@ -163,7 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authenticated: true,
       username: res.username || 'keycloak-admin',
       roles: res.roles,
-      authMode: res.authMode || 'KEYCLOCK',
+      authMode: res.authMode,
       token,
     })
   }
@@ -193,9 +193,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const loginWithKeycloakCredentials = async (kcUsername: string, kcPassword: string) => {
-    const serverUrl = authConfig?.keycloak?.authServerUrl || 'http://localhost:8081'
-    const realm = authConfig?.keycloak?.realm || 'incert'
-    const clientId = authConfig?.keycloak?.clientId || 'ocsp-console'
+    const serverUrl = authConfig?.keycloak?.authServerUrl
+    const realm = authConfig?.keycloak?.realm
+    const clientId = authConfig?.keycloak?.clientId
+
+    if (!serverUrl || !realm || !clientId) {
+      throw new Error('Keycloak configuration is not available. Check server auth config.')
+    }
 
     const token = await exchangeKeycloakCredentials(serverUrl, realm, clientId, kcUsername, kcPassword)
     await loginWithToken(token)

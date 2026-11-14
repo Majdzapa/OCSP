@@ -108,12 +108,12 @@ export interface OcspTestResult {
   nextUpdate?: string | null
   responseSizeBytes?: number
   base64UrlPath?: string
-  opensslCommand: string
+  opensslCommand?: string | null
   error?: string | null
 }
 
 export interface AuthConfig {
-  authMode: 'SELF_MANAGED' | 'KEYCLOCK' | string
+  authMode: 'SELF_MANAGED' | 'KEYCLOAK' | 'KEYCLOCK' | string
   isKeycloak: boolean
   tlsEnabled?: boolean
   keycloak?: {

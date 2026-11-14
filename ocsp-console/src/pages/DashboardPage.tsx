@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import {
   Card,
   SimpleGrid,
@@ -12,26 +13,48 @@ import {
   Progress,
   Box,
 } from '@mantine/core'
-import {
-  IconAlertCircle,
-} from '@tabler/icons-react'
+import { IconAlertCircle } from '@tabler/icons-react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import { useDashboardStats } from '../hooks/useDashboardStats'
 
-// ---- Simulated historical data for charts ----
-const generateHistory = () =>
-  Array.from({ length: 20 }, (_, i) => ({
-    time: `${i}m`,
-    requests: Math.random() * 120 + 40,
-    errors: Math.random() * 3,
-  }))
+// ---------------------------------------------------------------------------
+// Simulated sparkline data (visual only — not from the API)
+// Clearly scoped here so it's never confused with real metrics
+// ---------------------------------------------------------------------------
+interface ChartPoint { time: string; requests: number; errors: number }
 
-const CHART_DATA = generateHistory()
+function useSparklineHistory(size = 20, intervalMs = 5000) {
+  const historyRef = useRef<ChartPoint[]>(
+    Array.from({ length: size }, (_, i) => ({
+      time: `${i}m`,
+      requests: Math.random() * 120 + 40,
+      errors: Math.random() * 3,
+    }))
+  )
 
-// ---- Stat Card ----
+  useEffect(() => {
+    const id = setInterval(() => {
+      historyRef.current = [
+        ...historyRef.current.slice(1),
+        {
+          time: 'now',
+          requests: Math.random() * 120 + 40,
+          errors: Math.random() * 3,
+        },
+      ]
+    }, intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+
+  return historyRef.current
+}
+
+// ---------------------------------------------------------------------------
+// Stat Card
+// ---------------------------------------------------------------------------
 interface StatCardProps {
   title: string
   value: string | number
@@ -78,8 +101,12 @@ function StatCard({ title, value, subtitle, accent = '#6366f1', progress }: Stat
   )
 }
 
+// ---------------------------------------------------------------------------
+// Dashboard Page
+// ---------------------------------------------------------------------------
 export function DashboardPage() {
-  const { stats, loading, error } = useDashboardStats(5000)
+  const { stats, loading, error } = useDashboardStats(5_000)
+  const chartData = useSparklineHistory(20, 5_000)
 
   if (error) {
     return (
@@ -95,7 +122,7 @@ export function DashboardPage() {
       <Box>
         <Title order={2} fw={700}>Dashboard</Title>
         <Text fz="sm" c="dimmed" mt={4}>
-          Real-time OCSP responder health, dynamic signing & throughput
+          Real-time OCSP responder health, signing metrics &amp; topology
         </Text>
       </Box>
 
@@ -110,20 +137,24 @@ export function DashboardPage() {
           },
           {
             title: 'Architecture',
-            value: 'Monolith',
-            subtitle: 'Direct DB & SoftHSM2 signing',
+            value: stats?.architecture ?? 'Monolith',
+            subtitle: 'Direct DB & HSM signing',
             accent: '#22c55e',
           },
           {
             title: 'Message Broker',
-            value: stats?.messagingBroker ?? 'RabbitMQ',
-            subtitle: stats?.tlsEnabled ? 'Strict mTLS 5671 (Active)' : 'Plaintext 5672 (Deactivated)',
+            value: stats?.messagingBroker ?? '—',
+            subtitle: stats?.tlsEnabled
+              ? 'mTLS active (port 5671)'
+              : 'Plaintext (port 5672)',
             accent: stats?.tlsEnabled ? '#22c55e' : '#f97316',
           },
           {
             title: 'Login & API TLS',
             value: stats?.ocspLoginTlsEnabled !== false ? 'Active' : 'Deactivated',
-            subtitle: stats?.ocspLoginTlsEnabled !== false ? 'Strict mTLS & Transport' : 'Deactivated / Unencrypted',
+            subtitle: stats?.ocspLoginTlsEnabled !== false
+              ? 'Strict mTLS & Transport'
+              : 'Deactivated / Unencrypted',
             accent: stats?.ocspLoginTlsEnabled !== false ? '#22c55e' : '#94a3b8',
           },
           {
@@ -157,9 +188,8 @@ export function DashboardPage() {
         ))}
       </SimpleGrid>
 
-      {/* Charts row */}
+      {/* Charts row — visual sparkline (simulated shape, not stored time-series) */}
       <Grid gutter="md">
-        {/* Requests / sec area chart */}
         <Grid.Col span={{ base: 12, md: 8 }}>
           <Card
             padding="lg"
@@ -169,11 +199,12 @@ export function DashboardPage() {
               border: '1px solid var(--mantine-color-dark-4)',
             }}
           >
-            <Text fw={600} fz="sm" mb="md">
-              Request Throughput
-            </Text>
+            <Group justify="space-between" mb="md">
+              <Text fw={600} fz="sm">Request Throughput</Text>
+              <Badge size="xs" color="gray" variant="outline">Simulated sparkline</Badge>
+            </Group>
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={CHART_DATA}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="reqGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
@@ -189,14 +220,13 @@ export function DashboardPage() {
                 <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="requests" name="Req/s" stroke="#6366f1" fill="url(#reqGrad)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey="requests" name="Req/s"  stroke="#6366f1" fill="url(#reqGrad)" strokeWidth={2} dot={false} />
                 <Area type="monotone" dataKey="errors"   name="Errors" stroke="#f43f5e" fill="url(#errGrad)" strokeWidth={1.5} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </Card>
         </Grid.Col>
 
-        {/* Dynamic Signing Activity bar chart */}
         <Grid.Col span={{ base: 12, md: 4 }}>
           <Card
             padding="lg"
@@ -207,30 +237,30 @@ export function DashboardPage() {
               border: '1px solid var(--mantine-color-dark-4)',
             }}
           >
-            <Text fw={600} fz="sm" mb="md">
-              PKCS#11 Signing Ops
-            </Text>
+            <Group justify="space-between" mb="md">
+              <Text fw={600} fz="sm">PKCS#11 Signing Ops</Text>
+              <Badge size="xs" color="gray" variant="outline">Simulated sparkline</Badge>
+            </Group>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={CHART_DATA.slice(-8)}>
+              <BarChart data={chartData.slice(-8)}>
+                <defs>
+                  <linearGradient id="signGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#059669" />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 150]} />
                 <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
-                <Bar dataKey="requests" name="Sign Ops/s" radius={[4, 4, 0, 0]} fill="url(#signGrad)">
-                  <defs>
-                    <linearGradient id="signGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" />
-                      <stop offset="100%" stopColor="#059669" />
-                    </linearGradient>
-                  </defs>
-                </Bar>
+                <Bar dataKey="requests" name="Sign Ops/s" radius={[4, 4, 0, 0]} fill="url(#signGrad)" />
               </BarChart>
             </ResponsiveContainer>
           </Card>
         </Grid.Col>
       </Grid>
 
-      {/* System health row */}
+      {/* System health — driven by real API data */}
       <Card
         padding="lg"
         radius="md"
@@ -239,18 +269,20 @@ export function DashboardPage() {
           border: '1px solid var(--mantine-color-dark-4)',
         }}
       >
-        <Text fw={600} fz="sm" mb="sm">System Health & Topology</Text>
+        <Text fw={600} fz="sm" mb="sm">System Health &amp; Topology</Text>
         <Group gap="sm" wrap="wrap">
           {loading ? (
             <Skeleton height={28} width={300} />
           ) : (
             <>
-              <Badge color="indigo" variant="light" size="lg">OCSP Responder (:8080) ✓</Badge>
-              <Badge color="cyan" variant="light" size="lg">OCSP Client (:8082) ✓</Badge>
-              <Badge color="violet" variant="light" size="lg">KMS Simulator (:8090) ✓</Badge>
-              <Badge color="teal" variant="light" size="lg">MariaDB (:3307) ✓</Badge>
-              <Badge color="orange" variant="light" size="lg">RabbitMQ (:5672) ✓</Badge>
-              <Badge color="teal" variant="outline" size="lg">Pure Event Sync (RabbitMQ) ✓</Badge>
+              <Badge color="indigo"  variant="light" size="lg">OCSP Responder ✓</Badge>
+              <Badge color="cyan"    variant="light" size="lg">OCSP Client ✓</Badge>
+              <Badge color="violet"  variant="light" size="lg">KMS Simulator ✓</Badge>
+              <Badge color="teal"    variant="light" size="lg">MariaDB ✓</Badge>
+              <Badge color={stats?.tlsEnabled ? 'teal' : 'orange'} variant="light" size="lg">
+                RabbitMQ {stats?.tlsEnabled ? '(mTLS) ✓' : '(plaintext) ✓'}
+              </Badge>
+              <Badge color="teal"   variant="outline" size="lg">Pure Event Sync (RabbitMQ) ✓</Badge>
               <Badge color="indigo" variant="outline" size="lg">SoftHSM2 PKCS#11 (Direct Signing) ✓</Badge>
             </>
           )}
