@@ -58,3 +58,4 @@ pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
 * **Signature Algorithm**: `SHA256withRSA`
 * **Usages**: Digital Signature only (`CKA_SIGN = TRUE`)
 * **Non-Extractable**: `CKA_EXTRACTABLE = FALSE`, preventing key extraction via PKCS#11 API.
+

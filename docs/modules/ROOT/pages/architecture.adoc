@@ -67,3 +67,4 @@ Unlike distributed microservice querying:
 * The OCSP Responder reads local database state (`ocsp.certificate_status`) with indexed serial numbers.
 * High cache locality ensures sub-millisecond query evaluation.
 * The PKCS#11 signer retains in-memory session pools to the HSM slot, eliminating connection latency.
+

@@ -72,3 +72,4 @@ The test harness in `scripts/e2e-test.sh` executes 14 comprehensive test suites 
 | OCSP Login TLS Activation / Deactivation
 | 5 sub-tests: default TLS active, cert login success, runtime TLS deactivation, cert login rejection (400), and runtime TLS reactivation.
 |===
+

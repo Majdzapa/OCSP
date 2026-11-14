@@ -53,3 +53,4 @@ The following Architecture Decision Records document the architectural design ch
 |===
 
 All full ADR Markdown files are located in `docs/adr/`.
+

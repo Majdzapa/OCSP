@@ -79,3 +79,4 @@ When poison messages or unparseable payloads arrive:
 2. The broker routes rejected messages to Dead Letter Exchange `incert.dlx`.
 3. Dead letter queue `ocsp.certificate.status.dlq` collects failed payloads for operator inspection.
 4. The consumer logs the error and continues processing subsequent events without service disruption.
+

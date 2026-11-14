@@ -67,3 +67,4 @@ The Keycloak container (`ocsp-keycloak`) runs on port `8081` with automatic real
 * `GET /api/v1/auth/config`: Returns active `authMode`, `isKeycloak`, `tlsEnabled`, and Keycloak URLs.
 * `GET /api/v1/auth/me`: Verifies active session token or basic auth and returns authorities.
 * `POST /api/v1/auth/login`: Unified login endpoint supporting credentials, Bearer JWT, API Key, and client certificates.
+
