@@ -282,6 +282,8 @@ services:
         condition: service_healthy
     ports:
       - "3000:80"
+    volumes:
+      - ./build/site:/usr/share/nginx/html/docs:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost/ || exit 1"]
       start_period: 15s

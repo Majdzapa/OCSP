@@ -23,6 +23,7 @@ import {
   IconLogout,
   IconExternalLink,
   IconInbox,
+  IconBook,
 } from '@tabler/icons-react'
 import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
@@ -128,6 +129,29 @@ function MainLayout() {
               Direct Portals
             </Text>
             <Stack gap={2}>
+              <a
+                href="/docs/ocsp/2.0/index.html"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  color: '#818cf8',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                }}
+              >
+                <Group gap={8}>
+                  <IconBook size={15} />
+                  <span>Antora Docs</span>
+                </Group>
+                <IconExternalLink size={14} />
+              </a>
               <a
                 href="http://localhost:8090"
                 target="_blank"
