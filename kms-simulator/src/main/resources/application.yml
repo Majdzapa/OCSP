@@ -29,9 +29,18 @@ spring:
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
+    port: ${RABBITMQ_PORT:5671}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    ssl:
+      enabled: ${RABBITMQ_SSL_ENABLED:true}
+      key-store: ${RABBITMQ_SSL_KEYSTORE:classpath:certs/rabbitmq/client-keystore.p12}
+      key-store-password: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:changeme}
+      key-store-type: PKCS12
+      trust-store: ${RABBITMQ_SSL_TRUSTSTORE:classpath:certs/rabbitmq/client-truststore.p12}
+      trust-store-password: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:changeme}
+      trust-store-type: PKCS12
+      verify-hostname: false
 
 server:
   port: ${KMS_PORT:8090}

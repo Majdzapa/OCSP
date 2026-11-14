@@ -18,7 +18,7 @@ target/
 # Spring Boot DevTools
 spring-boot-devtools.properties
 
-# Environment / secrets — NEVER commit these
+# Environment / secrets — NEVER commit production secrets
 *.env
 .env*
 *.jks
@@ -26,6 +26,12 @@ spring-boot-devtools.properties
 *.pem
 *.key
 *.crt
+
+# Track dev/test certificates for RabbitMQ mTLS & docker compose
+!certs/rabbitmq/*
+!kms-simulator/src/main/resources/certs/**
+!ocsp-responder/src/main/resources/certs/**
+!data/pki/*.pem
 
 # Node / React
 ocsp-console/node_modules/

@@ -45,7 +45,7 @@ public class AdminDashboardController {
             Map.entry("requestsPerSecond", 18.5),
             Map.entry("cachingEnabled", false),
             Map.entry("architecture", "Decoupled OCSP Responder"),
-            Map.entry("messagingBroker", "RabbitMQ (Direct Exchange)"),
+            Map.entry("messagingBroker", "RabbitMQ (AMQPS / Strict mTLS)"),
             Map.entry("avgSigningLatencyMs", 0.8),
             Map.entry("errorRate", 0.0),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft)

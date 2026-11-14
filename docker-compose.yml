@@ -59,7 +59,7 @@ services:
       retries: 6
 
   # ============================================================
-  # RabbitMQ with Management UI
+  # RabbitMQ with Management UI (Strict mTLS AMQPS on 5671)
   # ============================================================
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -67,11 +67,14 @@ services:
     restart: unless-stopped
     networks: [ocsp-net]
     ports:
-      - "5672:5672"
+      - "5671:5671"
       - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./certs/rabbitmq:/etc/rabbitmq/certs:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -107,12 +110,18 @@ services:
       FLYWAY_USER: root
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
+      RABBITMQ_PORT: 5671
+      RABBITMQ_SSL_ENABLED: "true"
+      RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
+      RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
+      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: changeme
       KMS_PORT: 8090
       KMS_JOB_REVOCATION_ENABLED: "false"
     volumes:
       - pki-data:/data/pki
       - ./data/pki:/app/data/pki
+      - ./certs/rabbitmq:/certs/rabbitmq:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8090/actuator/health || exit 1"]
       start_period: 30s
@@ -184,7 +193,12 @@ services:
       FLYWAY_USER: root
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
+      RABBITMQ_PORT: 5671
+      RABBITMQ_SSL_ENABLED: "true"
+      RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
+      RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
+      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: changeme
       KMS_HOST: kms-simulator
       KMS_PORT: 8090
       ADMIN_USERNAME: admin
@@ -205,6 +219,7 @@ services:
       - hsm-tokens:/var/lib/softhsm/tokens
       - hsm-conf:/etc/softhsm2
       - pki-data:/data/pki:ro
+      - ./certs/rabbitmq:/certs/rabbitmq:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
       start_period: 40s
