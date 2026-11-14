@@ -35,13 +35,15 @@ class AuthControllerTest {
     }
 
     @Test
-    void getConfig_keyclock_returnsKeyclockConfig() {
+    void getConfig_legacyKeyclockAlias_resolvesToKeycloakMode() {
+        // "KEYCLOCK" (legacy typo) must be normalised to the canonical KEYCLOAK enum.
         var keycloakController = new AuthController(
                 "KEYCLOCK", true, "admin", "changeme", "incert-admin-secret-key",
                 "http://localhost:8081", "incert", "ocsp-console");
         ResponseEntity<Map<String, Object>> response = keycloakController.getConfig();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("authMode", "KEYCLOCK");
+        // AuthenticationMode.fromString("KEYCLOCK") returns KEYCLOAK (canonical name)
+        assertThat(response.getBody()).containsEntry("authMode", "KEYCLOAK");
         assertThat(response.getBody()).containsEntry("isKeycloak", true);
         @SuppressWarnings("unchecked")
         Map<String, Object> keycloakMap = (Map<String, Object>) response.getBody().get("keycloak");

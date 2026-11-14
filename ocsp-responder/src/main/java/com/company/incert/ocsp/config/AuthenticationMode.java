@@ -5,17 +5,22 @@ package com.company.incert.ocsp.config;
  * <ul>
  *   <li>{@link #SELF_MANAGED}: Built-in administration authentication via HTTP Basic Auth
  *       and static API keys (X-API-KEY). No external identity provider required.</li>
- *   <li>{@link #KEYCLOCK}: Keycloak OAuth2 / OpenID Connect Resource Server. Validates
+ *   <li>{@link #KEYCLOAK}: Keycloak OAuth2 / OpenID Connect Resource Server. Validates
  *       Bearer JWT tokens issued by a Keycloak realm and extracts roles.</li>
+ *   <li>{@link #KEYCLOCK}: Deprecated alias for {@link #KEYCLOAK} — kept for backward
+ *       compatibility with existing configuration files and serialized values.</li>
  * </ul>
  */
 public enum AuthenticationMode {
     SELF_MANAGED,
-    KEYCLOCK,
-    KEYCLOAK; // Alias for canonical spelling
+    /** Canonical spelling. */
+    KEYCLOAK,
+    /** @deprecated Use {@link #KEYCLOAK}. Retained for backward compatibility. */
+    @Deprecated
+    KEYCLOCK;
 
     public boolean isKeycloak() {
-        return this == KEYCLOCK || this == KEYCLOAK;
+        return this == KEYCLOAK || this == KEYCLOCK;
     }
 
     public static AuthenticationMode fromString(String value) {
@@ -23,10 +28,10 @@ public enum AuthenticationMode {
             return SELF_MANAGED;
         }
         String clean = value.trim().toUpperCase().replace("-", "_");
-        if ("KEYCLOCK".equals(clean) || "KEYCLOAK".equals(clean) || "OIDC".equals(clean) || "OAUTH2".equals(clean)) {
-            return KEYCLOCK;
+        if ("KEYCLOCK".equals(clean) || "KEYCLOAK".equals(clean)
+                || "OIDC".equals(clean) || "OAUTH2".equals(clean)) {
+            return KEYCLOAK;
         }
         return SELF_MANAGED;
     }
 }
-
