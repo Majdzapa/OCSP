@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -14,8 +15,9 @@ import java.util.Optional;
 /**
  * Default implementation of {@link CertificateStatusConsumer}.
  *
- * Handles JSON parsing, transactional inbox tracking, idempotency validation,
- * and dispatching verified status updates to {@link CertificateStatusService}.
+ * The entire consume() method runs in a single transaction so the inbox
+ * record and the revocation_status row are always consistent: either both
+ * commit or neither does.
  */
 @Slf4j
 @Service
@@ -27,6 +29,7 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
     private final ObjectMapper objectMapper;
 
     @Override
+    @Transactional
     public void consume(String payload) {
         Instant now = Instant.now();
         CertificateStatusEvent event;
@@ -37,10 +40,10 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
             throw new RuntimeException("Malformed certificate status message", e);
         }
 
-        // Check if event was already recorded in inbox (idempotency check)
+        // Idempotency check — if already processed, mark duplicate and return
         Optional<InboxEvent> existingInbox = inboxRepository.findByEventId(event.eventId());
         if (existingInbox.isPresent()) {
-            log.info("Duplicate event {} received for serial={}, updating status to DUPLICATE",
+            log.info("Duplicate event {} received for serial={}, marking DUPLICATE",
                     event.eventId(), event.serialNumberHex());
             InboxEvent dup = existingInbox.get();
             dup.setProcessingStatus("DUPLICATE");
@@ -49,7 +52,7 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
             return;
         }
 
-        // Save into inbox as RECEIVED
+        // Record in inbox as RECEIVED — same transaction as status update below
         InboxEvent inbox = InboxEvent.builder()
                 .eventId(event.eventId())
                 .eventType("CertificateStatusChanged")
@@ -64,19 +67,11 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
                 .build();
         inbox = inboxRepository.save(inbox);
 
-        try {
-            boolean applied = statusService.applyStatusChange(event);
-            inbox.setProcessedAt(Instant.now());
-            inbox.setProcessingStatus(applied ? "PROCESSED" : "SKIPPED");
-            inboxRepository.save(inbox);
-        } catch (Exception e) {
-            log.error("Failed to apply certificate status change for event {}: {}", event.eventId(), e.getMessage(), e);
-            inbox.setProcessedAt(Instant.now());
-            inbox.setProcessingStatus("FAILED");
-            inbox.setErrorMessage(e.getMessage());
-            inboxRepository.save(inbox);
-            throw new RuntimeException("Status change application failed", e);
-        }
+        // Apply status change — runs in the same transaction; rolls back together if it fails
+        boolean applied = statusService.applyStatusChange(event);
+        inbox.setProcessedAt(Instant.now());
+        inbox.setProcessingStatus(applied ? "PROCESSED" : "SKIPPED");
+        inboxRepository.save(inbox);
     }
 }
 

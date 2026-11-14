@@ -3,6 +3,7 @@ package com.company.incert.ocsp.controller;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.service.CertificateStatusService;
 import com.company.incert.ocsp.signing.OcspSigner;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,7 +25,7 @@ class AdminDashboardControllerTest {
     void setUp() {
         statusService = mock(CertificateStatusService.class);
         ocspSigner = mock(OcspSigner.class);
-        controller = new AdminDashboardController(statusService, ocspSigner);
+        controller = new AdminDashboardController(statusService, ocspSigner, new SimpleMeterRegistry());
 
         ReflectionTestUtils.setField(controller, "tlsEnabled", true);
         ReflectionTestUtils.setField(controller, "ocspLoginTlsEnabled", true);
@@ -49,6 +50,9 @@ class AdminDashboardControllerTest {
         assertThat(body.get("tlsEnabled")).isEqualTo(true);
         assertThat(body.get("ocspLoginTlsEnabled")).isEqualTo(true);
         assertThat(body.get("messagingBroker")).isEqualTo("RabbitMQ (AMQPS / Strict mTLS)");
+        // Real metrics from Micrometer (zero since no requests fired in test)
+        assertThat(body).containsKey("avgSigningLatencyMs");
+        assertThat(body).containsKey("errorCount");
     }
 }
 

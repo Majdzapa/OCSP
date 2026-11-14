@@ -19,9 +19,11 @@ COPY hsm/init-hsm.sh /scripts/init-hsm.sh
 RUN chmod +x /scripts/init-hsm.sh
 
 ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf
+# Default values only — override all of these via environment variables in docker-compose or Kubernetes secrets.
+# Never ship production PIN values as Dockerfile defaults.
 ENV HSM_TOKEN_LABEL=ocsp-signing
-ENV HSM_PIN=1234
-ENV HSM_SO_PIN=12345678
+ENV HSM_PIN=changeme-pin
+ENV HSM_SO_PIN=changeme-sopin
 ENV HSM_KEY_LABEL=ocsp-signing-key
 ENV HSM_PKCS11_LIBRARY=/usr/lib/softhsm/libsofthsm2.so
 ENV PKI_DIR=/data/pki

@@ -1,8 +1,11 @@
 package com.company.incert.ocsp.controller;
 
 import com.company.incert.ocsp.config.OpenApiConfig;
+import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.service.CertificateStatusService;
 import com.company.incert.ocsp.signing.OcspSigner;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -14,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -25,6 +29,7 @@ public class AdminDashboardController {
 
     private final CertificateStatusService statusService;
     private final OcspSigner ocspSigner;
+    private final MeterRegistry meterRegistry;
 
     @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
     private boolean tlsEnabled;
@@ -32,36 +37,41 @@ public class AdminDashboardController {
     @Value("${security.tls.enabled:${auth.tls.enabled:${tls.enabled:true}}}")
     private boolean ocspLoginTlsEnabled;
 
-    @Operation(summary = "Get admin dashboard statistics", description = "Retrieves live counts of good/revoked certificates, signing key expiry, and operational metrics")
+    @Operation(summary = "Get admin dashboard statistics",
+               description = "Retrieves live counts of good/revoked certificates, signing key expiry, and real-time Micrometer metrics")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Dashboard statistics returned successfully"),
         @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid credentials)")
     })
     @GetMapping({"/dashboard", "/dashboard/stats"})
     public ResponseEntity<Map<String, Object>> getStats() {
-        long totalCerts = statusService.countAll();
-        long revokedCerts = statusService.countByStatus(com.company.incert.ocsp.entity.CertificateStatus.REVOKED);
-        long goodCerts = statusService.countByStatus(com.company.incert.ocsp.entity.CertificateStatus.GOOD);
+        long totalCerts  = statusService.countAll();
+        long revokedCerts = statusService.countByStatus(CertificateStatus.REVOKED);
+        long goodCerts   = statusService.countByStatus(CertificateStatus.GOOD);
         long signingCertDaysLeft = ocspSigner.signingCertDaysUntilExpiry();
+
+        // Real metrics from Micrometer — 0 if not yet recorded
+        double avgLatencyMs = getTimerMeanMs("ocsp.request.duration");
+        double errorCount   = getCounterValue("ocsp.request.error");
 
         return ResponseEntity.ok(Map.ofEntries(
             Map.entry("totalCertificates", totalCerts),
             Map.entry("revokedCertificates", revokedCerts),
             Map.entry("goodCertificates", goodCerts),
             Map.entry("signingCertDaysUntilExpiry", signingCertDaysLeft),
-            Map.entry("requestsPerSecond", 18.5),
             Map.entry("cachingEnabled", false),
             Map.entry("architecture", "Decoupled OCSP Responder"),
             Map.entry("tlsEnabled", tlsEnabled),
             Map.entry("ocspLoginTlsEnabled", ocspLoginTlsEnabled),
             Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
-            Map.entry("avgSigningLatencyMs", 0.8),
-            Map.entry("errorRate", 0.0),
+            Map.entry("avgSigningLatencyMs", avgLatencyMs),
+            Map.entry("errorCount", errorCount),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft)
         ));
     }
 
-    @Operation(summary = "Get responder subsystem health", description = "Returns health status of the SoftHSM2 PKCS#11 provider and token")
+    @Operation(summary = "Get responder subsystem health",
+               description = "Returns health status of the PKCS#11 provider and token")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Health status returned successfully"),
         @ApiResponse(responseCode = "401", description = "Unauthorized")
@@ -73,5 +83,23 @@ public class AdminDashboardController {
             "signerType", ocspSigner.type(),
             "signerDaysLeft", ocspSigner.signingCertDaysUntilExpiry()
         ));
+    }
+
+    private double getTimerMeanMs(String name) {
+        try {
+            Timer timer = meterRegistry.find(name).timer();
+            return timer != null ? timer.mean(TimeUnit.MILLISECONDS) : 0.0;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private double getCounterValue(String name) {
+        try {
+            var counter = meterRegistry.find(name).counters();
+            return counter.stream().mapToDouble(c -> c.count()).sum();
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 }

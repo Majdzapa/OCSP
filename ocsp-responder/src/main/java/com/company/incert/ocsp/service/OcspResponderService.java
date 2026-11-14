@@ -97,10 +97,13 @@ public class OcspResponderService {
 
         for (Req req : requests) {
             CertificateID certId = req.getCertID();
+            // BigInteger.toByteArray() may prepend a 0x00 sign byte for positive values.
+            // Strip it to match the raw hex bytes stored by the KMS.
+            byte[] serialBytes = stripLeadingZero(certId.getSerialNumber().toByteArray());
             Optional<RevocationStatus> status = statusService.findByCertId(
                 certId.getIssuerNameHash(),
                 certId.getIssuerKeyHash(),
-                certId.getSerialNumber().toByteArray());
+                serialBytes);
             builder.addResponse(certId, toBcStatus(status, now), thisUpdate, nextUpdate, null);
         }
 
@@ -171,6 +174,20 @@ public class OcspResponderService {
             log.error("Failed to build error response", e);
             return new byte[0];
         }
+    }
+
+    /**
+     * BigInteger.toByteArray() prepends a 0x00 sign byte when the high bit of the
+     * most-significant byte is set (to signal a positive value in two's complement).
+     * Strip it so the byte array matches the raw hex stored by the KMS.
+     */
+    static byte[] stripLeadingZero(byte[] bytes) {
+        if (bytes.length > 1 && bytes[0] == 0x00) {
+            byte[] stripped = new byte[bytes.length - 1];
+            System.arraycopy(bytes, 1, stripped, 0, stripped.length);
+            return stripped;
+        }
+        return bytes;
     }
 
     public static class MalformedRequestException extends RuntimeException {

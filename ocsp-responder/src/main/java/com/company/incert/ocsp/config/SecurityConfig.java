@@ -57,10 +57,14 @@ public class SecurityConfig {
         return AuthenticationMode.fromString(authModeStr);
     }
 
+    @Value("${security.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    private String allowedOriginsRaw;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        List<String> origins = List.of(allowedOriginsRaw.split(","));
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -109,9 +113,11 @@ public class SecurityConfig {
                 .requestMatchers("/ocsp", "/ocsp/**").permitAll()
                 // Healthcheck endpoints
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                // Auth check & configuration endpoints
-                .requestMatchers("/api/v1/auth/**").permitAll()
-                // All admin & management endpoints require ROLE_ADMIN
+                // Auth check & configuration endpoints (read-only, no secrets)
+                .requestMatchers("/api/v1/auth/config", "/api/v1/auth/tls", "/api/v1/auth/me").permitAll()
+                // Login endpoint is public so credentials can be submitted
+                .requestMatchers("/api/v1/auth/login").permitAll()
+                // All admin & management endpoints require ROLE_ADMIN (includes TLS toggle)
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             );

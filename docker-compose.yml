@@ -42,10 +42,10 @@ services:
     restart: unless-stopped
     networks: [ocsp-net]
     environment:
-      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
       MARIADB_DATABASE:      ocsp
       MARIADB_USER:          ocsp_app
-      MARIADB_PASSWORD:      changeme
+      MARIADB_PASSWORD:      ${MARIADB_PASSWORD:-changeme}
     ports:
       - "3307:3306"
     volumes:
@@ -71,8 +71,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-ocsp_amqp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-changeme}
     volumes:
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./certs/rabbitmq:/etc/rabbitmq/certs:ro
@@ -107,17 +107,17 @@ services:
       MARIADB_PORT: 3306
       MARIADB_KMS_DB: kms
       MARIADB_KMS_USER: kms_app
-      MARIADB_KMS_PASSWORD: changeme
+      MARIADB_KMS_PASSWORD: ${MARIADB_KMS_PASSWORD:-changeme}
       FLYWAY_USER: root
-      FLYWAY_PASSWORD: rootpassword
+      FLYWAY_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5671}
       RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
       RABBITMQ_SSL_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
       RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
-      RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_KEYSTORE_PASSWORD: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:-changeme}
       RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
-      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:-changeme}
       KMS_PORT: 8090
       KMS_JOB_REVOCATION_ENABLED: "false"
     volumes:
@@ -146,10 +146,10 @@ services:
       kms-simulator:
         condition: service_healthy
     environment:
-      HSM_TOKEN_LABEL: ocsp-signing
-      HSM_PIN: "1234"
-      HSM_SO_PIN: "12345678"
-      HSM_KEY_LABEL: ocsp-signing-key
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
+      HSM_PIN: ${HSM_PIN:-1234}
+      HSM_SO_PIN: ${HSM_SO_PIN:-12345678}
+      HSM_KEY_LABEL: ${HSM_KEY_LABEL:-ocsp-signing-key}
       HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
       PKI_DIR: /data/pki
     volumes:
@@ -191,31 +191,33 @@ services:
       MARIADB_PORT: 3306
       MARIADB_DB: ocsp
       MARIADB_USER: ocsp_app
-      MARIADB_PASSWORD: changeme
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-changeme}
       FLYWAY_USER: root
-      FLYWAY_PASSWORD: rootpassword
+      FLYWAY_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5671}
       RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
       RABBITMQ_SSL_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ocsp_amqp}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-changeme}
       RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
-      RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_KEYSTORE_PASSWORD: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:-changeme}
       RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
-      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: changeme
+      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:-changeme}
       KMS_HOST: kms-simulator
       KMS_PORT: 8090
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: changeme
-      ADMIN_API_KEY: incert-admin-secret-key
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-incert-admin-secret-key}
       AUTH_MODE: ${AUTH_MODE:-KEYCLOCK}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:8081}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8081}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-incert}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8081/realms/incert/protocol/openid-connect/certs}
       HSM_ENABLED: "true"
       HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
-      HSM_TOKEN_LABEL: ocsp-signing
-      HSM_PIN: "1234"
-      HSM_KEY_LABEL: ocsp-signing-key
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
+      HSM_PIN: ${HSM_PIN:-1234}
+      HSM_KEY_LABEL: ${HSM_KEY_LABEL:-ocsp-signing-key}
       SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
       PKI_DIR: /data/pki
     volumes:
@@ -301,8 +303,8 @@ services:
     networks: [ocsp-net]
     command: start-dev --import-realm
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_PORT: 8081
     ports:
       - "8081:8081"

@@ -10,10 +10,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.security.MessageDigest;
 import java.util.List;
 
 /**
  * Filter that authenticates requests bearing a valid X-API-KEY header.
+ * Uses constant-time comparison to prevent timing-based key enumeration.
  */
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
@@ -27,7 +29,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String apiKey = request.getHeader("X-API-KEY");
-        if (apiKey != null && apiKey.equals(expectedApiKey)) {
+        if (apiKey != null && isValid(apiKey)) {
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     "api-key-admin",
                     null,
@@ -36,6 +38,11 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
         filterChain.doFilter(request, response);
+    }
+
+    /** Constant-time comparison prevents timing attacks. */
+    private boolean isValid(String provided) {
+        return MessageDigest.isEqual(provided.getBytes(), expectedApiKey.getBytes());
     }
 }
 

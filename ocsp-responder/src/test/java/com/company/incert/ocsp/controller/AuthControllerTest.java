@@ -18,7 +18,8 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new AuthController("admin", "changeme", "incert-admin-secret-key");
+        // Single test constructor: authMode, tlsEnabled, username, password, apiKey
+        controller = new AuthController("SELF_MANAGED", true, "admin", "changeme", "incert-admin-secret-key");
     }
 
     @Test
@@ -28,12 +29,15 @@ class AuthControllerTest {
         assertThat(response.getBody()).containsEntry("authMode", "SELF_MANAGED");
         assertThat(response.getBody()).containsEntry("isKeycloak", false);
         assertThat(response.getBody()).containsEntry("tlsEnabled", true);
+        // No secrets in response
+        assertThat(response.getBody()).doesNotContainKey("apiKey");
+        assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
     void getConfig_keyclock_returnsKeyclockConfig() {
         var keycloakController = new AuthController(
-                "KEYCLOCK", "admin", "changeme", "incert-admin-secret-key",
+                "KEYCLOCK", true, "admin", "changeme", "incert-admin-secret-key",
                 "http://localhost:8081", "incert", "ocsp-console");
         ResponseEntity<Map<String, Object>> response = keycloakController.getConfig();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -55,7 +59,7 @@ class AuthControllerTest {
     }
 
     @Test
-    void me_authenticated_returnsUsername() {
+    void me_authenticated_returnsUsernameWithoutSecrets() {
         var auth = new UsernamePasswordAuthenticationToken(
                 "admin", null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         ResponseEntity<Map<String, Object>> response = controller.me(auth);
@@ -63,75 +67,82 @@ class AuthControllerTest {
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "admin");
         assertThat(response.getBody()).containsEntry("authMode", "SELF_MANAGED");
+        // Must not leak secrets
+        assertThat(response.getBody()).doesNotContainKey("apiKey");
+        assertThat(response.getBody()).doesNotContainKey("basicAuth");
+    }
+
+    @Test
+    void login_alreadyAuthenticated_returns200WithoutSecrets() {
+        var auth = new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        ResponseEntity<Map<String, Object>> response = controller.login(auth, null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("authenticated", true);
+        assertThat(response.getBody()).containsEntry("username", "admin");
+        // No raw secrets in response
+        assertThat(response.getBody()).doesNotContainKey("apiKey");
+        assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
     void login_withValidCredentials_returns200() {
-        var payload = new AuthController.LoginPayload("admin", "changeme", null, null);
+        var payload = new AuthController.LoginPayload("admin", "changeme", null);
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "admin");
-        assertThat(response.getBody()).containsKey("basicAuth");
+        assertThat(response.getBody()).containsEntry("authType", "BASIC");
+        // No raw secrets
+        assertThat(response.getBody()).doesNotContainKey("apiKey");
+        assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
     void login_withValidApiKey_returns200() {
-        var payload = new AuthController.LoginPayload(null, null, "incert-admin-secret-key", null);
+        var payload = new AuthController.LoginPayload(null, null, "incert-admin-secret-key");
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "api-key-admin");
-        assertThat(response.getBody()).containsEntry("apiKey", "incert-admin-secret-key");
+        assertThat(response.getBody()).containsEntry("authType", "API_KEY");
+        // No raw secrets
+        assertThat(response.getBody()).doesNotContainKey("apiKey");
     }
 
     @Test
     void login_withInvalidCredentials_returns401() {
-        var payload = new AuthController.LoginPayload("admin", "wrongpassword", null, null);
+        var payload = new AuthController.LoginPayload("admin", "wrongpassword", null);
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody()).containsEntry("authenticated", false);
     }
 
     @Test
-    void login_withClientCert_whenTlsActive_returns200() {
-        var payload = new AuthController.LoginPayload(null, null, null, null, "CN=test-admin,O=Incert");
+    void login_withInvalidApiKey_returns401() {
+        var payload = new AuthController.LoginPayload(null, null, "wrong-key");
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("authenticated", true);
-        assertThat(response.getBody()).containsEntry("username", "test-admin");
-        assertThat(response.getBody()).containsEntry("authType", "TLS_CLIENT_CERT");
-        assertThat(response.getBody()).containsEntry("tlsEnabled", true);
-    }
-
-    @Test
-    void login_withClientCert_whenTlsDeactivated_returns400() {
-        var noTlsController = new AuthController("SELF_MANAGED", false, "admin", "changeme", "incert-admin-secret-key");
-        var payload = new AuthController.LoginPayload(null, null, null, null, "CN=test-admin,O=Incert");
-        ResponseEntity<Map<String, Object>> response = noTlsController.login(null, payload);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody()).containsEntry("authenticated", false);
-        assertThat(response.getBody()).containsEntry("tlsEnabled", false);
-        assertThat((String) response.getBody().get("message")).contains("TLS authentication is currently deactivated");
     }
 
     @Test
-    void tlsToggle_runtimeActivationDeactivation_works() {
+    void toggleTls_togglesCorrectly() {
         ResponseEntity<Map<String, Object>> initial = controller.getTlsStatus();
         assertThat(initial.getBody()).containsEntry("tlsEnabled", true);
         assertThat(initial.getBody()).containsEntry("status", "ACTIVE");
 
         // Deactivate TLS
-        ResponseEntity<Map<String, Object>> deactivated = controller.setTlsStatus(Map.of("enabled", false));
+        ResponseEntity<Map<String, Object>> deactivated = controller.toggleTls(Map.of("enabled", false));
         assertThat(deactivated.getBody()).containsEntry("tlsEnabled", false);
         assertThat(deactivated.getBody()).containsEntry("status", "DEACTIVATED");
 
-        // Verify config reflects deactivation
+        // Config reflects deactivation
         ResponseEntity<Map<String, Object>> config = controller.getConfig();
         assertThat(config.getBody()).containsEntry("tlsEnabled", false);
 
-        // Reactivate TLS
-        ResponseEntity<Map<String, Object>> activated = controller.setTlsStatus(Map.of("enabled", true));
+        // Reactivate
+        ResponseEntity<Map<String, Object>> activated = controller.toggleTls(Map.of("enabled", true));
         assertThat(activated.getBody()).containsEntry("tlsEnabled", true);
         assertThat(activated.getBody()).containsEntry("status", "ACTIVE");
     }

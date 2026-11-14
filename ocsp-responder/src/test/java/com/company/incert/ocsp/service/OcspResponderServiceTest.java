@@ -193,5 +193,23 @@ class OcspResponderServiceTest {
         Extension echoedNonce = basicResp.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nonce);
         assertThat(echoedNonce).isNotNull();
     }
+
+    @Test
+    void stripLeadingZero_removesSignByte() {
+        byte[] withZero = new byte[]{0x00, 0x01, 0x02};
+        assertThat(OcspResponderService.stripLeadingZero(withZero)).isEqualTo(new byte[]{0x01, 0x02});
+    }
+
+    @Test
+    void stripLeadingZero_singleZeroBytePreserved() {
+        byte[] onlyZero = new byte[]{0x00};
+        assertThat(OcspResponderService.stripLeadingZero(onlyZero)).isEqualTo(new byte[]{0x00});
+    }
+
+    @Test
+    void stripLeadingZero_noLeadingZero_unchanged() {
+        byte[] noZero = new byte[]{0x01, 0x02, 0x03};
+        assertThat(OcspResponderService.stripLeadingZero(noZero)).isEqualTo(new byte[]{0x01, 0x02, 0x03});
+    }
 }
 

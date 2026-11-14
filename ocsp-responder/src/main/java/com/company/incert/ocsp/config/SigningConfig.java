@@ -64,14 +64,12 @@ public class SigningConfig {
     @Bean
     @ConditionalOnProperty(name = "hsm.enabled", havingValue = "true", matchIfMissing = true)
     public OcspSigner pkcs11OcspSigner() {
-        try {
-            log.info("Connecting to HSM via PKCS#11 properties: library={}, token={}, keyLabel={}, slotIndex={}",
-                    pkcs11Library, tokenLabel, keyLabel, slotIndex);
-            return new Pkcs11OcspSigner(pkcs11Library, tokenLabel, pin, keyLabel, slotIndex, configPath);
-        } catch (Exception e) {
-            log.warn("PKCS#11 initialization failed ({}). Falling back to software signer for dev/test.", e.getMessage());
-            return createFallbackSoftwareSigner();
-        }
+        log.info("Connecting to HSM via PKCS#11: library={}, token={}, keyLabel={}, slotIndex={}",
+                pkcs11Library, tokenLabel, keyLabel, slotIndex);
+        // Hard failure: if HSM is enabled and unreachable, the service must NOT start.
+        // A silent software-key fallback in production would sign responses with
+        // an in-memory key whose private material is not HSM-protected — a security violation.
+        return new Pkcs11OcspSigner(pkcs11Library, tokenLabel, pin, keyLabel, slotIndex, configPath);
     }
 
     @Bean
