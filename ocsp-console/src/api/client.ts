@@ -71,44 +71,9 @@ export const loginWithCredentials = async (username: string, password: string): 
   return res.data
 }
 
-export const loginWithApiKey = async (apiKey: string): Promise<LoginResponse> => {
-  const res = await authApi.post<LoginResponse>('/login', { apiKey })
-  return res.data
-}
-
 export const loginWithBearerToken = async (token: string): Promise<LoginResponse> => {
   const res = await authApi.post<LoginResponse>('/login', { token })
   return res.data
-}
-
-export const loginWithClientCert = async (clientCert: string): Promise<LoginResponse> => {
-  const res = await authApi.post<LoginResponse>('/login', { clientCert })
-  return res.data
-}
-
-export const setTlsStatus = async (enabled: boolean): Promise<{ tlsEnabled: boolean; status: string; message: string }> => {
-  const res = await authApi.post<{ tlsEnabled: boolean; status: string; message: string }>('/tls', { enabled })
-  return res.data
-}
-
-export const exchangeKeycloakCredentials = async (
-  authServerUrl: string,
-  realm: string,
-  clientId: string,
-  username: string,
-  password: string
-): Promise<string> => {
-  const tokenUrl = `${authServerUrl}/realms/${realm}/protocol/openid-connect/token`
-  const params = new URLSearchParams()
-  params.append('client_id', clientId)
-  params.append('grant_type', 'password')
-  params.append('username', username)
-  params.append('password', password)
-
-  const response = await axios.post<{ access_token: string }>(tokenUrl, params, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  })
-  return response.data.access_token
 }
 
 export const getAuthMe = async (): Promise<AuthUser> => {

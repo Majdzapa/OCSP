@@ -2,11 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 import type { AuthUser, AuthConfig } from '../types/api'
 import {
   loginWithCredentials,
-  loginWithApiKey,
   loginWithBearerToken,
-  loginWithClientCert,
-  setTlsStatus,
-  exchangeKeycloakCredentials,
   getAuthMe,
   getAuthConfig,
 } from '../api/client'
@@ -17,11 +13,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   login: (username: string, password: string) => Promise<void>
-  loginWithKey: (apiKey: string) => Promise<void>
   loginWithToken: (token: string) => Promise<void>
-  loginWithCert: (clientCert: string) => Promise<void>
-  setTlsActive: (enabled: boolean) => Promise<void>
-  loginWithKeycloakCredentials: (username: string, password: string) => Promise<void>
   logout: () => void
   refreshAuthConfig: () => Promise<AuthConfig | null>
 }
@@ -132,24 +124,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
   }
 
-  const loginWithKey = async (apiKey: string) => {
-    const res = await loginWithApiKey(apiKey)
-    if (!res.authenticated) {
-      throw new Error(res.message || 'Invalid API Key')
-    }
-
-    localStorage.setItem('ocsp_api_key', res.apiKey || apiKey)
-    localStorage.setItem('ocsp_auth_user', res.username || 'api-key-admin')
-
-    setUser({
-      authenticated: true,
-      username: res.username || 'api-key-admin',
-      roles: res.roles,
-      authMode: res.authMode,
-      apiKey: res.apiKey || apiKey,
-    })
-  }
-
   const loginWithToken = async (token: string) => {
     const res = await loginWithBearerToken(token)
     if (!res.authenticated) {
@@ -168,43 +142,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
   }
 
-  const loginWithCert = async (clientCert: string) => {
-    const res = await loginWithClientCert(clientCert)
-    if (!res.authenticated) {
-      throw new Error(res.message || 'Client certificate authentication failed')
-    }
-
-    if (res.apiKey) localStorage.setItem('ocsp_api_key', res.apiKey)
-    localStorage.setItem('ocsp_auth_user', res.username || 'tls-client-admin')
-
-    setUser({
-      authenticated: true,
-      username: res.username || 'tls-client-admin',
-      roles: res.roles,
-      authMode: res.authMode,
-      tlsEnabled: res.tlsEnabled,
-      apiKey: res.apiKey,
-    })
-  }
-
-  const setTlsActive = async (enabled: boolean) => {
-    await setTlsStatus(enabled)
-    await refreshAuthConfig()
-  }
-
-  const loginWithKeycloakCredentials = async (kcUsername: string, kcPassword: string) => {
-    const serverUrl = authConfig?.keycloak?.authServerUrl
-    const realm = authConfig?.keycloak?.realm
-    const clientId = authConfig?.keycloak?.clientId
-
-    if (!serverUrl || !realm || !clientId) {
-      throw new Error('Keycloak configuration is not available. Check server auth config.')
-    }
-
-    const token = await exchangeKeycloakCredentials(serverUrl, realm, clientId, kcUsername, kcPassword)
-    await loginWithToken(token)
-  }
-
   return (
     <AuthContext.Provider
       value={{
@@ -213,11 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user?.authenticated,
         isLoading,
         login,
-        loginWithKey,
         loginWithToken,
-        loginWithCert,
-        setTlsActive,
-        loginWithKeycloakCredentials,
         logout,
         refreshAuthConfig,
       }}
