@@ -28,7 +28,9 @@ public record OcspCheckResult(
     int responseSizeBytes,
     String getRequestPath,
     List<Check> checks,
-    String error
+    String error,
+    /** Equivalent openssl command to reproduce this OCSP check from the command line. */
+    String opensslCommand
 ) {
     public enum Outcome { PASS, FAIL, SKIPPED }
 

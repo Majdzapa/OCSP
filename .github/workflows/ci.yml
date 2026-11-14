@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: ["refactor/monolith-rabbitmq", "main"]
+  pull_request:
+    branches: ["refactor/monolith-rabbitmq", "main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Java unit tests — one job per module so failures are pinpointed quickly
+  # ─────────────────────────────────────────────────────────────────────────────
+  test-ocsp-responder:
+    name: "Test · ocsp-responder (61 tests)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Run unit tests
+        run: cd ocsp-responder && mvn test --batch-mode
+
+      - name: Upload Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-ocsp-responder
+          path: ocsp-responder/target/surefire-reports/
+
+  test-kms-simulator:
+    name: "Test · kms-simulator (6 tests)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Run unit tests
+        run: cd kms-simulator && mvn test --batch-mode
+
+      - name: Upload Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-kms-simulator
+          path: kms-simulator/target/surefire-reports/
+
+  test-ocsp-client:
+    name: "Test · ocsp-client (2 tests)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Run unit tests
+        run: cd ocsp-client && mvn test --batch-mode
+
+      - name: Upload Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-ocsp-client
+          path: ocsp-client/target/surefire-reports/
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Frontend type-check + build
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-frontend:
+    name: "Build · ocsp-console (TypeScript + Vite)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ocsp-console
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: ocsp-console/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: TypeScript type-check
+        run: node_modules/.bin/tsc --noEmit
+
+      - name: Production build
+        run: yarn build
+        env:
+          # Provide placeholder values so Vite env validation doesn't fail
+          VITE_API_BASE_URL: http://localhost:8080
+          VITE_KMS_BASE_URL: http://localhost:8090
+          VITE_OCSP_CLIENT_BASE_URL: http://localhost:8082
+          VITE_AUTH_MODE: SELF_MANAGED
+          VITE_PORTAL_KEYCLOAK_URL: ""
+          VITE_PORTAL_RABBITMQ_URL: ""
+          VITE_PORTAL_GRAFANA_URL: ""
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocsp-console-dist
+          path: ocsp-console/dist/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Docker image builds (validate Dockerfiles compile; no push)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-docker-images:
+    name: "Docker build · all services"
+    runs-on: ubuntu-latest
+    needs: [test-ocsp-responder, test-kms-simulator, test-ocsp-client, build-frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ocsp-responder image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ocsp-responder
+          push: false
+          tags: ocsp/responder:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build kms-simulator image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./kms-simulator
+          push: false
+          tags: ocsp/kms:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build ocsp-client image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ocsp-client
+          push: false
+          tags: ocsp/client:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build ocsp-console image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ocsp-console
+          push: false
+          tags: ocsp/console:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+

@@ -181,7 +181,7 @@ public class OcspClientService {
                         null, null, target.serialHex(), null, null, null, null, null,
                         request.includeNonce(), nonceSentHex, null, latencyMs,
                         derRequest.length, derResponse.length, getPath, checks,
-                        "OCSP responder returned status " + respStatusName
+                        "OCSP responder returned status " + respStatusName, null
                 );
             }
             checks.add(Check.pass("Response Status", "Status is SUCCESSFUL (0)"));
@@ -263,6 +263,8 @@ public class OcspClientService {
 
             boolean overallValid = sigOk && authOk && nonceOk && fresh;
 
+            String opensslCommand = buildOpensslCommand(displayUrl, target.serialHex(), pkiDir);
+
             return new OcspCheckResult(
                     overallValid,
                     displayUrl,
@@ -286,7 +288,8 @@ public class OcspClientService {
                     derResponse.length,
                     getPath,
                     checks,
-                    null
+                    null,
+                    opensslCommand
             );
 
         } catch (Exception e) {
@@ -444,7 +447,26 @@ public class OcspClientService {
         return new OcspCheckResult(
                 false, responderUrl, method, httpStatus, "ERROR", null,
                 null, null, null, null, null, null, null, null,
-                false, null, null, latencyMs, reqLen, respLen, path, checks, error
+                false, null, null, latencyMs, reqLen, respLen, path, checks, error, null
+        );
+    }
+
+    /**
+     * Builds an equivalent {@code openssl ocsp} command the user can run to reproduce this check.
+     * Uses the intermediate CA cert from PKI_DIR as the trust anchor.
+     */
+    private String buildOpensslCommand(String responderUrl, String serialHex, String pkiDirPath) {
+        String caFile = pkiDirPath + "/intermediate-ca-cert.pem";
+        // openssl requires serial in decimal; convert hex -> BigInteger -> string
+        String decimalSerial;
+        try {
+            decimalSerial = new java.math.BigInteger(serialHex.replaceAll("[^0-9a-fA-F]", ""), 16).toString();
+        } catch (Exception e) {
+            decimalSerial = serialHex;
+        }
+        return String.format(
+                "openssl ocsp -issuer %s -serial %s -url %s -resp_text",
+                caFile, decimalSerial, responderUrl
         );
     }
 
