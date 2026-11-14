@@ -7,6 +7,9 @@ import com.company.incert.ocsp.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.OcspSigner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
@@ -14,6 +17,8 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -143,9 +148,17 @@ public class SigningCertificateService {
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
 
-        // Update in-memory HSM signer dynamically
+        // Schedule the in-memory HSM signer update to run AFTER the DB transaction commits.
+        // If commit fails, the signer is NOT updated — signer and DB always stay in sync.
         X509CertificateHolder holder = parsePem(updated.getCertificatePem());
-        ocspSigner.updateActiveCertificate(updated.getKeyLabel(), holder);
+        String keyLabel = updated.getKeyLabel();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                ocspSigner.updateActiveCertificate(keyLabel, holder);
+                log.info("Signer updated after DB commit: keyLabel={}", keyLabel);
+            }
+        });
 
         log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
                 updated.getId(), updated.getAlias(), updated.getKeyLabel(), updated.getNotAfter());
@@ -216,7 +229,8 @@ public class SigningCertificateService {
 
     private String getAlgorithm(X509CertificateHolder holder) {
         try {
-            if (holder.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId().contains("1.2.840.10045")) {
+            AlgorithmIdentifier algId = holder.getSubjectPublicKeyInfo().getAlgorithm();
+            if (X9ObjectIdentifiers.id_ecPublicKey.equals(algId.getAlgorithm())) {
                 return "SHA256withECDSA";
             }
         } catch (Exception ignored) {}
