@@ -1,5 +1,6 @@
 * xref:index.adoc[Overview & Architecture]
 * Core Architecture
+** xref:blueprint-sequence-diagrams.adoc[Client Blueprint & Sequence Diagrams]
 ** xref:architecture.adoc[System Design & Data Flow]
 ** xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 HSM Signing]
 ** xref:messaging-rabbitmq.adoc[RabbitMQ Messaging & Strict mTLS]
