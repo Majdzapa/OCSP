@@ -37,3 +37,4 @@ Specifically:
 ## Consequences
 - **Positive**: Full operational flexibility to enforce strict mTLS login in high-security environments or deactivate it in test/development scenarios where TLS offloading occurs upstream.
 - **Security**: Disabling TLS clearly rejects client certificate authentication, avoiding false assumptions of transport-level peer verification when TLS is inactive.
+
