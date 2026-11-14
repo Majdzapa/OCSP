@@ -110,8 +110,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(res.message || 'Invalid credentials')
     }
 
-    if (res.basicAuth) localStorage.setItem('ocsp_basic_auth', res.basicAuth)
-    if (res.apiKey) localStorage.setItem('ocsp_api_key', res.apiKey)
+    const encodedBasic = 'Basic ' + btoa(`${username}:${password}`)
+    localStorage.setItem('ocsp_basic_auth', encodedBasic)
     localStorage.setItem('ocsp_auth_user', res.username || username)
 
     setUser({
@@ -119,8 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       username: res.username || username,
       roles: res.roles,
       authMode: res.authMode,
-      basicAuth: res.basicAuth,
-      apiKey: res.apiKey,
+      basicAuth: encodedBasic,
     })
   }
 
