@@ -39,7 +39,7 @@ public class CertificateStatusService {
 
     @Transactional(readOnly = true)
     public Optional<RevocationStatus> findBySerialHex(String serialHex) {
-        byte[] serial = parseHex(serialHex);
+        byte[] serial = parseSerial(serialHex);
         return repository.findBySerialNumber(serial).stream().findFirst();
     }
 
@@ -80,7 +80,7 @@ public class CertificateStatusService {
     public boolean applyStatusChange(CertificateStatusEvent event) {
         byte[] nameHash = parseHex(event.issuerNameHashHex());
         byte[] keyHash = parseHex(event.issuerKeyHashHex());
-        byte[] serial = parseHex(event.serialNumberHex());
+        byte[] serial = parseSerial(event.serialNumberHex());
         RevocationReason reason = RevocationReason.parse(event.revocationReason());
         String reasonName = reason != null ? reason.name() : null;
         Instant now = Instant.now();
@@ -136,6 +136,15 @@ public class CertificateStatusService {
             clean = "0" + clean;
         }
         return HexFormat.of().parseHex(clean);
+    }
+
+    /**
+     * Canonical serial form used for storage and lookup: minimal two's-complement bytes
+     * (identical to {@link java.math.BigInteger#toByteArray()}, i.e. what an OCSP CertID yields).
+     * Makes "00ab.." and "ab.." style hex inputs compare equal to the DER integer value.
+     */
+    static byte[] parseSerial(String hex) {
+        return new java.math.BigInteger(1, parseHex(hex)).toByteArray();
     }
 }
 

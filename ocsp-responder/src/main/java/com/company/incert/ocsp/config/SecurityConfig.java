@@ -126,7 +126,7 @@ public class SecurityConfig {
         http.httpBasic(Customizer.withDefaults());
 
         if (mode.isKeycloak()) {
-            log.info("Activating KEYCLOCK OAuth2 Resource Server filter chain");
+            log.info("Activating KEYCLOAK OAuth2 Resource Server filter chain");
             http.oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt
                     .decoder(jwtDecoder())

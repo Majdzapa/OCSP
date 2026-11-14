@@ -119,5 +119,19 @@ class CertificateStatusServiceTest {
         verify(repository, never()).save(any());
         assertThat(existing.getStatus()).isEqualTo(CertificateStatus.REVOKED);
     }
+
+    @org.junit.jupiter.api.Test
+    void parseSerial_highBitSet_keepsSignByte_matchingCertIdBigInteger() {
+        java.math.BigInteger serial = new java.math.BigInteger("8602e6cd418b918c3a98b1e73c95b879", 16);
+        assertThat(CertificateStatusService.parseSerial("008602e6cd418b918c3a98b1e73c95b879"))
+            .isEqualTo(serial.toByteArray());
+        assertThat(CertificateStatusService.parseSerial("8602e6cd418b918c3a98b1e73c95b879"))
+            .isEqualTo(serial.toByteArray());
+    }
+
+    @org.junit.jupiter.api.Test
+    void parseSerial_highBitClear_dropsRedundantLeadingZero() {
+        assertThat(CertificateStatusService.parseSerial("007f01")).isEqualTo(new byte[]{0x7f, 0x01});
+    }
 }
 

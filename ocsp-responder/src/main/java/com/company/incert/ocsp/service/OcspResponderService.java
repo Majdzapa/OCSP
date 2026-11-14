@@ -97,9 +97,8 @@ public class OcspResponderService {
 
         for (Req req : requests) {
             CertificateID certId = req.getCertID();
-            // BigInteger.toByteArray() may prepend a 0x00 sign byte for positive values.
-            // Strip it to match the raw hex bytes stored by the KMS.
-            byte[] serialBytes = stripLeadingZero(certId.getSerialNumber().toByteArray());
+            // Same canonical form as CertificateStatusService.parseSerial (minimal two's complement).
+            byte[] serialBytes = certId.getSerialNumber().toByteArray();
             Optional<RevocationStatus> status = statusService.findByCertId(
                 certId.getIssuerNameHash(),
                 certId.getIssuerKeyHash(),
@@ -181,15 +180,6 @@ public class OcspResponderService {
      * most-significant byte is set (to signal a positive value in two's complement).
      * Strip it so the byte array matches the raw hex stored by the KMS.
      */
-    static byte[] stripLeadingZero(byte[] bytes) {
-        if (bytes.length > 1 && bytes[0] == 0x00) {
-            byte[] stripped = new byte[bytes.length - 1];
-            System.arraycopy(bytes, 1, stripped, 0, stripped.length);
-            return stripped;
-        }
-        return bytes;
-    }
-
     public static class MalformedRequestException extends RuntimeException {
         public MalformedRequestException(String msg) {
             super(msg);
