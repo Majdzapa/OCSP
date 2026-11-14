@@ -148,17 +148,24 @@ public class SigningCertificateService {
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
 
-        // Schedule the in-memory HSM signer update to run AFTER the DB transaction commits.
-        // If commit fails, the signer is NOT updated — signer and DB always stay in sync.
+        // Update the in-memory HSM signer.
+        // In production (inside a live @Transactional): defer until AFTER commit so that
+        // a DB rollback cannot leave the signer and DB out of sync.
+        // Outside a transaction (unit tests, batch tools): invoke synchronously.
         X509CertificateHolder holder = parsePem(updated.getCertificatePem());
         String keyLabel = updated.getKeyLabel();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                ocspSigner.updateActiveCertificate(keyLabel, holder);
-                log.info("Signer updated after DB commit: keyLabel={}", keyLabel);
-            }
-        });
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    ocspSigner.updateActiveCertificate(keyLabel, holder);
+                    log.info("Signer updated after DB commit: keyLabel={}", keyLabel);
+                }
+            });
+        } else {
+            ocspSigner.updateActiveCertificate(keyLabel, holder);
+            log.info("Signer updated synchronously (no active transaction): keyLabel={}", keyLabel);
+        }
 
         log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
                 updated.getId(), updated.getAlias(), updated.getKeyLabel(), updated.getNotAfter());
