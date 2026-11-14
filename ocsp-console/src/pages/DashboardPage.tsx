@@ -116,9 +116,9 @@ export function DashboardPage() {
           },
           {
             title: 'Message Broker',
-            value: 'RabbitMQ',
-            subtitle: 'Direct exchange & durable queue',
-            accent: '#f97316',
+            value: stats?.messagingBroker ?? 'RabbitMQ',
+            subtitle: stats?.tlsEnabled ? 'Strict mTLS 5671 (Active)' : 'Plaintext 5672 (Deactivated)',
+            accent: stats?.tlsEnabled ? '#22c55e' : '#f97316',
           },
           {
             title: 'Avg Signing Latency',

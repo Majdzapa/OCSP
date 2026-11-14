@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +25,9 @@ public class AdminDashboardController {
 
     private final CertificateStatusService statusService;
     private final OcspSigner ocspSigner;
+
+    @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
+    private boolean tlsEnabled;
 
     @Operation(summary = "Get admin dashboard statistics", description = "Retrieves live counts of good/revoked certificates, signing key expiry, and operational metrics")
     @ApiResponses({
@@ -45,7 +49,8 @@ public class AdminDashboardController {
             Map.entry("requestsPerSecond", 18.5),
             Map.entry("cachingEnabled", false),
             Map.entry("architecture", "Decoupled OCSP Responder"),
-            Map.entry("messagingBroker", "RabbitMQ (AMQPS / Strict mTLS)"),
+            Map.entry("tlsEnabled", tlsEnabled),
+            Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
             Map.entry("avgSigningLatencyMs", 0.8),
             Map.entry("errorRate", 0.0),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft)

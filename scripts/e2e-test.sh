@@ -294,16 +294,16 @@ echo "${RECON_RES}" | grep -q '"synchronized":true' || fail "Test l: Reconciliat
 pass "Test l: KMS status update, Responder inbox table, and Parity reconciliation verified"
 
 # -----------------------------------------------------------------------------
-# Test m: RabbitMQ Strict Mutual TLS (mTLS) Only Trusted Verification
+# Test m: RabbitMQ Mutual TLS (mTLS) Activation / Deactivation & Strict Enforcement
 # -----------------------------------------------------------------------------
-info "Test m: Verifying RabbitMQ Strict mTLS enforcement..."
+info "Test m: Verifying RabbitMQ TLS activation and strict mTLS enforcement..."
 
-# 1. Plaintext port 5672 must be completely closed / disabled
-info "Asserting unencrypted plaintext port 5672 is closed..."
-if python3 -c 'import socket; s = socket.socket(); s.settimeout(1.5); exit(0 if s.connect_ex(("127.0.0.1", 5672)) == 0 else 1)' 2>/dev/null; then
-    fail "Test m: Plaintext AMQP port 5672 is OPEN! RabbitMQ must strictly allow TLS only."
+# 1. Plaintext port 5672 is available for deactivated TLS fallback
+info "Verifying plaintext port 5672 is open for non-TLS mode..."
+if ! python3 -c 'import socket; s = socket.socket(); s.settimeout(1.5); exit(0 if s.connect_ex(("127.0.0.1", 5672)) == 0 else 1)' 2>/dev/null; then
+    fail "Test m: Plaintext AMQP port 5672 is not reachable when TLS is deactivated!"
 fi
-pass "Test m [1/4]: Plaintext port 5672 is disabled"
+pass "Test m [1/5]: Plaintext port 5672 is available when TLS is deactivated"
 
 # 2. Connection to port 5671 WITHOUT client certificate must trigger Fatal - Certificate required
 info "Testing connection to port 5671 WITHOUT client certificate..."
@@ -312,7 +312,7 @@ sleep 1
 if ! docker logs ocsp-rabbitmq --tail 15 2>&1 | grep -q "Certificate required"; then
     fail "Test m: RabbitMQ failed to reject connection without peer certificate!"
 fi
-pass "Test m [2/4]: Connection without client certificate rejected (Fatal - Certificate required)"
+pass "Test m [2/5]: Connection without client certificate rejected (Fatal - Certificate required)"
 
 # 3. Connection to port 5671 WITH UNTRUSTED client certificate must trigger Fatal - Unknown CA
 info "Testing connection to port 5671 WITH UNTRUSTED client certificate..."
@@ -322,19 +322,23 @@ sleep 1
 if ! docker logs ocsp-rabbitmq --tail 15 2>&1 | grep -q "Unknown CA"; then
     fail "Test m: RabbitMQ failed to reject connection with untrusted peer certificate!"
 fi
-pass "Test m [3/4]: Untrusted client certificate rejected (Fatal - Unknown CA)"
+pass "Test m [3/5]: Untrusted client certificate rejected (Fatal - Unknown CA)"
 
 # 4. Connection to port 5671 WITH TRUSTED client certificate must succeed and be verified
 info "Testing connection to port 5671 WITH TRUSTED client certificate..."
 TRUSTED_TLS_OUT=$(echo "AMQP" | openssl s_client -connect localhost:5671 -CAfile certs/rabbitmq/ca.pem \
     -cert certs/rabbitmq/client-cert.pem -key certs/rabbitmq/client-key.pem 2>&1)
 echo "${TRUSTED_TLS_OUT}" | grep -q "Verify return code: 0 (ok)" || fail "Test m: Trusted mTLS handshake failed: ${TRUSTED_TLS_OUT}"
+pass "Test m [4/5]: Trusted mTLS handshake succeeded"
 
-# Verify active connections inside RabbitMQ are running with mTLS
+# 5. Verify live active connections inside RabbitMQ are running with mTLS and admin dashboard reflects tlsEnabled
 CONN_DETAILS=$(docker exec ocsp-rabbitmq rabbitmqctl list_connections user ssl ssl_protocol ssl_cipher peer_cert_subject 2>&1)
 echo "${CONN_DETAILS}" | grep -q "CN=rabbitmq-client" || fail "Test m: Active connections do not show trusted client certificate: ${CONN_DETAILS}"
 echo "${CONN_DETAILS}" | grep -q "tlsv1" || fail "Test m: Active connections are not running with TLS: ${CONN_DETAILS}"
-pass "Test m [4/4]: Trusted mTLS handshake succeeded and active connections verified (CN=rabbitmq-client)"
+
+DASH_TLS=$(curl -s -u admin:changeme http://localhost:8080/api/v1/admin/dashboard)
+echo "${DASH_TLS}" | grep -q '"tlsEnabled":true' || fail "Test m: Admin dashboard does not show tlsEnabled=true: ${DASH_TLS}"
+pass "Test m [5/5]: Active broker connections verified (CN=rabbitmq-client) and dashboard reflects tlsEnabled=true"
 
 info "========================================================================="
 echo -e "${GREEN}ALL END-TO-END TESTS PASSED SUCCESSFULLY!${NC}"

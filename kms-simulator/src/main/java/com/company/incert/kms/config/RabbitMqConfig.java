@@ -1,5 +1,7 @@
 package com.company.incert.kms.config;
 
+import com.rabbitmq.client.ConnectionFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -7,11 +9,19 @@ import org.springframework.amqp.core.ExchangeBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.amqp.autoconfigure.ConnectionFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@Slf4j
 @Configuration
 public class RabbitMqConfig {
+
+    @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
+    private boolean tlsEnabled;
+
+    @Value("${spring.rabbitmq.port:5671}")
+    private int configuredPort;
 
     @Value("${kms.rabbitmq.exchange:incert.certificate.status}")
     private String exchange;
@@ -60,6 +70,17 @@ public class RabbitMqConfig {
     public Binding certificateStatusDeadLetterBinding() {
         return BindingBuilder.bind(certificateStatusDeadLetterQueue())
             .to(certificateStatusDeadLetterExchange()).with(deadLetterQueue);
+    }
+
+    @Bean
+    public ConnectionFactoryCustomizer rabbitMqTlsPortCustomizer() {
+        return (ConnectionFactory factory) -> {
+            log.info("KMS RabbitMQ Config: tlsEnabled={}, configuredPort={}", tlsEnabled, configuredPort);
+            if (!tlsEnabled && configuredPort == 5671) {
+                log.info("TLS is deactivated; switching KMS RabbitMQ connection port to 5672 (plaintext)");
+                factory.setPort(5672);
+            }
+        };
     }
 }
 

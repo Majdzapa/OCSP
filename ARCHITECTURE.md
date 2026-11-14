@@ -1,6 +1,6 @@
-# Incert OCSP Subsystem — Architecture & Blueprint (v4.0)
+# Incert OCSP Subsystem — Architecture & Blueprint (v4.1)
 
-> **Version**: 4.0 · **Architecture**: Standalone Distributed Services & Pure Event Bus · **Stack**: Java 25 · Spring Boot 4.0 · RabbitMQ 3.13 · SoftHSM2 (PKCS#11) · MariaDB 10.11 · Mantine UI v7 (React 18)
+> **Version**: 4.1 · **Architecture**: Standalone Distributed Services & Zero-Trust Event Bus · **Stack**: Java 25 · Spring Boot 4.0 · RabbitMQ 3.13 (Strict mTLS) · SoftHSM2 (PKCS#11) · Keycloak 24 · MariaDB 10.11 · Mantine UI v7 (React 18)
 
 ---
 

@@ -1,3 +1,7 @@
+rabbitmq:
+  tls:
+    enabled: ${RABBITMQ_TLS_ENABLED:true}
+
 spring:
   application:
     name: kms-simulator
@@ -33,7 +37,7 @@ spring:
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     ssl:
-      enabled: ${RABBITMQ_SSL_ENABLED:true}
+      enabled: ${rabbitmq.tls.enabled:true}
       key-store: ${RABBITMQ_SSL_KEYSTORE:classpath:certs/rabbitmq/client-keystore.p12}
       key-store-password: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:changeme}
       key-store-type: PKCS12

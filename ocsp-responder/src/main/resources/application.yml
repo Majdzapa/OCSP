@@ -1,5 +1,11 @@
 security:
   auth-mode: ${AUTH_MODE:KEYCLOCK} # SELF_MANAGED or KEYCLOCK
+  tls:
+    enabled: ${TLS_ENABLED:${RABBITMQ_TLS_ENABLED:true}}
+
+rabbitmq:
+  tls:
+    enabled: ${RABBITMQ_TLS_ENABLED:${security.tls.enabled:true}}
 
 keycloak:
   auth-server-url: ${KEYCLOAK_URL:http://localhost:8081}
@@ -44,7 +50,7 @@ spring:
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     ssl:
-      enabled: ${RABBITMQ_SSL_ENABLED:true}
+      enabled: ${rabbitmq.tls.enabled:true}
       key-store: ${RABBITMQ_SSL_KEYSTORE:classpath:certs/rabbitmq/client-keystore.p12}
       key-store-password: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:changeme}
       key-store-type: PKCS12

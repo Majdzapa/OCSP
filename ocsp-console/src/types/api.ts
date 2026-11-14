@@ -12,6 +12,7 @@ export interface DashboardStats {
   cachingEnabled?: boolean
   architecture?: string
   messagingBroker?: string
+  tlsEnabled?: boolean
 }
 
 export interface CacheEntry {

@@ -59,7 +59,7 @@ services:
       retries: 6
 
   # ============================================================
-  # RabbitMQ with Management UI (Strict mTLS AMQPS on 5671)
+  # RabbitMQ with Management UI (AMQPS 5671 mTLS & Plaintext 5672)
   # ============================================================
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -68,6 +68,7 @@ services:
     networks: [ocsp-net]
     ports:
       - "5671:5671"
+      - "5672:5672"
       - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
@@ -110,8 +111,9 @@ services:
       FLYWAY_USER: root
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5671
-      RABBITMQ_SSL_ENABLED: "true"
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5671}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
+      RABBITMQ_SSL_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
       RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
       RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
       RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
@@ -193,8 +195,9 @@ services:
       FLYWAY_USER: root
       FLYWAY_PASSWORD: rootpassword
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5671
-      RABBITMQ_SSL_ENABLED: "true"
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5671}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
+      RABBITMQ_SSL_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
       RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
       RABBITMQ_SSL_KEYSTORE_PASSWORD: changeme
       RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
