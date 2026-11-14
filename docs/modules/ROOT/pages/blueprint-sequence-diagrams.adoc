@@ -356,3 +356,4 @@ sequenceDiagram
     ClientSvc-->>ClientUI: VerificationResultDTO { verified: true, signatureValid: true, nonceValid: true, status: "GOOD" }
     ClientUI-->>Auditor: Render Green Badge "Cryptographically Valid & Authorized by CA"
 ----
+
