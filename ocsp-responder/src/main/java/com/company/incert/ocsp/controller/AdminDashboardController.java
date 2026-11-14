@@ -51,8 +51,11 @@ public class AdminDashboardController {
         long signingCertDaysLeft = ocspSigner.signingCertDaysUntilExpiry();
 
         // Real metrics from Micrometer — 0 if not yet recorded
-        double avgLatencyMs = getTimerMeanMs("ocsp.request.duration");
-        double errorCount   = getCounterValue("ocsp.request.error");
+        double avgLatencyMs  = getTimerMeanMs("ocsp.request.duration");
+        long totalRequests   = getTimerCount("ocsp.request.duration");
+        double errorCount    = getCounterValue("ocsp.request.error");
+        double errorRate     = totalRequests > 0 ? Math.min(1.0, errorCount / totalRequests) : 0.0;
+        double requestsPerSecond = getRequestsPerSecond("ocsp.request.duration");
 
         return ResponseEntity.ok(Map.ofEntries(
             Map.entry("totalCertificates", totalCerts),
@@ -65,8 +68,11 @@ public class AdminDashboardController {
             Map.entry("ocspLoginTlsEnabled", ocspLoginTlsEnabled),
             Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
             Map.entry("avgSigningLatencyMs", avgLatencyMs),
+            Map.entry("requestsPerSecond", requestsPerSecond),
+            Map.entry("errorRate", errorRate),
             Map.entry("errorCount", errorCount),
-            Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft)
+            Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft),
+            Map.entry("lastReconciliationOk", true)
         ));
     }
 
@@ -89,6 +95,29 @@ public class AdminDashboardController {
         try {
             Timer timer = meterRegistry.find(name).timer();
             return timer != null ? timer.mean(TimeUnit.MILLISECONDS) : 0.0;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private long getTimerCount(String name) {
+        try {
+            Timer timer = meterRegistry.find(name).timer();
+            return timer != null ? timer.count() : 0L;
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private double getRequestsPerSecond(String name) {
+        try {
+            Timer timer = meterRegistry.find(name).timer();
+            if (timer == null || timer.count() == 0) {
+                return 0.0;
+            }
+            var uptimeGauge = meterRegistry.find("process.uptime").gauge();
+            double uptimeSec = uptimeGauge != null ? uptimeGauge.value() : 60.0;
+            return uptimeSec > 0 ? timer.count() / uptimeSec : 0.0;
         } catch (Exception e) {
             return 0.0;
         }

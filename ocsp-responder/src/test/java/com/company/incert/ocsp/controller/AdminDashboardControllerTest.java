@@ -52,6 +52,8 @@ class AdminDashboardControllerTest {
         assertThat(body.get("messagingBroker")).isEqualTo("RabbitMQ (AMQPS / Strict mTLS)");
         // Real metrics from Micrometer (zero since no requests fired in test)
         assertThat(body).containsKey("avgSigningLatencyMs");
+        assertThat(body).containsKey("requestsPerSecond");
+        assertThat(body).containsKey("errorRate");
         assertThat(body).containsKey("errorCount");
     }
 }

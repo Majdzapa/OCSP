@@ -100,7 +100,7 @@ function MainLayout() {
           <Group gap="xs" px="xs" py={4} bg="var(--mantine-color-dark-5)" style={{ borderRadius: 8 }}>
             <IconCircleFilled size={8} color="var(--mantine-color-teal-5)" />
             <Text fz="xs" c="dimmed">
-              LIVE — {stats ? `${stats.requestsPerSecond.toFixed(1)} req/s` : 'Connecting...'}
+              LIVE — {stats ? `${(stats.requestsPerSecond ?? 0).toFixed(1)} req/s` : 'Connecting...'}
             </Text>
           </Group>
 
@@ -330,7 +330,12 @@ function MainLayout() {
                 </Box>
               </Group>
               <Badge size="xs" color="indigo" variant="light">
-                {user?.roles?.includes('ROLE_ADMIN') ? 'ADMIN' : (user?.roles?.[0] ?? 'USER')}
+                {(() => {
+                  const roleNames = (user?.roles ?? []).map((r: string | { authority?: string }) =>
+                    typeof r === 'string' ? r : (r?.authority ?? '')
+                  )
+                  return roleNames.includes('ROLE_ADMIN') ? 'ADMIN' : (roleNames[0]?.replace(/^ROLE_/, '') || 'USER')
+                })()}
               </Badge>
             </Group>
 

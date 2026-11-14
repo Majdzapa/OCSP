@@ -131,8 +131,8 @@ export function DashboardPage() {
         {[
           {
             title: 'Requests / sec',
-            value: loading ? '—' : stats!.requestsPerSecond.toFixed(1),
-            subtitle: 'Rolling 1-minute average',
+            value: loading || !stats ? '—' : (stats.requestsPerSecond ?? 0).toFixed(1),
+            subtitle: 'Rolling average',
             accent: '#6366f1',
           },
           {
@@ -159,19 +159,19 @@ export function DashboardPage() {
           },
           {
             title: 'Avg Signing Latency',
-            value: loading ? '—' : `${stats!.avgSigningLatencyMs.toFixed(0)} ms`,
+            value: loading || !stats ? '—' : `${(stats.avgSigningLatencyMs ?? 0).toFixed(0)} ms`,
             subtitle: 'PKCS#11 hardware round trip',
             accent: '#f59e0b',
           },
           {
             title: 'Error Rate',
-            value: loading ? '—' : `${(stats!.errorRate * 100).toFixed(2)}%`,
-            subtitle: 'Rolling 1-minute',
-            accent: stats && stats.errorRate > 0.01 ? '#f43f5e' : '#22c55e',
+            value: loading || !stats ? '—' : `${((stats.errorRate ?? 0) * 100).toFixed(2)}%`,
+            subtitle: 'Rolling average',
+            accent: stats && (stats.errorRate ?? 0) > 0.01 ? '#f43f5e' : '#22c55e',
           },
           {
             title: 'Revoked Certs',
-            value: loading ? '—' : stats!.revokedCertificates.toLocaleString(),
+            value: loading || !stats ? '—' : (stats.revokedCertificates ?? 0).toLocaleString(),
             subtitle: 'Currently in REVOKED status',
             accent: '#f43f5e',
           },

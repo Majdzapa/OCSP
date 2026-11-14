@@ -126,7 +126,7 @@ export interface AuthConfig {
 export interface AuthUser {
   authenticated: boolean
   username: string
-  roles?: string[]
+  roles?: Array<string | { authority?: string }>
   authMode?: string
   tlsEnabled?: boolean
   apiKey?: string
@@ -137,7 +137,7 @@ export interface AuthUser {
 export interface LoginResponse {
   authenticated: boolean
   username?: string
-  roles?: string[]
+  roles?: Array<string | { authority?: string }>
   authMode?: string
   tlsEnabled?: boolean
   apiKey?: string
