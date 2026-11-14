@@ -176,7 +176,7 @@
       <h1>OCSP Responder</h1>
       <p class="sub">Admin API Authentication</p>
       <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; justify-content: center;">
-        <span id="authBadge" class="badge badge-teal">KEYCLOCK</span>
+        <span id="authBadge" class="badge badge-teal">KEYCLOAK</span>
         <span id="tlsBadge" class="badge badge-teal">TLS: Active</span>
       </div>
     </div>
@@ -242,7 +242,7 @@
         const res = await fetch('/api/v1/auth/config');
         if (res.ok) {
           const cfg = await res.json();
-          document.getElementById('authBadge').textContent = cfg.authMode || 'KEYCLOCK';
+          document.getElementById('authBadge').textContent = cfg.authMode || 'KEYCLOAK';
           tlsActive = cfg.tlsEnabled !== false;
           updateTlsDisplay();
         }

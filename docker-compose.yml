@@ -211,7 +211,7 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-incert-admin-secret-key}
-      AUTH_MODE: ${AUTH_MODE:-KEYCLOCK}
+      AUTH_MODE: ${AUTH_MODE:-KEYCLOAK}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8081}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-incert}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8081/realms/incert/protocol/openid-connect/certs}
@@ -296,7 +296,7 @@ services:
       retries: 4
 
   # ============================================================
-  # Keycloak IAM Service (OAuth2 / OIDC Provider for KEYCLOCK mode)
+  # Keycloak IAM Service (OAuth2 / OIDC Provider for KEYCLOAK mode)
   # ============================================================
   keycloak:
     image: quay.io/keycloak/keycloak:24.0

@@ -15,14 +15,14 @@ jobs:
   # Java unit tests — one job per module so failures are pinpointed quickly
   # ─────────────────────────────────────────────────────────────────────────────
   test-ocsp-responder:
-    name: "Test · ocsp-responder (61 tests)"
+    name: "Test · ocsp-responder"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
 
@@ -37,14 +37,14 @@ jobs:
           path: ocsp-responder/target/surefire-reports/
 
   test-kms-simulator:
-    name: "Test · kms-simulator (6 tests)"
+    name: "Test · kms-simulator"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
 
@@ -59,14 +59,14 @@ jobs:
           path: kms-simulator/target/surefire-reports/
 
   test-ocsp-client:
-    name: "Test · ocsp-client (2 tests)"
+    name: "Test · ocsp-client"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
 
@@ -106,15 +106,6 @@ jobs:
 
       - name: Production build
         run: yarn build
-        env:
-          # Provide placeholder values so Vite env validation doesn't fail
-          VITE_API_BASE_URL: http://localhost:8080
-          VITE_KMS_BASE_URL: http://localhost:8090
-          VITE_OCSP_CLIENT_BASE_URL: http://localhost:8082
-          VITE_AUTH_MODE: SELF_MANAGED
-          VITE_PORTAL_KEYCLOAK_URL: ""
-          VITE_PORTAL_RABBITMQ_URL: ""
-          VITE_PORTAL_GRAFANA_URL: ""
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -124,7 +115,9 @@ jobs:
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Docker image builds (validate Dockerfiles compile; no push)
+  # Docker image builds (validate Dockerfiles; no push).
+  # The Java Dockerfiles COPY <module>/target/*.jar and use the repo root as build
+  # context (see docker-compose.yml), so jars must be packaged first.
   # ─────────────────────────────────────────────────────────────────────────────
   build-docker-images:
     name: "Docker build · all services"
@@ -133,42 +126,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Package jars
+        run: |
+          for m in ocsp-responder kms-simulator ocsp-client; do
+            (cd "$m" && mvn package -DskipTests --batch-mode)
+          done
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build ocsp-responder image
         uses: docker/build-push-action@v6
         with:
-          context: ./ocsp-responder
+          context: .
+          file: ocsp-responder/Dockerfile
           push: false
           tags: ocsp/responder:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build kms-simulator image
         uses: docker/build-push-action@v6
         with:
-          context: ./kms-simulator
+          context: .
+          file: kms-simulator/Dockerfile
           push: false
           tags: ocsp/kms:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build ocsp-client image
         uses: docker/build-push-action@v6
         with:
-          context: ./ocsp-client
+          context: .
+          file: ocsp-client/Dockerfile
           push: false
           tags: ocsp/client:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      - name: Build hsm image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: hsm/Dockerfile
+          push: false
+          tags: ocsp/hsm:ci
 
       - name: Build ocsp-console image
         uses: docker/build-push-action@v6
         with:
           context: ./ocsp-console
+          file: ocsp-console/Dockerfile
           push: false
           tags: ocsp/console:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-

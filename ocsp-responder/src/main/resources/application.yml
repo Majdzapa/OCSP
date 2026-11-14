@@ -1,5 +1,5 @@
 security:
-  auth-mode: ${AUTH_MODE:KEYCLOCK} # SELF_MANAGED or KEYCLOCK
+  auth-mode: ${AUTH_MODE:KEYCLOAK} # SELF_MANAGED or KEYCLOAK
   tls:
     enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # Activate or deactivate TLS for OCSP login & transport
   cors:

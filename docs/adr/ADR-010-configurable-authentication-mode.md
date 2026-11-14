@@ -10,14 +10,14 @@ Organizations deploying the OCSP subsystem have varying authentication infrastru
 
 ## Decision
 1. **Configurable Authentication Mode Property**:
-   - `security.auth-mode` property supporting `KEYCLOCK` (or `KEYCLOAK`) and `SELF_MANAGED`.
-   - Defaults to `KEYCLOCK` in production / container deployment.
+   - `security.auth-mode` property supporting `KEYCLOAK` (legacy alias `KEYCLOCK` still accepted) and `SELF_MANAGED`.
+   - Defaults to `KEYCLOAK` in production / container deployment.
 2. **Keycloak Integration**:
    - Keycloak container imported realm `incert` with predefined roles (`ROLE_ADMIN`, `ROLE_OPERATOR`, `ROLE_AUDITOR`) mapped from groups `/ocsp-administrators`, `/ocsp-operators`, `/ocsp-auditors`.
    - `KeycloakJwtAuthenticationConverter` extracts realm and resource access roles into Spring Security `GrantedAuthority` collections.
    - React Admin Console handles OIDC redirects to Keycloak login and parses JWT access tokens from URL fragments or PKCE callbacks.
 3. **Emergency Break-Glass Fallback**:
-   - In `KEYCLOCK` mode, HTTP Basic Auth (`admin` / `changeme`) and API Key (`X-API-KEY`) remain enabled as break-glass mechanisms for automated CLI scripts (`scripts/e2e-test.sh`) and out-of-band administrative access.
+   - In `KEYCLOAK` mode, HTTP Basic Auth (`admin` / `changeme`) and API Key (`X-API-KEY`) remain enabled as break-glass mechanisms for automated CLI scripts (`scripts/e2e-test.sh`) and out-of-band administrative access.
 
 ## Consequences
 - **Positive**: Seamless enterprise SSO integration alongside standalone lightweight operation.

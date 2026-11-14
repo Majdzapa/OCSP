@@ -18,7 +18,7 @@
 ┌──────────────────┐      ┌───────────────────────┐       ┌───────────────────────┐
 │     ocsp-hsm     │◄─────┤    ocsp-responder     │       │      ocsp-client      │
 │  (Dedicated HSM  │ PKCS │      (Port 8080)      │       │      (Port 8082)      │
-│    Container)    │ #11  │  Dual Auth (KEYCLOCK  │       │  Test Web Interface   │
+│    Container)    │ #11  │  Dual Auth (KEYCLOAK  │       │  Test Web Interface   │
 │                  │      │    / SELF_MANAGED)    │       │  RFC 6960 Verifier    │
 └──────────────────┘      │  Sign Cert Rotation   │       └───────────▲───────────┘
                           └──────────▲────────────┘                   │
@@ -101,9 +101,9 @@ docker compose up --build -d
 
 ## Authentication Modes & Credentials
 
-Authentication mode is configured via `security.auth-mode` (`AUTH_MODE: KEYCLOCK` or `SELF_MANAGED`).
+Authentication mode is configured via `security.auth-mode` (`AUTH_MODE: KEYCLOAK` or `SELF_MANAGED`).
 
-### Keycloak Pre-Configured Users & Groups (`AUTH_MODE=KEYCLOCK`)
+### Keycloak Pre-Configured Users & Groups (`AUTH_MODE=KEYCLOAK`)
 
 | User | Password | Group | Assigned Roles | Access Rights |
 |---|---|---|---|---|
