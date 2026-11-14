@@ -213,6 +213,7 @@ services:
       ADMIN_API_KEY: ${ADMIN_API_KEY:-incert-admin-secret-key}
       AUTH_MODE: ${AUTH_MODE:-KEYCLOAK}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8081}
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-incert}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8081/realms/incert/protocol/openid-connect/certs}
       HSM_ENABLED: "true"

@@ -72,7 +72,11 @@ export const loginWithCredentials = async (username: string, password: string): 
 }
 
 export const loginWithBearerToken = async (token: string): Promise<LoginResponse> => {
-  const res = await authApi.post<LoginResponse>('/login', { token })
+  // The responder authenticates the Bearer token from the Authorization header.
+  // The token is not in localStorage yet at this point, so it must be sent explicitly.
+  const res = await authApi.post<LoginResponse>('/login', {}, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   return res.data
 }
 

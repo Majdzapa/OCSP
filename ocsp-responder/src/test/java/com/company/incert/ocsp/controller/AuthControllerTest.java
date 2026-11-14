@@ -127,25 +127,4 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody()).containsEntry("authenticated", false);
     }
-
-    @Test
-    void toggleTls_togglesCorrectly() {
-        ResponseEntity<Map<String, Object>> initial = controller.getTlsStatus();
-        assertThat(initial.getBody()).containsEntry("tlsEnabled", true);
-        assertThat(initial.getBody()).containsEntry("status", "ACTIVE");
-
-        // Deactivate TLS
-        ResponseEntity<Map<String, Object>> deactivated = controller.toggleTls(Map.of("enabled", false));
-        assertThat(deactivated.getBody()).containsEntry("tlsEnabled", false);
-        assertThat(deactivated.getBody()).containsEntry("status", "DEACTIVATED");
-
-        // Config reflects deactivation
-        ResponseEntity<Map<String, Object>> config = controller.getConfig();
-        assertThat(config.getBody()).containsEntry("tlsEnabled", false);
-
-        // Reactivate
-        ResponseEntity<Map<String, Object>> activated = controller.toggleTls(Map.of("enabled", true));
-        assertThat(activated.getBody()).containsEntry("tlsEnabled", true);
-        assertThat(activated.getBody()).containsEntry("status", "ACTIVE");
-    }
 }

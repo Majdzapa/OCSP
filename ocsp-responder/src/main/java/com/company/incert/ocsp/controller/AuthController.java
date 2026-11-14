@@ -20,8 +20,7 @@ import java.util.Map;
 /**
  * Authentication configuration and session endpoints.
  *
- * <p>The TLS toggle endpoint is intentionally restricted to authenticated
- * callers — it is mapped under {@code /api/v1/admin/**} in SecurityConfig.
+ * <p>TLS is a deployment setting ({@code security.tls.enabled}); it is exposed read-only.
  *
  * <p>IMPORTANT: No credential values (passwords, raw API keys) are ever
  * included in HTTP responses. The client uses its own token / session cookie
@@ -34,7 +33,7 @@ import java.util.Map;
 public class AuthController {
 
     private final String authModeStr;
-    private volatile boolean tlsEnabled;
+    private final boolean tlsEnabled;
     private final String adminUsername;
     private final String adminPassword;
     private final String adminApiKey;
@@ -49,7 +48,7 @@ public class AuthController {
             @Value("${admin.username:admin}") String adminUsername,
             @Value("${admin.password:changeme}") String adminPassword,
             @Value("${admin.api-key:incert-admin-secret-key}") String adminApiKey,
-            @Value("${keycloak.auth-server-url:http://localhost:8081}") String keycloakAuthServerUrl,
+            @Value("${keycloak.public-url:${keycloak.auth-server-url:http://localhost:8081}}") String keycloakAuthServerUrl,
             @Value("${keycloak.realm:incert}") String keycloakRealm,
             @Value("${keycloak.client-id:ocsp-console}") String keycloakClientId) {
         this.authModeStr = authModeStr;
@@ -96,15 +95,6 @@ public class AuthController {
             )
         );
         return ResponseEntity.ok(body);
-    }
-
-    @Operation(summary = "Get TLS status", description = "Returns whether TLS is currently active for OCSP login")
-    @GetMapping("/api/v1/auth/tls")
-    public ResponseEntity<Map<String, Object>> getTlsStatus() {
-        return ResponseEntity.ok(Map.of(
-            "tlsEnabled", tlsEnabled,
-            "status", tlsEnabled ? "ACTIVE" : "DEACTIVATED"
-        ));
     }
 
     @Operation(summary = "Check current authentication status",
@@ -163,35 +153,13 @@ public class AuthController {
 
         log.warn("Authentication attempt failed: authMode={}", mode);
         String failMsg = mode.isKeycloak()
-            ? "In KEYCLOAK mode supply a valid Bearer token via Authorization header or API key via X-API-KEY header"
-            : "Invalid username/password or API key";
+            ? "In KEYCLOAK mode sign in through Keycloak (Bearer token)"
+            : "Invalid username or password";
 
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
             "authenticated", false,
             "authMode", mode.name(),
             "message", failMsg
-        ));
-    }
-
-    // -------------------------------------------------------------------------
-    // Admin-only endpoints — secured by Spring Security (ROLE_ADMIN required)
-    // mapped under /api/v1/admin/** so SecurityConfig applies hasRole("ADMIN")
-    // -------------------------------------------------------------------------
-
-    @Operation(summary = "Toggle TLS for OCSP login", description = "Requires ROLE_ADMIN. Dynamically activate or deactivate TLS.")
-    @PostMapping("/api/v1/admin/tls/ocsp-login/toggle")
-    public ResponseEntity<Map<String, Object>> toggleTls(
-            @RequestBody(required = false) Map<String, Boolean> body) {
-        if (body != null && body.containsKey("enabled")) {
-            this.tlsEnabled = Boolean.TRUE.equals(body.get("enabled"));
-        } else {
-            this.tlsEnabled = !this.tlsEnabled;
-        }
-        log.info("OCSP login TLS toggled to: {}", tlsEnabled);
-        return ResponseEntity.ok(Map.of(
-            "tlsEnabled", tlsEnabled,
-            "status", tlsEnabled ? "ACTIVE" : "DEACTIVATED",
-            "message", "OCSP login TLS updated to " + (tlsEnabled ? "ACTIVE" : "DEACTIVATED")
         ));
     }
 

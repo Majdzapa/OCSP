@@ -11,6 +11,9 @@ rabbitmq:
 
 keycloak:
   auth-server-url: ${KEYCLOAK_URL:http://localhost:8081}
+  # Browser-facing Keycloak base URL (used for the login redirect). May differ from the
+  # internal auth-server-url when the responder reaches Keycloak over a private network.
+  public-url: ${KEYCLOAK_PUBLIC_URL:${keycloak.auth-server-url}}
   realm: ${KEYCLOAK_REALM:incert}
   client-id: ${KEYCLOAK_CLIENT_ID:ocsp-console}
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs}

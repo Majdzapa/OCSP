@@ -114,7 +114,7 @@ public class SecurityConfig {
                 // Healthcheck endpoints
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 // Auth check & configuration endpoints (read-only, no secrets)
-                .requestMatchers("/api/v1/auth/config", "/api/v1/auth/tls", "/api/v1/auth/me").permitAll()
+                .requestMatchers("/api/v1/auth/config", "/api/v1/auth/me").permitAll()
                 // Login endpoint is public so credentials can be submitted
                 .requestMatchers("/api/v1/auth/login").permitAll()
                 // All admin & management endpoints require ROLE_ADMIN (includes TLS toggle)
