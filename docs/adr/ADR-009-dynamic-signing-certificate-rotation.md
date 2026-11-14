@@ -24,3 +24,4 @@ In production, OCSP signing certificates have short lifespans or may need immedi
 - **Positive**: Zero-downtime key rotation for OCSP response signing.
 - **Positive**: Complete audit trail of past and current signing certificates.
 - **Negative**: Administrators must ensure the corresponding private key is provisioned in the HSM token before activating a certificate.
+

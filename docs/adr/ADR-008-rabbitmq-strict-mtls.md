@@ -34,3 +34,4 @@ In a zero-trust enterprise environment, messaging brokers must guarantee confide
 - **Positive**: Zero plaintext communication over the wire. Only certified internal services can publish or consume revocation events.
 - **Positive**: Automatic defense against rogue message injection and eavesdropping.
 - **Negative**: Certificate lifecycle management required for broker and client identities.
+
