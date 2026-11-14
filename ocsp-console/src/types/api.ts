@@ -13,6 +13,7 @@ export interface DashboardStats {
   architecture?: string
   messagingBroker?: string
   tlsEnabled?: boolean
+  ocspLoginTlsEnabled?: boolean
 }
 
 export interface CacheEntry {
@@ -114,6 +115,7 @@ export interface OcspTestResult {
 export interface AuthConfig {
   authMode: 'SELF_MANAGED' | 'KEYCLOCK' | string
   isKeycloak: boolean
+  tlsEnabled?: boolean
   keycloak?: {
     authServerUrl: string
     realm: string
@@ -126,6 +128,7 @@ export interface AuthUser {
   username: string
   roles?: string[]
   authMode?: string
+  tlsEnabled?: boolean
   apiKey?: string
   basicAuth?: string
   token?: string
@@ -136,6 +139,7 @@ export interface LoginResponse {
   username?: string
   roles?: string[]
   authMode?: string
+  tlsEnabled?: boolean
   apiKey?: string
   basicAuth?: string
   token?: string

@@ -37,12 +37,15 @@ export const LoginPage: React.FC = () => {
     login,
     loginWithKey,
     loginWithToken,
+    loginWithCert,
+    setTlsActive,
     authConfig,
   } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
   const isKeycloak = !!authConfig?.isKeycloak
+  const isTlsActive = authConfig?.tlsEnabled !== false
   const [activeTab, setActiveTab] = useState<string | null>(
     isKeycloak ? 'keycloak-sso' : 'creds'
   )
@@ -50,8 +53,10 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('changeme')
   const [apiKey, setApiKey] = useState('incert-admin-secret-key')
   const [bearerToken, setBearerToken] = useState('')
+  const [clientCertPem, setClientCertPem] = useState('CN=admin,O=Incert Certificate Authority,C=LU')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [togglingTls, setTogglingTls] = useState(false)
 
   const from = (location.state as any)?.from?.pathname || '/dashboard'
 
@@ -96,6 +101,18 @@ export const LoginPage: React.FC = () => {
     window.location.href = ssoUrl
   }
 
+  const handleToggleTls = async () => {
+    setTogglingTls(true)
+    setError(null)
+    try {
+      await setTlsActive(!isTlsActive)
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to toggle TLS status')
+    } finally {
+      setTogglingTls(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -112,6 +129,14 @@ export const LoginPage: React.FC = () => {
           throw new Error('Please enter a Keycloak JWT Bearer token')
         }
         await loginWithToken(bearerToken.trim())
+      } else if (activeTab === 'mtls-cert') {
+        if (!isTlsActive) {
+          throw new Error('TLS authentication is deactivated. Please activate TLS or choose credentials / API key.')
+        }
+        if (!clientCertPem.trim()) {
+          throw new Error('Please enter a client certificate Subject or PEM')
+        }
+        await loginWithCert(clientCertPem.trim())
       } else {
         if (!apiKey) {
           throw new Error('Please enter an API Key')
@@ -184,6 +209,13 @@ export const LoginPage: React.FC = () => {
             >
               Auth Mode: {authConfig?.authMode || 'KEYCLOCK'}
             </Badge>
+            <Badge
+              variant="dot"
+              color={isTlsActive ? 'teal' : 'gray'}
+              size="md"
+            >
+              TLS: {isTlsActive ? 'Active' : 'Deactivated'}
+            </Badge>
             {isKeycloak && authConfig?.keycloak?.realm && (
               <Badge variant="outline" color="orange" size="xs">
                 Realm: {authConfig.keycloak.realm}
@@ -228,6 +260,9 @@ export const LoginPage: React.FC = () => {
                   <Tabs.Tab value="key" leftSection={<IconLock size={16} />}>
                     API Key
                   </Tabs.Tab>
+                  <Tabs.Tab value="mtls-cert" leftSection={<IconShieldLock size={16} />}>
+                    mTLS Cert
+                  </Tabs.Tab>
                 </>
               ) : (
                 <>
@@ -236,6 +271,9 @@ export const LoginPage: React.FC = () => {
                   </Tabs.Tab>
                   <Tabs.Tab value="key" leftSection={<IconKey size={16} />}>
                     API Key
+                  </Tabs.Tab>
+                  <Tabs.Tab value="mtls-cert" leftSection={<IconShieldLock size={16} />}>
+                    mTLS Cert
                   </Tabs.Tab>
                 </>
               )}
@@ -418,6 +456,77 @@ export const LoginPage: React.FC = () => {
                 </Stack>
               </form>
             </Tabs.Panel>
+
+            {/* mTLS CLIENT CERTIFICATE PANEL */}
+            <Tabs.Panel value="mtls-cert" pt="md">
+              <form onSubmit={handleSubmit}>
+                <Stack gap="sm">
+                  {!isTlsActive ? (
+                    <Alert
+                      icon={<IconAlertCircle size={18} />}
+                      title="TLS Authentication Deactivated"
+                      color="gray"
+                      variant="light"
+                      radius="md"
+                    >
+                      <Text size="sm">
+                        TLS / mTLS authentication is currently <strong>deactivated</strong> in the OCSP responder configuration (<code>security.tls.enabled = false</code>).
+                      </Text>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Client certificate authentication cannot be used while TLS is deactivated. You can activate TLS below or use credentials / API key.
+                      </Text>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="teal"
+                        mt="sm"
+                        onClick={handleToggleTls}
+                        loading={togglingTls}
+                      >
+                        Activate TLS Now
+                      </Button>
+                    </Alert>
+                  ) : (
+                    <>
+                      <Alert
+                        icon={<IconShieldLock size={18} />}
+                        title="mTLS Transport Security Active"
+                        color="teal"
+                        variant="light"
+                        radius="md"
+                      >
+                        <Text size="sm">
+                          Mutual TLS is active. The OCSP Responder accepts verified client certificates (e.g. Incert Admin or RabbitMQ Client Certificate) for secure login.
+                        </Text>
+                      </Alert>
+
+                      <TextInput
+                        label="Client Certificate Subject / Identity"
+                        placeholder="CN=admin,O=Incert Certificate Authority,C=LU"
+                        leftSection={<IconShieldLock size={16} />}
+                        value={clientCertPem}
+                        onChange={(e) => setClientCertPem(e.currentTarget.value)}
+                        required
+                      />
+
+                      <Button
+                        type="submit"
+                        fullWidth
+                        mt="md"
+                        size="md"
+                        radius="md"
+                        loading={loading}
+                        variant="gradient"
+                        gradient={{ from: 'teal.6', to: 'cyan.6' }}
+                        rightSection={<IconArrowRight size={18} />}
+                      >
+                        Sign In via mTLS Certificate
+                      </Button>
+                    </>
+                  )}
+                </Stack>
+              </form>
+            </Tabs.Panel>
           </Tabs>
 
           <Box
@@ -431,14 +540,34 @@ export const LoginPage: React.FC = () => {
           >
             <Group justify="space-between" mb={6}>
               <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                Authentication Settings
+                Authentication & Security Settings
               </Text>
-              <Badge size="xs" variant="light" color={isKeycloak ? 'orange' : 'indigo'}>
-                {authConfig?.authMode || 'KEYCLOCK'}
-              </Badge>
+              <Group gap="xs">
+                <Badge size="xs" variant="light" color={isKeycloak ? 'orange' : 'indigo'}>
+                  {authConfig?.authMode || 'KEYCLOCK'}
+                </Badge>
+                <Badge size="xs" variant="light" color={isTlsActive ? 'teal' : 'gray'}>
+                  TLS {isTlsActive ? 'ACTIVE' : 'DEACTIVATED'}
+                </Badge>
+              </Group>
             </Group>
 
             <Stack gap={4}>
+              <Group justify="space-between">
+                <Text size="xs" c="dimmed">
+                  TLS Security: <Code color={isTlsActive ? 'teal' : 'gray'}>{isTlsActive ? 'Active (Strict Transport)' : 'Deactivated'}</Code>
+                </Text>
+                <Button
+                  variant="subtle"
+                  size="compact-xs"
+                  color={isTlsActive ? 'red' : 'teal'}
+                  onClick={handleToggleTls}
+                  loading={togglingTls}
+                >
+                  {isTlsActive ? 'Deactivate TLS' : 'Activate TLS'}
+                </Button>
+              </Group>
+
               {!isKeycloak && (
                 <Group justify="space-between">
                   <Text size="xs" c="dimmed">

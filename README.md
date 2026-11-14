@@ -93,7 +93,8 @@ docker compose up --build -d
 | **OCSP Reconciliation API** | `8080` | [http://localhost:8080/api/v1/admin/reconciliation/verify](http://localhost:8080/api/v1/admin/reconciliation/verify) | **Bearer JWT** / **API Key** |
 | **OCSP Responder Auth Config** | `8080` | [http://localhost:8080/api/v1/auth/config](http://localhost:8080/api/v1/auth/config) | Public config endpoint |
 | **RabbitMQ Management** | `15672` | [http://localhost:15672](http://localhost:15672) (Web Management UI) | `guest` / `guest` |
-| **RabbitMQ AMQP** | `5672` | `localhost:5672` (AMQP Broker) | `guest` / `guest` |
+| **RabbitMQ AMQPS (mTLS)** | `5671` | `localhost:5671` (Strict Mutual TLS with verified peer certs) | mTLS Client Certificate |
+| **RabbitMQ AMQP (Plaintext)** | `5672` | `localhost:5672` (Fallback port when TLS is deactivated) | `guest` / `guest` |
 | **MariaDB** | `3307` | `localhost:3307` (Schemas: `ocsp`, `kms`) | `root` / `rootpassword` |
 
 ---
@@ -126,6 +127,44 @@ The subsystem includes full runtime rotation of OCSP response signing certificat
 - **Single Active Invariant**: Exactly one certificate is active at any time; activating a certificate deactivates all others atomically.
 - **In-Memory HSM Switch**: `PUT /api/v1/admin/signing-certificates/{id}/activate` updates the PKCS#11 signer in-memory immediately without dropping connections or restarting containers.
 - **Console UI**: Inspect, add from PEM, and rotate certificates at [http://localhost:3000/signing-cert](http://localhost:3000/signing-cert).
+
+---
+
+## RabbitMQ Mutual TLS (mTLS) & TLS Activation Toggle
+
+All messaging between KMS Simulator, RabbitMQ, and the OCSP Responder uses mutual TLS by default:
+- **Strict Peer Verification**: Port `5671` enforces peer certificate presentation (`fail_if_no_peer_cert = true`) signed by the Incert RabbitMQ CA (`verify_peer`).
+- **Dedicated PKI**: Dedicated CA, broker server certificate with SANs, and client certificates packaged into PKCS#12 keystores.
+- **TLS Activation Field in Application Properties**:
+  TLS can be activated or deactivated directly via `application.yml` or environment variable:
+  ```yaml
+  rabbitmq:
+    tls:
+      enabled: ${RABBITMQ_TLS_ENABLED:true} # true = mTLS on 5671, false = plaintext on 5672
+  ```
+  - **`true` (default)**: The application loads client keystore & truststore, enabling mTLS on port `5671`.
+  - **`false`**: SSL is disabled and connection automatically falls back to standard plaintext port `5672`.
+
+---
+
+## OCSP Login TLS Activation / Deactivation
+
+The OCSP Responder and Admin Console support activating and deactivating TLS for login and administrative sessions:
+- **Application Property**:
+  ```yaml
+  security:
+    tls:
+      enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # true = TLS active, false = TLS deactivated
+  ```
+- **Behavior**:
+  - **`true` (Active)**: mTLS Client Certificate authentication is accepted (`POST /api/v1/auth/login` with `clientCert`), granting `ROLE_ADMIN` access with `authType: "TLS_CLIENT_CERT"`.
+  - **`false` (Deactivated)**: Client certificate login attempts are rejected with `400 Bad Request` (`"TLS authentication is currently deactivated in application configuration"`), while standard credentials (Keycloak Bearer JWT, Basic Auth, or API Key) remain available.
+- **Runtime Toggle API**:
+  - `GET /api/v1/auth/tls`: Returns current status (`ACTIVE` vs `DEACTIVATED`).
+  - `POST /api/v1/auth/tls`: Updates status dynamically at runtime (`{"enabled": true/false}`).
+- **UI Integration**:
+  - `LoginPage.tsx`: Header badge displaying `TLS: Active` / `TLS: Deactivated`, interactive toggle button, and dedicated `mTLS Cert` tab.
+  - `login.html`: Embedded HTML fallback login with real-time TLS status badge and certificate login.
 
 ---
 

@@ -1,7 +1,7 @@
 security:
   auth-mode: ${AUTH_MODE:KEYCLOCK} # SELF_MANAGED or KEYCLOCK
   tls:
-    enabled: ${TLS_ENABLED:${RABBITMQ_TLS_ENABLED:true}}
+    enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # Activate or deactivate TLS for OCSP login & transport
 
 rabbitmq:
   tls:

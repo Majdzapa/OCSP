@@ -156,6 +156,17 @@
       cursor: pointer;
     }
     .quick-fill:hover { color: #a5b4fc; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-teal { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.3); }
+    .badge-gray { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
   </style>
 </head>
 <body>
@@ -164,11 +175,16 @@
       <div class="logo-badge">🛡️</div>
       <h1>OCSP Responder</h1>
       <p class="sub">Admin API Authentication</p>
+      <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; justify-content: center;">
+        <span id="authBadge" class="badge badge-teal">KEYCLOCK</span>
+        <span id="tlsBadge" class="badge badge-teal">TLS: Active</span>
+      </div>
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" id="tabCreds" onclick="switchTab('creds')">User Credentials</button>
-      <button class="tab-btn" id="tabKey" onclick="switchTab('key')">Admin API Key</button>
+      <button class="tab-btn active" id="tabCreds" onclick="switchTab('creds')">Credentials</button>
+      <button class="tab-btn" id="tabKey" onclick="switchTab('key')">API Key</button>
+      <button class="tab-btn" id="tabCert" onclick="switchTab('cert')">mTLS Cert</button>
     </div>
 
     <div id="alertBox" class="alert"></div>
@@ -194,6 +210,17 @@
         </div>
       </div>
 
+      <!-- Tab 3: mTLS Client Certificate -->
+      <div id="sectionCert" style="display: none;">
+        <div id="tlsDeactivatedWarn" class="alert alert-error" style="display: none; margin-bottom: 0.8rem;">
+          TLS authentication is deactivated. Enable TLS to use client certificate authentication.
+        </div>
+        <div class="form-group">
+          <label>Client Certificate Subject / PEM</label>
+          <input type="text" id="clientCert" value="CN=admin,O=Incert Certificate Authority,C=LU" autocomplete="off">
+        </div>
+      </div>
+
       <button type="submit" class="btn" id="submitBtn">Authenticate & Access Admin</button>
     </form>
 
@@ -201,19 +228,77 @@
       <strong>Default Credentials:</strong><br>
       • User: <code>admin</code> / <code>changeme</code> (<span class="quick-fill" onclick="fillCreds()">Fill</span>)<br>
       • API Key: <code>incert-admin-secret-key</code> (<span class="quick-fill" onclick="fillKey()">Fill</span>)<br>
+      • TLS Status: <span id="tlsStatusText">Active</span> (<span class="quick-fill" onclick="toggleTls()">Toggle TLS</span>)<br>
       • Web Console: <a href="http://localhost:3000" style="color: #818cf8;">http://localhost:3000</a>
     </div>
   </div>
 
   <script>
     let currentMode = 'creds';
+    let tlsActive = true;
+
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/v1/auth/config');
+        if (res.ok) {
+          const cfg = await res.json();
+          document.getElementById('authBadge').textContent = cfg.authMode || 'KEYCLOCK';
+          tlsActive = cfg.tlsEnabled !== false;
+          updateTlsDisplay();
+        }
+      } catch (e) {
+        console.warn('Failed to load auth config', e);
+      }
+    }
+
+    function updateTlsDisplay() {
+      const badge = document.getElementById('tlsBadge');
+      const text = document.getElementById('tlsStatusText');
+      const warn = document.getElementById('tlsDeactivatedWarn');
+      if (tlsActive) {
+        badge.textContent = 'TLS: Active';
+        badge.className = 'badge badge-teal';
+        text.textContent = 'Active (Strict mTLS)';
+        warn.style.display = 'none';
+      } else {
+        badge.textContent = 'TLS: Deactivated';
+        badge.className = 'badge badge-gray';
+        text.textContent = 'Deactivated';
+        if (currentMode === 'cert') warn.style.display = 'block';
+      }
+    }
+
+    async function toggleTls() {
+      try {
+        const res = await fetch('/api/v1/auth/tls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !tlsActive })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          tlsActive = data.tlsEnabled;
+          updateTlsDisplay();
+          showAlert('TLS status updated to ' + (tlsActive ? 'ACTIVE' : 'DEACTIVATED'), true);
+        }
+      } catch (e) {
+        showAlert('Failed to update TLS status: ' + e.message);
+      }
+    }
 
     function switchTab(mode) {
       currentMode = mode;
       document.getElementById('tabCreds').classList.toggle('active', mode === 'creds');
       document.getElementById('tabKey').classList.toggle('active', mode === 'key');
+      document.getElementById('tabCert').classList.toggle('active', mode === 'cert');
       document.getElementById('sectionCreds').style.display = mode === 'creds' ? 'block' : 'none';
       document.getElementById('sectionKey').style.display = mode === 'key' ? 'block' : 'none';
+      document.getElementById('sectionCert').style.display = mode === 'cert' ? 'block' : 'none';
+      if (mode === 'cert' && !tlsActive) {
+        document.getElementById('tlsDeactivatedWarn').style.display = 'block';
+      } else {
+        document.getElementById('tlsDeactivatedWarn').style.display = 'none';
+      }
       hideAlert();
     }
 
@@ -250,8 +335,16 @@
       if (currentMode === 'creds') {
         payload.username = document.getElementById('username').value.trim();
         payload.password = document.getElementById('password').value;
-      } else {
+      } else if (currentMode === 'key') {
         payload.apiKey = document.getElementById('apiKey').value.trim();
+      } else if (currentMode === 'cert') {
+        if (!tlsActive) {
+          showAlert('TLS authentication is currently deactivated.');
+          btn.disabled = false;
+          btn.textContent = 'Authenticate & Access Admin';
+          return;
+        }
+        payload.clientCert = document.getElementById('clientCert').value.trim();
       }
 
       try {
@@ -264,7 +357,6 @@
         const data = await res.json();
         if (res.ok && data.authenticated) {
           showAlert('Authentication successful! Access granted.', true);
-          // Store token in localStorage
           if (data.apiKey) localStorage.setItem('ocsp_api_key', data.apiKey);
           if (data.basicAuth) localStorage.setItem('ocsp_basic_auth', data.basicAuth);
           localStorage.setItem('ocsp_auth_user', data.username);
@@ -282,6 +374,8 @@
         btn.textContent = 'Authenticate & Access Admin';
       }
     }
+
+    loadConfig();
   </script>
 </body>
 </html>

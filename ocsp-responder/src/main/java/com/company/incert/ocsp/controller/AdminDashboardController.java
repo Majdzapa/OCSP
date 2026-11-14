@@ -29,6 +29,9 @@ public class AdminDashboardController {
     @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
     private boolean tlsEnabled;
 
+    @Value("${security.tls.enabled:${auth.tls.enabled:${tls.enabled:true}}}")
+    private boolean ocspLoginTlsEnabled;
+
     @Operation(summary = "Get admin dashboard statistics", description = "Retrieves live counts of good/revoked certificates, signing key expiry, and operational metrics")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Dashboard statistics returned successfully"),
@@ -50,6 +53,7 @@ public class AdminDashboardController {
             Map.entry("cachingEnabled", false),
             Map.entry("architecture", "Decoupled OCSP Responder"),
             Map.entry("tlsEnabled", tlsEnabled),
+            Map.entry("ocspLoginTlsEnabled", ocspLoginTlsEnabled),
             Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
             Map.entry("avgSigningLatencyMs", 0.8),
             Map.entry("errorRate", 0.0),

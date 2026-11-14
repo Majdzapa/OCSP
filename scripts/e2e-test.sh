@@ -16,6 +16,9 @@ set -euo pipefail
 #   i. Verify OCSP Responder Authentication (401 without key, 200 with X-API-KEY/Basic)
 #   j. Verify OCSP Client Standalone App (Nonce-Free & Nonce tests, Web Test UI)
 #   k. Verify KMS Simulator Web UI & Inventory
+#   l. Verify KMS Status Update, Responder Inbox Table, and Parity Reconciliation
+#   m. Verify RabbitMQ Strict mTLS Enforcement & TLS Activation / Deactivation
+#   n. Verify OCSP Login TLS Activation / Deactivation & Certificate Authentication
 # =============================================================================
 
 RED='\033[0;31m'
@@ -339,6 +342,57 @@ echo "${CONN_DETAILS}" | grep -q "tlsv1" || fail "Test m: Active connections are
 DASH_TLS=$(curl -s -u admin:changeme http://localhost:8080/api/v1/admin/dashboard)
 echo "${DASH_TLS}" | grep -q '"tlsEnabled":true' || fail "Test m: Admin dashboard does not show tlsEnabled=true: ${DASH_TLS}"
 pass "Test m [5/5]: Active broker connections verified (CN=rabbitmq-client) and dashboard reflects tlsEnabled=true"
+
+# =============================================================================
+# Test n: OCSP Login TLS Activation / Deactivation & Certificate Authentication
+# =============================================================================
+info "Test n: Verifying OCSP Login TLS activation, deactivation, and certificate authentication..."
+
+# 1. Verify TLS is active by default in /api/v1/auth/config
+AUTH_CFG_INIT=$(curl -sf http://localhost:8080/api/v1/auth/config)
+echo "${AUTH_CFG_INIT}" | grep -q '"tlsEnabled":true' || fail "Test n [1/5]: Expected tlsEnabled=true in auth config, got: ${AUTH_CFG_INIT}"
+pass "Test n [1/5]: Auth configuration shows TLS is active by default"
+
+# 2. Login with client certificate while TLS is active -> expect 200 OK
+LOGIN_CERT_ACTIVE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"clientCert": "CN=admin,O=Incert Certificate Authority,C=LU"}')
+HTTP_CERT_ACTIVE=$(echo "${LOGIN_CERT_ACTIVE}" | tail -n1)
+BODY_CERT_ACTIVE=$(echo "${LOGIN_CERT_ACTIVE}" | sed '$d')
+[ "${HTTP_CERT_ACTIVE}" -eq 200 ] || fail "Test n [2/5]: Expected 200 OK for cert login when TLS active, got ${HTTP_CERT_ACTIVE}: ${BODY_CERT_ACTIVE}"
+echo "${BODY_CERT_ACTIVE}" | grep -q '"authenticated":true' || fail "Test n [2/5]: Not authenticated: ${BODY_CERT_ACTIVE}"
+echo "${BODY_CERT_ACTIVE}" | grep -q '"authType":"TLS_CLIENT_CERT"' || fail "Test n [2/5]: Unexpected authType: ${BODY_CERT_ACTIVE}"
+pass "Test n [2/5]: Client certificate authentication succeeded with TLS active"
+
+# 3. Deactivate TLS for login via /api/v1/auth/tls
+TLS_DEACT_RESP=$(curl -sf -X POST http://localhost:8080/api/v1/auth/tls \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}')
+echo "${TLS_DEACT_RESP}" | grep -q '"tlsEnabled":false' || fail "Test n [3/5]: Failed to deactivate TLS: ${TLS_DEACT_RESP}"
+AUTH_CFG_DEACT=$(curl -sf http://localhost:8080/api/v1/auth/config)
+echo "${AUTH_CFG_DEACT}" | grep -q '"tlsEnabled":false' || fail "Test n [3/5]: Config does not reflect tlsEnabled=false: ${AUTH_CFG_DEACT}"
+pass "Test n [3/5]: TLS deactivated successfully via runtime configuration endpoint"
+
+# 4. Attempt login with client certificate while TLS is deactivated -> expect 400 Bad Request
+LOGIN_CERT_DEACT=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"clientCert": "CN=admin,O=Incert Certificate Authority,C=LU"}')
+HTTP_CERT_DEACT=$(echo "${LOGIN_CERT_DEACT}" | tail -n1)
+BODY_CERT_DEACT=$(echo "${LOGIN_CERT_DEACT}" | sed '$d')
+[ "${HTTP_CERT_DEACT}" -eq 400 ] || fail "Test n [4/5]: Expected 400 Bad Request for cert login when TLS deactivated, got ${HTTP_CERT_DEACT}: ${BODY_CERT_DEACT}"
+echo "${BODY_CERT_DEACT}" | grep -qi "deactivated" || fail "Test n [4/5]: Expected rejection message indicating TLS deactivated: ${BODY_CERT_DEACT}"
+pass "Test n [4/5]: Client certificate login rejected (400) when TLS is deactivated"
+
+# 5. Reactivate TLS and verify normal operation restored
+TLS_REACT_RESP=$(curl -sf -X POST http://localhost:8080/api/v1/auth/tls \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}')
+echo "${TLS_REACT_RESP}" | grep -q '"tlsEnabled":true' || fail "Test n [5/5]: Failed to reactivate TLS: ${TLS_REACT_RESP}"
+LOGIN_REACT=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"clientCert": "CN=admin,O=Incert Certificate Authority,C=LU"}')
+echo "${LOGIN_REACT}" | grep -q '"authenticated":true' || fail "Test n [5/5]: Certificate authentication failed after reactivating TLS: ${LOGIN_REACT}"
+pass "Test n [5/5]: TLS reactivated successfully and certificate login operational again"
 
 info "========================================================================="
 echo -e "${GREEN}ALL END-TO-END TESTS PASSED SUCCESSFULLY!${NC}"

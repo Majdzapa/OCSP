@@ -81,6 +81,16 @@ export const loginWithBearerToken = async (token: string): Promise<LoginResponse
   return res.data
 }
 
+export const loginWithClientCert = async (clientCert: string): Promise<LoginResponse> => {
+  const res = await authApi.post<LoginResponse>('/login', { clientCert })
+  return res.data
+}
+
+export const setTlsStatus = async (enabled: boolean): Promise<{ tlsEnabled: boolean; status: string; message: string }> => {
+  const res = await authApi.post<{ tlsEnabled: boolean; status: string; message: string }>('/tls', { enabled })
+  return res.data
+}
+
 export const exchangeKeycloakCredentials = async (
   authServerUrl: string,
   realm: string,
