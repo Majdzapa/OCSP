@@ -1,0 +1,97 @@
+= Incert OCSP Subsystem 2.0
+:description: High-performance, RFC 6960-compliant Online Certificate Status Protocol (OCSP) Responder
+:keywords: ocsp, pki, rfc6960, cryptography, hsm, pkcs11, rabbitmq, mtls, keycloak
+
+Welcome to the official documentation for the **Incert OCSP Subsystem**. This solution provides an enterprise-grade, high-throughput RFC 6960-compliant Online Certificate Status Protocol (OCSP) responder designed for zero-trust public key infrastructures (PKI).
+
+== Highlights & Capabilities
+
+[cols="1,3"]
+|===
+| Feature | Description
+
+| *RFC 6960 Conformance*
+| Full compliance with RFC 6960 standard, supporting both HTTP POST (binary DER) and HTTP GET (base64url) queries, with mandatory cryptographically secure Nonce echoing.
+
+| *Hardware Security Module (HSM)*
+| Signing private keys are managed exclusively inside a SoftHSM2 PKCS#11 hardware container. Keys are marked non-extractable, ensuring zero private key material ever touches the responder application filesystem or memory.
+
+| *Strict Mutual TLS (mTLS)*
+| All inter-service messaging between KMS Simulator, RabbitMQ, and the OCSP Responder communicates over mutual TLS (port `5671`) with strict CA peer certificate verification (`fail_if_no_peer_cert = true`).
+
+| *Dynamic Signing Certificate Rotation*
+| Instant, zero-downtime signing certificate rotation. The administrator can enroll certificates via PEM or API and switch active keys in-memory on the PKCS#11 signer without container restarts.
+
+| *Dual-Mode Authentication*
+| Supports both `KEYCLOCK` (OAuth2 / OpenID Connect SSO redirect, pre-configured realm, groups, and JWT Bearer tokens) and `SELF_MANAGED` (BCrypt credentials and admin `X-API-KEY`).
+
+| *Configurable TLS Toggles*
+| Runtime and property-driven activation/deactivation toggles for both RabbitMQ messaging TLS and OCSP login TLS.
+
+| *Modern Web Console*
+| Full-featured React 18 / Mantine v7 single-page application (`ocsp-console`) with live metrics, audit trail, certificate revocation actions, and signing key management.
+|===
+
+== Service & Port Index
+
+[cols="2,1,2,2"]
+|===
+| Application / Component | Port | Endpoint URL | Authentication
+
+| *OCSP Responder API*
+| `8080`
+| http://localhost:8080/ocsp
+| Public (RFC 6960)
+
+| *Admin Console UI*
+| `3000`
+| http://localhost:3000
+| Keycloak SSO / Basic / API Key
+
+| *KMS Simulator UI & API*
+| `8090`
+| http://localhost:8090/kms
+| Internal / Simulator
+
+| *OCSP Client Web Test UI*
+| `8082`
+| http://localhost:8082
+| Public Test Harness
+
+| *Keycloak IAM Server*
+| `8081`
+| http://localhost:8081
+| Keycloak Admin (`admin`/`admin`)
+
+| *RabbitMQ AMQPS (mTLS)*
+| `5671`
+| `localhost:5671`
+| Client Certificate (mTLS)
+
+| *RabbitMQ AMQP (Plaintext)*
+| `5672`
+| `localhost:5672`
+| Plaintext Fallback (`guest`/`guest`)
+
+| *RabbitMQ Management Web UI*
+| `15672`
+| http://localhost:15672
+| `guest` / `guest`
+
+| *MariaDB Database*
+| `3307`
+| `localhost:3307`
+| `ocsp_app` / `changeme`
+|===
+
+== Navigating This Documentation
+
+* xref:architecture.adoc[System Design & Data Flow]: Complete architectural overview, transactional outbox pattern, and decoupled design.
+* xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 HSM Signing]: Dedicated PKCS#11 security architecture and SunPKCS11 integration.
+* xref:messaging-rabbitmq.adoc[RabbitMQ Messaging & Strict mTLS]: Event-driven certificate updates and mutual TLS configuration.
+* xref:signing-certificate-rotation.adoc[Dynamic Signing Certificate Rotation]: In-memory rotation and single-active certificate registry.
+* xref:authentication.adoc[Authentication Modes & Keycloak SSO]: Keycloak OIDC integration and self-managed security.
+* xref:tls-management.adoc[TLS Security & Activation Toggle]: Activating and deactivating TLS for RabbitMQ and OCSP login.
+* xref:api-reference.adoc[API Reference]: REST and RFC 6960 endpoints.
+* xref:verification-testing.adoc[End-to-End Verification Suite]: Automated test suites (`a` through `n`).
+* xref:adrs.adoc[Architecture Decision Records (ADRs)]: Full index of design decisions.

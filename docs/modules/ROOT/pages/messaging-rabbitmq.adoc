@@ -1,0 +1,81 @@
+= RabbitMQ Messaging & Strict Mutual TLS (mTLS)
+:toc:
+
+The asynchronous synchronization pipeline connects the KMS Simulator outbox with the OCSP Responder inbox using RabbitMQ AMQP over strict mutual TLS.
+
+== Mutual TLS (mTLS) Architecture
+
+All inter-service messaging between KMS, RabbitMQ, and Responder operates over TLS with mandatory peer verification:
+
+[source]
+----
+  ┌──────────────────┐               ┌──────────────────┐               ┌──────────────────┐
+  │  KMS Simulator   │               │     RabbitMQ     │               │  OCSP Responder  │
+  │ (AMQPS Publisher)│               │  (Strict Broker) │               │ (AMQPS Consumer) │
+  └────────┬─────────┘               └────────┬─────────┘               └────────┬─────────┘
+           │                                  │                                  │
+           │  Port 5671: mTLS Handshake       │                                  │
+           ├─────────────────────────────────►│                                  │
+           │  Present Client Cert & CA Verify │                                  │
+           │◄─────────────────────────────────┤                                  │
+           │  Encrypted AMQPS Channel         │                                  │
+           ├═════════════════════════════════►│                                  │
+           │                                  │  Port 5671: mTLS Handshake       │
+           │                                  │◄─────────────────────────────────┤
+           │                                  │  Present Client Cert & CA Verify │
+           │                                  ├─────────────────────────────────►│
+           │                                  │  Encrypted AMQPS Channel         │
+           │                                  │◄═════════════════════════════════┤
+----
+
+=== Broker Configuration (`rabbitmq/rabbitmq.conf`)
+
+[source,ini]
+----
+listeners.tcp.default = 5672
+listeners.ssl.default = 5671
+
+ssl_options.cacertfile = /etc/rabbitmq/certs/ca.pem
+ssl_options.certfile   = /etc/rabbitmq/certs/server-cert.pem
+ssl_options.keyfile    = /etc/rabbitmq/certs/server-key.pem
+
+# Strict Mutual TLS enforcement
+ssl_options.verify     = verify_peer
+ssl_options.fail_if_no_peer_cert = true
+----
+
+* `listeners.ssl.default = 5671`: Dedicated TLS listener.
+* `verify_peer`: Requires the connecting client to present an X.509 certificate signed by the Incert RabbitMQ CA.
+* `fail_if_no_peer_cert = true`: Hard requirement; connections without a valid certificate fail during the TLS handshake.
+
+== PKI Material & Keystores
+
+The script `certs/gen-rabbitmq-certs.sh` provisions the dedicated RabbitMQ PKI:
+* `ca.pem` & `ca-key.pem`: Dedicated Root CA.
+* `server-cert.pem`: Broker certificate with Subject Alternative Names (`DNS:localhost`, `DNS:rabbitmq`, `IP:127.0.0.1`).
+* `client-cert.pem` & `client-key.pem`: Client identity (`CN=rabbitmq-client,O=Incert Certificate Authority`).
+* `client-keystore.p12` & `client-truststore.p12`: PKCS#12 bundles loaded by the Spring Boot client connection factories.
+
+== Configurable TLS Activation Toggle
+
+RabbitMQ TLS can be enabled or disabled via application configuration:
+
+[source,yaml]
+----
+rabbitmq:
+  tls:
+    enabled: ${RABBITMQ_TLS_ENABLED:true} # true = 5671 mTLS, false = 5672 plaintext
+----
+
+When `rabbitmq.tls.enabled` is `false`:
+* The `ConnectionFactoryCustomizer` bean dynamically switches the connection port from `5671` to `5672`.
+* SSL options are disabled in the AMQP connection factory.
+* Connection automatically falls back to standard plaintext port `5672` without requiring container configuration changes.
+
+== Dead Letter Queue (DLQ) Routing
+
+When poison messages or unparseable payloads arrive:
+1. `default-requeue-rejected = false` prevents endless retry loops.
+2. The broker routes rejected messages to Dead Letter Exchange `incert.dlx`.
+3. Dead letter queue `ocsp.certificate.status.dlq` collects failed payloads for operator inspection.
+4. The consumer logs the error and continues processing subsequent events without service disruption.

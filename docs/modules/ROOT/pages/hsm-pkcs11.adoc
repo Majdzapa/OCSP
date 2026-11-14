@@ -1,0 +1,60 @@
+= SoftHSM2 PKCS#11 Hardware Security Module Integration
+:toc:
+
+The OCSP responder signs all cryptographic responses using private keys managed exclusively inside a containerized Hardware Security Module (SoftHSM2).
+
+== Zero Private Key Exposure
+
+Under strict PKI standards (such as WebTrust, eIDAS, and ETSI EN 319 411-1), OCSP signing private keys must never reside in plaintext on standard application filesystems or in application memory dumps.
+
+[IMPORTANT]
+.Security Verification Guarantee
+====
+The container filesystem for `ocsp-responder` contains zero private key files (`*.key`, `*.pem`, `*.p12`). Automated end-to-end tests explicitly scan `/app` to assert that zero private key material exists on disk.
+====
+
+== PKCS#11 Provider Architecture
+
+Java integrates with the HSM via the SunPKCS11 cryptographic security provider:
+
+[source,java]
+----
+// SigningConfig.java
+String configContent = String.format(
+    "--name = SoftHSM-%s\n" +
+    "library = %s\n" +
+    "slotListIndex = %d\n",
+    token, library, slotIndex
+);
+SunPKCS11 provider = new SunPKCS11(new ByteArrayInputStream(configContent.getBytes()));
+Security.addProvider(provider);
+KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
+keyStore.load(null, pin.toCharArray());
+----
+
+== Dedicated HSM Container (`ocsp-hsm`)
+
+In Docker Compose, the HSM runs as a distinct service:
+* **Service**: `hsm`
+* **Volume**: `softhsm-data:/var/lib/softhsm/tokens`
+* **Initialization Script**: `init-softhsm.sh` initializes the token `ocsp-signing`, sets the User PIN and SO PIN, and generates the RSA-3072 signing key pair with CKA_EXTRACTABLE=FALSE.
+* **Shared Socket / Token Volume**: Mounted into `ocsp-responder` in read-only or scoped mode.
+
+== Key Generation & Attributes
+
+Signing keys are generated using `pkcs11-tool`:
+
+[source,bash]
+----
+pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
+  --login --pin changeme \
+  --keypairgen --key-type rsa:3072 \
+  --label ocsp-signing-key \
+  --usage-sign \
+  --extractable false
+----
+
+* **Algorithm**: RSA with 3072-bit modulus
+* **Signature Algorithm**: `SHA256withRSA`
+* **Usages**: Digital Signature only (`CKA_SIGN = TRUE`)
+* **Non-Extractable**: `CKA_EXTRACTABLE = FALSE`, preventing key extraction via PKCS#11 API.

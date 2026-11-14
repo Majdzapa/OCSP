@@ -100,7 +100,7 @@ export function DashboardPage() {
       </Box>
 
       {/* KPI row */}
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
         {[
           {
             title: 'Requests / sec',
@@ -119,6 +119,12 @@ export function DashboardPage() {
             value: stats?.messagingBroker ?? 'RabbitMQ',
             subtitle: stats?.tlsEnabled ? 'Strict mTLS 5671 (Active)' : 'Plaintext 5672 (Deactivated)',
             accent: stats?.tlsEnabled ? '#22c55e' : '#f97316',
+          },
+          {
+            title: 'Login & API TLS',
+            value: stats?.ocspLoginTlsEnabled !== false ? 'Active' : 'Deactivated',
+            subtitle: stats?.ocspLoginTlsEnabled !== false ? 'Strict mTLS & Transport' : 'Deactivated / Unencrypted',
+            accent: stats?.ocspLoginTlsEnabled !== false ? '#22c55e' : '#94a3b8',
           },
           {
             title: 'Avg Signing Latency',

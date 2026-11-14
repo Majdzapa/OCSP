@@ -192,3 +192,35 @@ The OCSP Responder and Admin Console support activating and deactivating TLS for
 # 2. Run end-to-end integration test suite (with live containers):
 ./scripts/e2e-test.sh
 ```
+
+---
+
+## Antora Documentation Site
+
+The technical documentation for the Incert OCSP Subsystem is authored in AsciiDoc and generated using [Antora](https://antora.org):
+
+* **Playbook**: [`antora-playbook.yml`](./antora-playbook.yml)
+* **Component Descriptor**: [`docs/antora.yml`](./docs/antora.yml)
+* **Navigation**: [`docs/modules/ROOT/nav.adoc`](./docs/modules/ROOT/nav.adoc)
+* **Pages**: [`docs/modules/ROOT/pages/`](./docs/modules/ROOT/pages/)
+
+### Generating the Documentation Site
+
+To build the static documentation site locally:
+
+```bash
+./scripts/build-docs.sh
+```
+
+Or run Antora directly with `npx`:
+
+```bash
+npx -y -p @antora/cli -p @antora/site-generator antora antora-playbook.yml
+```
+
+The compiled responsive documentation site is generated into `build/site/index.html`. You can open it directly in a browser or preview it with any static HTTP server:
+
+```bash
+npx serve build/site
+```
+

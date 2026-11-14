@@ -1,0 +1,22 @@
+site:
+  title: Incert OCSP Subsystem Documentation
+  start_page: ocsp::index.adoc
+  url: http://localhost:8080/docs
+content:
+  sources:
+    - url: .
+      branches: HEAD
+      start_path: docs
+ui:
+  bundle:
+    url: https://gitlab.com/antora/antora-ui-default/-/jobs/artifacts/HEAD/raw/build/ui-bundle.zip?job=bundle-stable
+    snapshot: true
+asciidoc:
+  attributes:
+    idprefix: ''
+    idseparator: '-'
+    toc: ~
+    icons: font
+    source-highlighter: highlight.js
+    sectanchors: true
+    sectlinks: true

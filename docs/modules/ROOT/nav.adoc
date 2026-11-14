@@ -1,0 +1,14 @@
+* xref:index.adoc[Overview & Architecture]
+* Core Architecture
+** xref:architecture.adoc[System Design & Data Flow]
+** xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 HSM Signing]
+** xref:messaging-rabbitmq.adoc[RabbitMQ Messaging & Strict mTLS]
+** xref:signing-certificate-rotation.adoc[Dynamic Signing Certificate Rotation]
+** xref:authentication.adoc[Authentication Modes & Keycloak SSO]
+** xref:tls-management.adoc[TLS Security & Activation Toggle]
+* Operations & Administration
+** xref:deployment-docker.adoc[Docker Deployment & Compose]
+** xref:api-reference.adoc[API Reference & Endpoints]
+** xref:verification-testing.adoc[End-to-End Verification Suite]
+* Architecture Decision Records
+** xref:adrs.adoc[ADR Index & Summaries]

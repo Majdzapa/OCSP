@@ -1,0 +1,55 @@
+= Architecture Decision Records (ADRs)
+:toc:
+
+The following Architecture Decision Records document the architectural design choices made for the Incert OCSP Subsystem:
+
+[cols="1,3,2"]
+|===
+| ADR Number | Title | Status
+
+| *ADR-001*
+| Kafka over RabbitMQ (Initial evaluation)
+| Superseded by ADR-005
+
+| *ADR-002*
+| Modulith over Microservices
+| Accepted
+
+| *ADR-003*
+| SoftHSM2 PKCS#11 Delegated Signing
+| Accepted
+
+| *ADR-004*
+| Transactional Outbox Pattern
+| Accepted
+
+| *ADR-005*
+| RabbitMQ Event-Driven Synchronization
+| Accepted
+
+| *ADR-006*
+| Decoupled Responder & Client Applications
+| Accepted
+
+| *ADR-007*
+| Dual Authentication Modes (Keycloak & Self-Managed)
+| Accepted
+
+| *ADR-008*
+| RabbitMQ Strict Mutual TLS (mTLS) on Port 5671
+| Accepted
+
+| *ADR-009*
+| Dynamic Signing Certificate Rotation & In-Memory HSM Switch
+| Accepted
+
+| *ADR-010*
+| Configurable Authentication Mode Toggle (`security.auth-mode`)
+| Accepted
+
+| *ADR-011*
+| OCSP Login TLS Activation / Deactivation & Certificate Authentication
+| Accepted
+|===
+
+All full ADR Markdown files are located in `docs/adr/`.

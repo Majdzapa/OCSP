@@ -1,0 +1,80 @@
+= REST & OCSP API Reference
+:toc:
+
+This reference covers the primary public and administrative endpoints exposed by the OCSP Responder subsystem.
+
+== Public RFC 6960 OCSP Endpoints
+
+These endpoints are strictly unauthenticated, enabling relying party clients worldwide to verify certificate validity.
+
+=== POST /ocsp
+Evaluates binary DER-encoded OCSP request.
+* **Content-Type**: `application/ocsp-request`
+* **Response Type**: `application/ocsp-response`
+* **Status**: 200 OK
+
+=== GET /ocsp/\{base64url\}
+Evaluates base64url-encoded OCSP request path.
+* **Response Type**: `application/ocsp-response`
+* **Status**: 200 OK
+
+== Admin Authentication Endpoints
+
+=== GET /api/v1/auth/config
+Returns active authentication configuration and TLS status.
+* **Authentication**: None (public config endpoint)
+* **Response**:
++
+[source,json]
+----
+{
+  "authMode": "KEYCLOCK",
+  "isKeycloak": true,
+  "tlsEnabled": true,
+  "keycloak": {
+    "authServerUrl": "http://localhost:8081",
+    "realm": "incert",
+    "clientId": "ocsp-console"
+  }
+}
+----
+
+=== POST /api/v1/auth/login
+Authenticates credentials or certificates.
+* **Supported Payloads**:
+  - Username & password: `{"username": "admin", "password": "changeme"}`
+  - API Key: `{"apiKey": "incert-admin-secret-key"}`
+  - Bearer JWT: `{"token": "eyJhbGciOiJSUzI1NiIsIn..."}`
+  - Client Certificate: `{"clientCert": "CN=admin,O=Incert"}`
+* **Response**:
++
+[source,json]
+----
+{
+  "authenticated": true,
+  "username": "admin",
+  "roles": ["ROLE_ADMIN"],
+  "authMode": "KEYCLOCK",
+  "tlsEnabled": true,
+  "apiKey": "incert-admin-secret-key"
+}
+----
+
+=== GET & POST /api/v1/auth/tls
+Queries or updates TLS status for login.
+* **POST Body**: `{"enabled": false}`
+* **Response**: `{"tlsEnabled": false, "status": "DEACTIVATED"}`
+
+== Admin Signing Certificate Endpoints
+
+All endpoints require `ROLE_ADMIN` (Bearer JWT, Basic Auth, or `X-API-KEY`).
+
+* `GET /api/v1/admin/signing-certificates`: List all certificates.
+* `GET /api/v1/admin/signing-certificates/active`: Retrieve active certificate.
+* `POST /api/v1/admin/signing-certificates`: Enroll a certificate from PEM.
+* `PUT /api/v1/admin/signing-certificates/\{id\}/activate`: Activate certificate with id.
+
+== Operational & Dashboard Endpoints
+
+* `GET /api/v1/admin/dashboard/stats`: Returns live certificate counts, signing latency, and broker status.
+* `GET /api/v1/admin/reconciliation/verify`: Compares KMS source of truth with responder database and reports parity status.

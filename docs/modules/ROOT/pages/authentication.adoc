@@ -1,0 +1,69 @@
+= Authentication Modes & Keycloak SSO
+:toc:
+
+The OCSP Responder and Admin Console support dual authentication architectures, configurable via application properties without modifying code.
+
+== Configurable Authentication Mode
+
+In `ocsp-responder/src/main/resources/application.yml`:
+
+[source,yaml]
+----
+security:
+  auth-mode: ${AUTH_MODE:KEYCLOCK} # Options: KEYCLOCK or SELF_MANAGED
+----
+
+[cols="1,2,2"]
+|===
+| Feature | `KEYCLOCK` Mode | `SELF_MANAGED` Mode
+
+| *Identity Provider*
+| Centralized Keycloak IAM Server (port `8081`)
+| In-memory BCrypt Spring Security credentials
+
+| *Primary Auth Flow*
+| OpenID Connect Authorization Code / Implicit SSO
+| Standard username & password form login
+
+| *Token Type*
+| Signed RS256 JWT Bearer Tokens
+| Basic Auth header (`Authorization: Basic ...`)
+
+| *Role Management*
+| Realm & Group roles mapped to `ROLE_ADMIN`
+| Spring Security `ROLE_ADMIN` authority
+
+| *Break-Glass Fallback*
+| Supported (`X-API-KEY` & emergency basic auth)
+| Supported (`X-API-KEY`)
+|===
+
+== Keycloak OIDC Configuration
+
+The Keycloak container (`ocsp-keycloak`) runs on port `8081` with automatic realm initialization via `keycloak/realm-export.json`:
+
+* **Realm**: `incert`
+* **Client ID**: `ocsp-console`
+* **Client Type**: Public client with redirect URI `http://localhost:3000/*` and Web Origins `+`
+* **Groups**: `admins` (with role `ROLE_ADMIN`)
+* **Default Admin User**:
+  - Username: `admin`
+  - Password: `changeme`
+  - Group: `admins`
+
+=== Single Sign-On (SSO) Flow
+
+1. User visits `http://localhost:3000/login`.
+2. The UI queries `GET /api/v1/auth/config` to detect `authMode: "KEYCLOCK"`.
+3. The UI presents the **Keycloak SSO** button.
+4. Clicking redirects to Keycloak:
+   `http://localhost:8081/realms/incert/protocol/openid-connect/auth?client_id=ocsp-console&redirect_uri=http://localhost:3000/login&response_type=token&scope=openid`
+5. The user authenticates against Keycloak.
+6. Keycloak redirects back to `/login#access_token=...`.
+7. The console captures the token, sets localStorage credentials, and redirects to `/dashboard`.
+
+== API Authentication Endpoints
+
+* `GET /api/v1/auth/config`: Returns active `authMode`, `isKeycloak`, `tlsEnabled`, and Keycloak URLs.
+* `GET /api/v1/auth/me`: Verifies active session token or basic auth and returns authorities.
+* `POST /api/v1/auth/login`: Unified login endpoint supporting credentials, Bearer JWT, API Key, and client certificates.

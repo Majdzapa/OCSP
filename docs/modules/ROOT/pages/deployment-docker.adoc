@@ -1,0 +1,83 @@
+= Docker Deployment & Compose
+:toc:
+
+The entire Incert OCSP Subsystem is containerized using Docker and Docker Compose, offering single-command deployment with production-ready orchestration and healthchecks.
+
+== Quickstart
+
+To build and start all 8 subsystem containers in detached mode:
+
+[source,bash]
+----
+docker compose up --build -d
+----
+
+To inspect the status and healthchecks of all running containers:
+
+[source,bash]
+----
+docker compose ps
+----
+
+== Subsystem Containers
+
+[cols="2,1,3"]
+|===
+| Service | Container Name | Role
+
+| `mariadb`
+| `ocsp-mariadb`
+| Relational database for both `ocsp` and `kms` schemas.
+
+| `rabbitmq`
+| `ocsp-rabbitmq`
+| Message broker running strict mTLS on 5671 and plaintext on 5672.
+
+| `keycloak`
+| `ocsp-keycloak`
+| IAM Identity Provider pre-seeded with realm `incert`.
+
+| `hsm`
+| `ocsp-hsm`
+| Dedicated Hardware Security Module with SoftHSM2 token store.
+
+| `kms-simulator`
+| `ocsp-kms`
+| Certificate authority simulator with transactional outbox.
+
+| `ocsp-responder`
+| `ocsp-responder`
+| Core RFC 6960 responder, PKCS#11 signer, and Spring Security.
+
+| `ocsp-client`
+| `ocsp-client`
+| Standalone OCSP query verification harness and web UI.
+
+| `ocsp-console`
+| `ocsp-console`
+| React 18 administrative single page application served via Nginx.
+|===
+
+== Service Dependency Graph
+
+Containers are started with strict `service_healthy` conditions:
+
+[source]
+----
+mariadb (healthy) ──┐
+                    ├──► ocsp-responder (healthy) ──► ocsp-console
+hsm (healthy)     ──┤
+                    │
+rabbitmq (healthy)──┤
+                    │
+keycloak (healthy)──┘
+----
+
+== Clean Teardown
+
+To shut down and wipe volumes:
+
+[source,bash]
+----
+docker compose down -v
+----

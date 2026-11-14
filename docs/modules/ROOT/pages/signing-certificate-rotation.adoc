@@ -1,0 +1,76 @@
+= Dynamic Signing Certificate Rotation
+:toc:
+
+The OCSP Responder supports dynamic runtime rotation of delegated OCSP signing certificates without restarting containers or dropping active connections.
+
+== The Single-Active Certificate Invariant
+
+Under PKI governance rules:
+* Exactly **one** signing certificate may be actively used to sign responses at any given moment.
+* When a new certificate is activated, all other signing certificates must be deactivated atomically.
+* Signing responses must immediately use the newly activated certificate.
+
+== Architecture & Database Schema
+
+The rotation subsystem uses the `signing_certificates` database table:
+
+[source,sql]
+----
+CREATE TABLE signing_certificates (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    alias VARCHAR(255) NOT NULL UNIQUE,
+    key_label VARCHAR(255) NOT NULL,
+    subject_dn VARCHAR(500) NOT NULL,
+    issuer_dn VARCHAR(500) NOT NULL,
+    serial_number VARCHAR(100) NOT NULL,
+    not_before TIMESTAMP NOT NULL,
+    not_after TIMESTAMP NOT NULL,
+    signature_algorithm VARCHAR(100) NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT FALSE,
+    certificate_pem LONGTEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activated_at TIMESTAMP NULL
+);
+----
+
+== Zero-Downtime In-Memory Switch
+
+When an administrator activates a certificate:
+
+1. `SigningCertificateService.activate(Long id)` executes inside a `@Transactional` block.
+2. It executes `repository.deactivateAll()` ensuring all certificates have `active = false`.
+3. It sets `active = true` and `activatedAt = Instant.now()` on the selected record.
+4. It calls `ocspSigner.updateSigningCertificate(cert, keyLabel)`.
+5. The `Pkcs11OcspSigner` parses the certificate, binds to the corresponding HSM key label, and updates its volatile in-memory signing reference atomically.
+6. Subsequent OCSP requests (`POST /ocsp` or `GET /ocsp/\{base64url\}`) are immediately signed with the new certificate.
+
+== REST API Reference
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET`
+| `/api/v1/admin/signing-certificates`
+| Lists all registered signing certificates with status and expiry.
+
+| `GET`
+| `/api/v1/admin/signing-certificates/active`
+| Returns the currently active signing certificate.
+
+| `POST`
+| `/api/v1/admin/signing-certificates`
+| Registers a new signing certificate from PEM string (with optional immediate activation).
+
+| `PUT`
+| `/api/v1/admin/signing-certificates/\{id\}/activate`
+| Activates the certificate with the given ID and deactivates all others.
+|===
+
+== Admin Console Interface
+
+Administrators can inspect, upload, and rotate signing certificates via the web UI at `http://localhost:3000/signing-cert`:
+* Visual indicator of the current active certificate.
+* Expiry warning badges (days remaining until expiration).
+* Single-click **"Activate This Certificate"** button with confirmation modal.
+* PEM upload form with instant validation.

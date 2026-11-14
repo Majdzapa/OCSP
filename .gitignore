@@ -33,11 +33,13 @@ spring-boot-devtools.properties
 !ocsp-responder/src/main/resources/certs/**
 !data/pki/*.pem
 
-# Node / React
+# Node / React & Antora build output
 ocsp-console/node_modules/
 ocsp-console/dist/
 ocsp-console/.oxlintrc.json
 *.tsbuildinfo
+build/
+.cache/
 
 # Docker volumes
 mariadb-data/

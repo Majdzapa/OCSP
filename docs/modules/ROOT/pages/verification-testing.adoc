@@ -1,0 +1,74 @@
+= End-to-End Verification & Testing Suite
+:toc:
+
+The test harness in `scripts/e2e-test.sh` executes 14 comprehensive test suites validating the end-to-end functionality of the entire subsystem.
+
+== Executing the Test Suite
+
+[source,bash]
+----
+./scripts/e2e-test.sh
+----
+
+== Test Suite Catalog
+
+[cols="1,2,3"]
+|===
+| Suite | Scope | Success Criteria
+
+| *Test a*
+| GOOD Certificate Verification
+| Queries `ee-01.pem` status with `openssl ocsp`. Expects `good` and verified signature against CA.
+
+| *Test b*
+| Revocation Propagation & Latency
+| Revokes `ee-02.pem` via KMS. Measures end-to-end propagation latency until OCSP reflects `revoked`.
+
+| *Test c*
+| Certificate Hold & Un-Revocation
+| Tests `CERTIFICATE_HOLD` and transitions status back to `GOOD`.
+
+| *Test d*
+| Unknown Serial Number
+| Queries non-existent certificate serial. Expects `unknown` status.
+
+| *Test e*
+| Transport Methods & Nonce Echo
+| Asserts both HTTP POST (binary DER) and HTTP GET (base64url) work with mandatory Nonce echo.
+
+| *Test f*
+| PKCS#11 Signing & Key Security
+| Verifies SoftHSM2 signing and confirms zero private key material exists on container disk.
+
+| *Test g*
+| Container Restart & Recovery
+| Restarts `ocsp-rabbitmq` and `ocsp-responder`. Asserts zero event loss and queue recovery.
+
+| *Test h*
+| Poison Pill & DLQ Routing
+| Injects malformed JSON to RabbitMQ. Confirms routing to `ocsp.certificate.status.dlq` without consumer crash.
+
+| *Test i*
+| Admin API Authentication
+| Asserts 401 Unauthorized without auth, 200 OK with `X-API-KEY`, and 200 OK with Basic Auth.
+
+| *Test j*
+| Standalone OCSP Client
+| Validates standalone client web interface and both nonce-free and nonce-enabled checks.
+
+| *Test k*
+| KMS Simulator Web UI
+| Asserts KMS Simulator web portal returns HTTP 200.
+
+| *Test l*
+| Parity Reconciliation
+| Executes status update in KMS and verifies responder inbox table and parity reconciliation.
+
+| *Test m*
+| RabbitMQ Strict mTLS Enforcement
+| 5 sub-tests: plaintext port availability, rejection without client cert, rejection with untrusted cert, successful handshake with trusted cert, and live connection verification.
+
+| *Test n*
+| OCSP Login TLS Activation / Deactivation
+| 5 sub-tests: default TLS active, cert login success, runtime TLS deactivation, cert login rejection (400), and runtime TLS reactivation.
+|===
