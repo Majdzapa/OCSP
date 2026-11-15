@@ -197,7 +197,9 @@ pass "Test g: Restart succeeded without event loss, services healthy"
 # Test h: Poison pill to DLQ
 # -----------------------------------------------------------------------------
 info "Test h: Injecting poison pill message to verify DLQ routing..."
-docker exec -i ocsp-rabbitmq rabbitmqadmin publish \
+AMQP_USER="${RABBITMQ_USERNAME:-ocsp_amqp}"
+AMQP_PASS="${RABBITMQ_PASSWORD:-changeme}"
+docker exec -i ocsp-rabbitmq rabbitmqadmin -u "${AMQP_USER}" -p "${AMQP_PASS}" publish \
     exchange=incert.certificate.status \
     routing_key=incert.certificate.status.v1 \
     payload='{"malformed": "poison pill payload' || true
@@ -205,7 +207,7 @@ docker exec -i ocsp-rabbitmq rabbitmqadmin publish \
 info "Polling DLQ for poison message..."
 FOUND_POISON=0
 for i in {1..10}; do
-    DLQ_OUT=$(docker exec ocsp-rabbitmq rabbitmqadmin get queue=ocsp.certificate.status.dlq count=1 ackmode=ack_requeue_false 2>&1 || true)
+    DLQ_OUT=$(docker exec ocsp-rabbitmq rabbitmqadmin -u "${AMQP_USER}" -p "${AMQP_PASS}" get queue=ocsp.certificate.status.dlq count=1 ackmode=ack_requeue_false 2>&1 || true)
     if echo "${DLQ_OUT}" | grep -q "poison pill payload"; then
         FOUND_POISON=1
         break

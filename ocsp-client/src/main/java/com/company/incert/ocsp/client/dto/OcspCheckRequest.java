@@ -13,12 +13,24 @@ public record OcspCheckRequest(
     String certificatePem,
     @Schema(description = "Issuer / CA certificate in PEM format (optional)")
     String issuerPem,
+    @Schema(description = "Locally trusted OCSP responder certificate in PEM format (RFC 6960 §2.2 Option 3, optional)")
+    String trustedResponderPem,
     @Schema(description = "Whether to include the RFC 6960 / RFC 8954 Nonce extension in the request", example = "true")
     boolean includeNonce,
     @Schema(description = "HTTP Transport Method: POST (DER binary) or GET (base64url)", example = "POST")
     String method,
     @Schema(description = "OCSP responder URL endpoint", example = "http://localhost:8080/ocsp")
     String responderUrl
-) {}
+) {
+    public OcspCheckRequest(
+            String serialHex,
+            String certificatePem,
+            String issuerPem,
+            boolean includeNonce,
+            String method,
+            String responderUrl) {
+        this(serialHex, certificatePem, issuerPem, null, includeNonce, method, responderUrl);
+    }
+}
 
 

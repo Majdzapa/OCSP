@@ -193,7 +193,8 @@ public class OcspClientService {
             }
 
             // 5. Verify cryptographic signature & responder authorization
-            X509Certificate signerCert = extractSignerCert(basicResp, issuerCert);
+            X509Certificate trustedResponderCert = resolveTrustedResponder(request);
+            X509Certificate signerCert = extractSignerCert(basicResp, issuerCert, trustedResponderCert);
             boolean sigOk = verifySignature(basicResp, signerCert);
             if (!sigOk) {
                 checks.add(Check.fail("Cryptographic Signature", "Signature verification failed on BasicOCSPResponse"));
@@ -201,7 +202,7 @@ public class OcspClientService {
                 checks.add(Check.pass("Cryptographic Signature", "Signature verified with " + signerCert.getPublicKey().getAlgorithm() + " key"));
             }
 
-            boolean authOk = verifyResponderAuthorization(signerCert, issuerCert, checks);
+            boolean authOk = verifyResponderAuthorization(signerCert, issuerCert, trustedResponderCert, checks);
 
             // 6. Verify nonce
             boolean nonceOk = true;
@@ -329,19 +330,37 @@ public class OcspClientService {
         }
     }
 
-    private boolean verifyResponderAuthorization(X509Certificate signerCert, X509Certificate issuerCert, List<Check> checks) {
+    private boolean verifyResponderAuthorization(
+            X509Certificate signerCert,
+            X509Certificate issuerCert,
+            X509Certificate trustedResponderCert,
+            List<Check> checks) {
+        // RFC 6960 §2.2 Option 3: Locally configured Trusted Responder
+        if (trustedResponderCert != null
+                && Arrays.equals(signerCert.getPublicKey().getEncoded(), trustedResponderCert.getPublicKey().getEncoded())) {
+            checks.add(Check.pass("Responder Authorization",
+                    "Signer matches locally configured Trusted Responder (RFC 6960 §2.2 Option 3)"));
+            return true;
+        }
         if (issuerCert == null) {
             checks.add(Check.skipped("Responder Authorization", "No CA certificate available to verify delegation chain"));
             return true;
         }
+        // RFC 6960 §2.2 / §4.2.2.2 Option 1: The CA that issued the certificate
         if (Arrays.equals(signerCert.getPublicKey().getEncoded(), issuerCert.getPublicKey().getEncoded())) {
             checks.add(Check.pass("Responder Authorization", "Signer is the issuing CA directly (RFC 6960 §4.2.2.2 Option 1)"));
             return true;
         }
+        // RFC 6960 §2.2 / §4.2.2.2 Option 2: Delegated (authorized) responder
         try {
             signerCert.verify(issuerCert.getPublicKey());
         } catch (Exception e) {
             checks.add(Check.fail("Responder Authorization", "Signer cert is not signed by the issuing CA: " + e.getMessage()));
+            return false;
+        }
+        if (!signerCert.getIssuerX500Principal().equals(issuerCert.getSubjectX500Principal())) {
+            checks.add(Check.fail("Responder Authorization",
+                    "Signer cert issuer DN does not match issuing CA subject DN (must be issued directly by CA)"));
             return false;
         }
         try {
@@ -354,7 +373,11 @@ public class OcspClientService {
             checks.add(Check.fail("Responder Authorization", "Could not read signer EKUs: " + e.getMessage()));
             return false;
         }
-        checks.add(Check.pass("Responder Authorization", "Signer is an authorized delegated responder (issued by CA + OCSPSigning EKU)"));
+        boolean hasNoCheck = signerCert.getNonCriticalExtensionOIDs() != null
+                && signerCert.getNonCriticalExtensionOIDs().contains(OCSPObjectIdentifiers.id_pkix_ocsp_nocheck.getId());
+        checks.add(Check.pass("Responder Authorization",
+                "Signer is an authorized delegated responder (issued directly by CA + OCSPSigning EKU"
+                + (hasNoCheck ? " + id-pkix-ocsp-nocheck" : "") + ")"));
         return true;
     }
 
@@ -377,15 +400,28 @@ public class OcspClientService {
         return true;
     }
 
-    private X509Certificate extractSignerCert(BasicOCSPResp basicResp, X509Certificate issuerCert) throws Exception {
+    private X509Certificate extractSignerCert(
+            BasicOCSPResp basicResp,
+            X509Certificate issuerCert,
+            X509Certificate trustedResponderCert) throws Exception {
         X509CertificateHolder[] certs = basicResp.getCerts();
         if (certs != null && certs.length > 0) {
             return new JcaX509CertificateConverter().setProvider("BC").getCertificate(certs[0]);
+        }
+        if (trustedResponderCert != null) {
+            return trustedResponderCert;
         }
         if (issuerCert != null) {
             return issuerCert;
         }
         throw new IllegalStateException("BasicOCSPResponse includes no embedded certificate and no CA was supplied");
+    }
+
+    private X509Certificate resolveTrustedResponder(OcspCheckRequest req) throws Exception {
+        if (req.trustedResponderPem() != null && !req.trustedResponderPem().isBlank()) {
+            return readCertificate(new StringReader(req.trustedResponderPem()));
+        }
+        return null;
     }
 
     private TargetCert resolveTarget(OcspCheckRequest req) throws Exception {
