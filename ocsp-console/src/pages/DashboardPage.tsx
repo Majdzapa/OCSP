@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Card,
   SimpleGrid,
@@ -19,37 +19,42 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import { useDashboardStats } from '../hooks/useDashboardStats'
+import type { DashboardStats } from '../types/api'
 
 // ---------------------------------------------------------------------------
-// Simulated sparkline data (visual only — not from the API)
-// Clearly scoped here so it's never confused with real metrics
+// Live telemetry history accumulated from real Micrometer polling
 // ---------------------------------------------------------------------------
-interface ChartPoint { time: string; requests: number; errors: number }
+interface ChartPoint { time: string; requests: number; errors: number; latencyMs: number }
 
-function useSparklineHistory(size = 20, intervalMs = 5000) {
-  const historyRef = useRef<ChartPoint[]>(
+function useTelemetryHistory(stats: DashboardStats | null, size = 16) {
+  const [history, setHistory] = useState<ChartPoint[]>(() =>
     Array.from({ length: size }, (_, i) => ({
-      time: `${i}m`,
-      requests: Math.random() * 120 + 40,
-      errors: Math.random() * 3,
+      time: `-${(size - i) * 5}s`,
+      requests: 0,
+      errors: 0,
+      latencyMs: 0,
     }))
   )
 
   useEffect(() => {
-    const id = setInterval(() => {
-      historyRef.current = [
-        ...historyRef.current.slice(1),
-        {
-          time: 'now',
-          requests: Math.random() * 120 + 40,
-          errors: Math.random() * 3,
-        },
-      ]
-    }, intervalMs)
-    return () => clearInterval(id)
-  }, [intervalMs])
+    if (!stats) return
+    const nowLabel = new Date().toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' })
+    const rps = Number((stats.requestsPerSecond ?? 0).toFixed(2))
+    const errPct = Number(((stats.errorRate ?? 0) * 100).toFixed(2))
+    const latency = Number((stats.avgSigningLatencyMs ?? 0).toFixed(1))
 
-  return historyRef.current
+    setHistory((prev) => [
+      ...prev.slice(1),
+      {
+        time: nowLabel,
+        requests: rps,
+        errors: errPct,
+        latencyMs: latency,
+      },
+    ])
+  }, [stats])
+
+  return history
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +111,7 @@ function StatCard({ title, value, subtitle, accent = '#6366f1', progress }: Stat
 // ---------------------------------------------------------------------------
 export function DashboardPage() {
   const { stats, loading, error } = useDashboardStats(5_000)
-  const chartData = useSparklineHistory(20, 5_000)
+  const chartData = useTelemetryHistory(stats, 16)
 
   if (error) {
     return (
@@ -194,7 +199,7 @@ export function DashboardPage() {
         ))}
       </SimpleGrid>
 
-      {/* Charts row — visual sparkline (simulated shape, not stored time-series) */}
+      {/* Charts row — live telemetry history from Micrometer polling */}
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, md: 8 }}>
           <Card
@@ -207,7 +212,7 @@ export function DashboardPage() {
           >
             <Group justify="space-between" mb="md">
               <Text fw={600} fz="sm">Request Throughput</Text>
-              <Badge size="xs" color="gray" variant="outline">Simulated sparkline</Badge>
+              <Badge size="xs" color="indigo" variant="light">Live Micrometer Telemetry</Badge>
             </Group>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={chartData}>
@@ -227,7 +232,7 @@ export function DashboardPage() {
                 <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="requests" name="Req/s"  stroke="#6366f1" fill="url(#reqGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="errors"   name="Errors" stroke="#f43f5e" fill="url(#errGrad)" strokeWidth={1.5} dot={false} />
+                <Area type="monotone" dataKey="errors"   name="Error %" stroke="#f43f5e" fill="url(#errGrad)" strokeWidth={1.5} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </Card>
@@ -244,8 +249,8 @@ export function DashboardPage() {
             }}
           >
             <Group justify="space-between" mb="md">
-              <Text fw={600} fz="sm">PKCS#11 Signing Ops</Text>
-              <Badge size="xs" color="gray" variant="outline">Simulated sparkline</Badge>
+              <Text fw={600} fz="sm">PKCS#11 Signing Latency (ms)</Text>
+              <Badge size="xs" color="teal" variant="light">Live HSM Round-Trip</Badge>
             </Group>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData.slice(-8)}>
@@ -257,9 +262,9 @@ export function DashboardPage() {
                 </defs>
                 <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 150]} />
+                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
-                <Bar dataKey="requests" name="Sign Ops/s" radius={[4, 4, 0, 0]} fill="url(#signGrad)" />
+                <Bar dataKey="latencyMs" name="Avg Latency (ms)" radius={[4, 4, 0, 0]} fill="url(#signGrad)" />
               </BarChart>
             </ResponsiveContainer>
           </Card>

@@ -16,6 +16,8 @@ public interface InboxEventRepository extends JpaRepository<InboxEvent, String> 
 
     List<InboxEvent> findByCertificateSerialOrderByReceivedAtDesc(String certificateSerial);
 
+    List<InboxEvent> findByCertificateSerialContainingIgnoreCaseOrderByReceivedAtDesc(String certificateSerial);
+
     Page<InboxEvent> findAllByOrderByReceivedAtDesc(Pageable pageable);
 
     long countByProcessingStatus(String processingStatus);

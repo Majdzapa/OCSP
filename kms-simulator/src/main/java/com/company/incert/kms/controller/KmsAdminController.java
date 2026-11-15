@@ -29,13 +29,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Dev-only REST endpoints for manual KMS operations, certificate status updates,
+ * REST endpoints for KMS operations, certificate status updates,
  * and outbox reconciliation.
  */
 @Slf4j
 @RestController
 @RequestMapping("/kms")
-@Profile("dev")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 @Tag(name = "KMS Certificate Management", description = "Endpoints for managing PKI certificate lifecycles, revocations, and outbox event triggers")

@@ -56,7 +56,7 @@ public class InboxAdminController {
             @RequestParam(value = "serial", required = false) String serial) {
 
         if (serial != null && !serial.isBlank()) {
-            List<InboxEvent> list = inboxRepository.findByCertificateSerialOrderByReceivedAtDesc(serial.trim());
+            List<InboxEvent> list = inboxRepository.findByCertificateSerialContainingIgnoreCaseOrderByReceivedAtDesc(serial.trim());
             return ResponseEntity.ok(Map.of(
                     "events", list,
                     "total", list.size(),

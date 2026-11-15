@@ -39,12 +39,45 @@ public class RevocationService {
 
     @Transactional(readOnly = true)
     public Optional<Certificate> findBySerial(String serialHex) {
-        return certRepository.findBySerialNumberHex(serialHex);
+        return findCertificateBySerial(serialHex);
+    }
+
+    private Optional<Certificate> findCertificateBySerial(String serialHex) {
+        if (serialHex == null || serialHex.isBlank()) {
+            return Optional.empty();
+        }
+        String clean = serialHex.trim().toLowerCase().replace(":", "");
+        if (clean.startsWith("0x")) {
+            clean = clean.substring(2);
+        }
+        if (clean.length() % 2 != 0) {
+            clean = "0" + clean;
+        }
+        Optional<Certificate> exact = certRepository.findBySerialNumberHex(clean);
+        if (exact.isPresent()) {
+            return exact;
+        }
+        try {
+            String canonical = java.util.HexFormat.of()
+                    .formatHex(new java.math.BigInteger(1, java.util.HexFormat.of().parseHex(clean)).toByteArray());
+            if (!canonical.equals(clean)) {
+                Optional<Certificate> byCanonical = certRepository.findBySerialNumberHex(canonical);
+                if (byCanonical.isPresent()) {
+                    return byCanonical;
+                }
+            }
+            if (!canonical.startsWith("00")) {
+                return certRepository.findBySerialNumberHex("00" + canonical);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Not valid hex; return empty so caller throws CertificateNotFoundException
+        }
+        return Optional.empty();
     }
 
     @Transactional
     public Certificate revoke(String serialHex, RevocationReason reason) {
-        Certificate cert = certRepository.findBySerialNumberHex(serialHex)
+        Certificate cert = findCertificateBySerial(serialHex)
                 .orElseThrow(() -> new CertificateNotFoundException("Certificate not found: " + serialHex));
 
         if (cert.getStatus() == CertificateStatus.REVOKED) {
@@ -65,7 +98,7 @@ public class RevocationService {
 
     @Transactional
     public Certificate unrevoke(String serialHex) {
-        Certificate cert = certRepository.findBySerialNumberHex(serialHex)
+        Certificate cert = findCertificateBySerial(serialHex)
                 .orElseThrow(() -> new CertificateNotFoundException("Certificate not found: " + serialHex));
 
         if (cert.getRevocationReason() != RevocationReason.CERTIFICATE_HOLD) {
@@ -87,7 +120,7 @@ public class RevocationService {
     @Transactional
     public Certificate updateStatus(String serialHex, CertificateStatus targetStatus,
                                    RevocationReason reason, Instant revocationTime) {
-        Certificate cert = certRepository.findBySerialNumberHex(serialHex)
+        Certificate cert = findCertificateBySerial(serialHex)
                 .orElseThrow(() -> new CertificateNotFoundException("Certificate not found: " + serialHex));
 
         Instant finalRevTime = null;

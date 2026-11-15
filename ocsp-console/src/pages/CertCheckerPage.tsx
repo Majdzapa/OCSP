@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Box,
   Title,
@@ -38,11 +38,13 @@ import {
   checkCertStatus,
   requestCertRenewal,
   testOcspRequest,
+  getKmsCertificates,
 } from '../api/client'
 import type {
   CertStatusResponse,
   RenewRequestResponse,
   OcspTestResult,
+  KmsCertificate,
 } from '../types/api'
 
 // ---------------------------------------------------------------------------
@@ -135,9 +137,33 @@ export function CertCheckerPage() {
   const [activeTab, setActiveTab] = useState<string | null>('ocsp-tester')
 
   // Tab 0: Live OCSP Protocol Tester
-  const [testSerial, setTestSerial] = useState(
-    '00b59d41baf78afe0de1bbe7ae28c0450f'
-  ) // ee-01
+  const [testSerial, setTestSerial] = useState('')
+  const [sampleGoodSerial, setSampleGoodSerial] = useState<string | null>(null)
+  const [sampleRevokedSerial, setSampleRevokedSerial] = useState<string | null>(null)
+  const [sampleHoldSerial, setSampleHoldSerial] = useState<string | null>(null)
+
+  useEffect(() => {
+    getKmsCertificates()
+      .then((certs: KmsCertificate[]) => {
+        const good = certs.find((c) => c.status === 'GOOD')
+        const revoked = certs.find(
+          (c) => c.status === 'REVOKED' && c.revocationReason !== 'CERTIFICATE_HOLD'
+        )
+        const hold = certs.find(
+          (c) => c.status === 'REVOKED' && c.revocationReason === 'CERTIFICATE_HOLD'
+        )
+        if (good) {
+          setSampleGoodSerial(good.serialNumberHex)
+          setTestSerial((prev) => prev || good.serialNumberHex)
+          setSerial((prev) => prev || good.serialNumberHex)
+        }
+        if (revoked) setSampleRevokedSerial(revoked.serialNumberHex)
+        if (hold) setSampleHoldSerial(hold.serialNumberHex)
+      })
+      .catch(() => {
+        // Fallback if KMS simulator is unreachable
+      })
+  }, [])
   const [includeNonce, setIncludeNonce] = useState(false)
   const [httpMethod, setHttpMethod] = useState<'POST' | 'GET'>('POST')
   const [testLoading, setTestLoading] = useState(false)
@@ -284,36 +310,36 @@ export function CertCheckerPage() {
               <Text fz="xs" c="dimmed">
                 Quick Presets:
               </Text>
-              <Badge
-                color="teal"
-                variant="light"
-                style={{ cursor: 'pointer' }}
-                onClick={() =>
-                  setTestSerial('00b59d41baf78afe0de1bbe7ae28c0450f')
-                }
-              >
-                ee-01 (GOOD)
-              </Badge>
-              <Badge
-                color="red"
-                variant="light"
-                style={{ cursor: 'pointer' }}
-                onClick={() =>
-                  setTestSerial('008a5232e619344f2ebdb9b35f93e6a70d')
-                }
-              >
-                ee-02 (REVOKED)
-              </Badge>
-              <Badge
-                color="yellow"
-                variant="light"
-                style={{ cursor: 'pointer' }}
-                onClick={() =>
-                  setTestSerial('00dcd6e3751e8e68a43f3fc6561007e833')
-                }
-              >
-                ee-03 (HOLD / GOOD)
-              </Badge>
+              {sampleGoodSerial && (
+                <Badge
+                  color="teal"
+                  variant="light"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTestSerial(sampleGoodSerial)}
+                >
+                  Sample GOOD ({sampleGoodSerial.slice(0, 8)}…)
+                </Badge>
+              )}
+              {sampleRevokedSerial && (
+                <Badge
+                  color="red"
+                  variant="light"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTestSerial(sampleRevokedSerial)}
+                >
+                  Sample REVOKED ({sampleRevokedSerial.slice(0, 8)}…)
+                </Badge>
+              )}
+              {sampleHoldSerial && (
+                <Badge
+                  color="yellow"
+                  variant="light"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTestSerial(sampleHoldSerial)}
+                >
+                  Sample HOLD ({sampleHoldSerial.slice(0, 8)}…)
+                </Badge>
+              )}
             </Group>
 
             <Grid gutter="md">

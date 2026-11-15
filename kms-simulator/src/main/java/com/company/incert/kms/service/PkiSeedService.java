@@ -37,13 +37,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 /**
- * Generates a fake test PKI on startup (dev + test profiles only).
+ * Generates a test PKI on startup if the certificate table is empty.
  * Creates: root CA → intermediate "Incert Test CA" → 50 end-entity certs.
  * Exports CA cert and sample EE PEMs to ./data/pki/ for openssl testing.
  */
 @Slf4j
 @Configuration
-@Profile({"dev", "test"})
 @RequiredArgsConstructor
 public class PkiSeedService {
 

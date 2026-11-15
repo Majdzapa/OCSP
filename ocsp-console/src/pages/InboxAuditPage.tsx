@@ -50,6 +50,7 @@ export function InboxAuditPage() {
   const [reconLoading, setReconLoading] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [searchSerial, setSearchSerial] = useState('')
+  const [banner, setBanner] = useState<{ color: 'teal' | 'red'; message: string } | null>(null)
 
   const loadData = async () => {
     setLoading(true)
@@ -60,8 +61,11 @@ export function InboxAuditPage() {
       ])
       setEvents(eventsRes.events || [])
       setStats(statsRes)
-    } catch (err) {
-      console.error('Failed to load inbox data', err)
+    } catch (err: any) {
+      setBanner({
+        color: 'red',
+        message: 'Failed to load inbox data: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+      })
     } finally {
       setLoading(false)
     }
@@ -73,26 +77,30 @@ export function InboxAuditPage() {
       const report = await verifyReconciliation()
       setReconciliation(report)
     } catch (err: any) {
-      alert('Reconciliation check failed: ' + (err.response?.data?.error || err.message))
+      setBanner({
+        color: 'red',
+        message: 'Reconciliation check failed: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+      })
     } finally {
       setReconLoading(false)
     }
   }
 
   const handleSyncAll = async () => {
-    if (!window.confirm('Broadcast all KMS certificates to RabbitMQ outbox to re-populate the responder inbox?')) {
-      return
-    }
     setSyncLoading(true)
+    setBanner(null)
     try {
       const res = await syncAllKmsCertificates()
-      alert(`Sync queued: ${res.message}`)
+      setBanner({ color: 'teal', message: `Sync queued: ${res.message}` })
       setTimeout(() => {
         loadData()
         handleVerifyReconciliation()
       }, 1200)
     } catch (err: any) {
-      alert('Sync failed: ' + (err.response?.data?.error || err.message))
+      setBanner({
+        color: 'red',
+        message: 'Sync failed: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+      })
     } finally {
       setSyncLoading(false)
     }
@@ -212,6 +220,20 @@ export function InboxAuditPage() {
           </Card>
         </Grid.Col>
       </Grid>
+
+      {/* Action Notification Banner */}
+      {banner && (
+        <Alert
+          color={banner.color}
+          icon={banner.color === 'teal' ? <IconCheck size={18} /> : <IconAlertTriangle size={18} />}
+          withCloseButton
+          onClose={() => setBanner(null)}
+          radius="md"
+          mb="md"
+        >
+          {banner.message}
+        </Alert>
+      )}
 
       {/* Reconciliation Report Banner */}
       {reconciliation && (

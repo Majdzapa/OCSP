@@ -18,7 +18,6 @@ import {
   IconShieldX,
   IconCertificate,
   IconSearch,
-  IconReceipt,
   IconCircleFilled,
   IconLogout,
   IconExternalLink,
@@ -50,10 +49,9 @@ const navItems = [
   { label: 'Dashboard',       path: '/dashboard',        icon: IconDashboard },
   { label: 'KMS Inventory',   path: '/kms-certificates', icon: IconKey },
   { label: 'Responder Inbox', path: '/inbox',            icon: IconInbox },
-  { label: 'Revocations',     path: '/revocations',      icon: IconShieldX },
+  { label: 'Revocation Feed', path: '/revocations',      icon: IconShieldX },
   { label: 'Signing Cert',    path: '/signing-cert',     icon: IconCertificate },
   { label: 'Cert Checker',    path: '/cert-checker',     icon: IconSearch },
-  { label: 'Audit Log',       path: '/audit',            icon: IconReceipt },
 ]
 
 function MainLayout() {
