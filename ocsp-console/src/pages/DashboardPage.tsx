@@ -288,7 +288,6 @@ export function DashboardPage() {
             <>
               <Badge color="indigo"  variant="light" size="lg">OCSP Responder ✓</Badge>
               <Badge color="cyan"    variant="light" size="lg">OCSP Client ✓</Badge>
-              <Badge color="violet"  variant="light" size="lg">KMS Simulator ✓</Badge>
               <Badge color="teal"    variant="light" size="lg">MariaDB ✓</Badge>
               <Badge color={stats?.tlsEnabled ? 'teal' : 'orange'} variant="light" size="lg">
                 RabbitMQ {stats?.tlsEnabled ? '(mTLS) ✓' : '(plaintext) ✓'}

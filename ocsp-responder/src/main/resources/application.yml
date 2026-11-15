@@ -119,11 +119,6 @@ ocsp:
     enabled: ${RECONCILIATION_ENABLED:true}
     cron: "${RECONCILIATION_CRON:0 0/15 * * * *}"
 
-kms:
-  url: http://${KMS_HOST:localhost}:${KMS_PORT:8090}
-  snapshot:
-    url: http://${KMS_HOST:localhost}:${KMS_PORT:8090}/kms/snapshot
-
 hsm:
   enabled: ${HSM_ENABLED:true}
   pkcs11-library: ${HSM_PKCS11_LIBRARY:/usr/lib/softhsm/libsofthsm2.so}

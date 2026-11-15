@@ -14,7 +14,6 @@ import {
 } from '@mantine/core'
 import {
   IconDashboard,
-  IconKey,
   IconShieldX,
   IconCertificate,
   IconSearch,
@@ -28,7 +27,6 @@ import { DashboardPage }  from './pages/DashboardPage'
 import { RevocationFeed } from './pages/RevocationFeed'
 import { SigningCertificatesPage } from './pages/SigningCertificatesPage'
 import { CertCheckerPage } from './pages/CertCheckerPage'
-import { KmsCertificatesPage } from './pages/KmsCertificatesPage'
 import { InboxAuditPage } from './pages/InboxAuditPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -37,17 +35,14 @@ import { useDashboardStats } from './hooks/useDashboardStats'
 
 // Portal links driven by build-time env vars; safe defaults for local dev only.
 const PORTAL_LINKS = {
-  kmsUi:              import.meta.env.VITE_PORTAL_KMS_UI              ?? 'http://localhost:8090',
   clientUi:           import.meta.env.VITE_PORTAL_CLIENT_UI           ?? 'http://localhost:8082',
   rabbitMq:           import.meta.env.VITE_PORTAL_RABBITMQ            ?? 'http://localhost:15672',
   responderSwagger:   import.meta.env.VITE_PORTAL_RESPONDER_SWAGGER   ?? 'http://localhost:8080/swagger-ui/index.html',
   clientSwagger:      import.meta.env.VITE_PORTAL_CLIENT_SWAGGER      ?? 'http://localhost:8082/swagger-ui/index.html',
-  kmsSwagger:         import.meta.env.VITE_PORTAL_KMS_SWAGGER         ?? 'http://localhost:8090/swagger-ui/index.html',
 } as const
 
 const navItems = [
   { label: 'Dashboard',       path: '/dashboard',        icon: IconDashboard },
-  { label: 'KMS Inventory',   path: '/kms-certificates', icon: IconKey },
   { label: 'Responder Inbox', path: '/inbox',            icon: IconInbox },
   { label: 'Revocation Feed', path: '/revocations',      icon: IconShieldX },
   { label: 'Signing Cert',    path: '/signing-cert',     icon: IconCertificate },
@@ -161,24 +156,6 @@ function MainLayout() {
                 <IconExternalLink size={14} />
               </a>
               <a
-                href={PORTAL_LINKS.kmsUi}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '7px 12px',
-                  borderRadius: 6,
-                  color: 'var(--mantine-color-dark-2)',
-                  textDecoration: 'none',
-                  fontSize: '0.8rem',
-                }}
-              >
-                <span>KMS Portal (8090)</span>
-                <IconExternalLink size={14} />
-              </a>
-              <a
                 href={PORTAL_LINKS.clientUi}
                 target="_blank"
                 rel="noreferrer"
@@ -256,24 +233,6 @@ function MainLayout() {
                 }}
               >
                 <span>Client Swagger (8082)</span>
-                <IconExternalLink size={14} />
-              </a>
-              <a
-                href={PORTAL_LINKS.kmsSwagger}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '7px 12px',
-                  borderRadius: 6,
-                  color: 'var(--mantine-color-indigo-3)',
-                  textDecoration: 'none',
-                  fontSize: '0.8rem',
-                }}
-              >
-                <span>KMS Swagger (8090)</span>
                 <IconExternalLink size={14} />
               </a>
             </Stack>
@@ -356,7 +315,6 @@ function MainLayout() {
         <Routes>
           <Route path="/"                 element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"        element={<DashboardPage />} />
-          <Route path="/kms-certificates" element={<KmsCertificatesPage />} />
           <Route path="/inbox"            element={<InboxAuditPage />} />
           <Route path="/revocations"      element={<RevocationFeed />} />
           <Route path="/signing-cert"     element={<SigningCertificatesPage />} />

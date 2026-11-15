@@ -1,14 +1,14 @@
 # =============================================================================
 # Incert OCSP Subsystem — Decoupled Architecture Docker Compose
-# Architecture: RabbitMQ + Separated OCSP Responder + Separated OCSP Client + SoftHSM2 (PKCS#11) + KMS Simulator
+# Architecture: RabbitMQ + Separated OCSP Responder + Separated OCSP Client + SoftHSM2 (PKCS#11)
+# KMS is deployed separately as an external system publishing events via RabbitMQ.
 # =============================================================================
 # One-click startup:
 #   docker compose up --build -d
 #
 # Services:
-#   mariadb          MariaDB 10.11 (schemas: ocsp, kms) (host 3307, internal 3306)
+#   mariadb          MariaDB 10.11 (schema: ocsp)       (host 3307, internal 3306)
 #   rabbitmq         RabbitMQ 3.13 + Management UI      (host 5672, 15672)
-#   kms-simulator    KMS & CA simulator + event outbox  (host 8090, internal 8090)
 #   hsm              SoftHSM2 Dedicated HSM Container   (PKCS#11 Token & Key Module)
 #   ocsp-responder   RFC 6960 OCSP Responder + Auth    (host 8080, internal 8080)
 #   ocsp-client      RFC 6960 Client + Test Web UI      (host 8082, internal 8082)
@@ -17,11 +17,11 @@
 
 networks:
   ocsp-net:
+    name: ocsp-net
     driver: bridge
 
 volumes:
   mariadb-data:
-  pki-data:
   hsm-tokens:
   hsm-conf:
 
@@ -84,56 +84,6 @@ services:
       start_period: 20s
 
   # ============================================================
-  # KMS Simulator (Event Source & Test PKI Generator + Frontend)
-  # ============================================================
-  kms-simulator:
-    build:
-      context: .
-      dockerfile: kms-simulator/Dockerfile
-    image: ocsp/kms-simulator:local
-    container_name: ocsp-kms
-    restart: unless-stopped
-    networks: [ocsp-net]
-    depends_on:
-      mariadb:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    ports:
-      - "8090:8090"
-    environment:
-      <<: *spring-opts
-      MARIADB_HOST: mariadb
-      MARIADB_PORT: 3306
-      MARIADB_KMS_DB: kms
-      MARIADB_KMS_USER: kms_app
-      MARIADB_KMS_PASSWORD: ${MARIADB_KMS_PASSWORD:-changeme}
-      FLYWAY_USER: root
-      FLYWAY_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: ${RABBITMQ_PORT:-5671}
-      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ocsp_amqp}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-changeme}
-      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
-      RABBITMQ_SSL_ENABLED: ${RABBITMQ_TLS_ENABLED:-true}
-      RABBITMQ_SSL_KEYSTORE: file:/certs/rabbitmq/client-keystore.p12
-      RABBITMQ_SSL_KEYSTORE_PASSWORD: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:-changeme}
-      RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
-      RABBITMQ_SSL_TRUSTSTORE_PASSWORD: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:-changeme}
-      KMS_PORT: 8090
-      KMS_JOB_REVOCATION_ENABLED: "false"
-    volumes:
-      - pki-data:/data/pki
-      - ./data/pki:/app/data/pki
-      - ./certs/rabbitmq:/certs/rabbitmq:ro
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8090/actuator/health || exit 1"]
-      start_period: 30s
-      interval: 10s
-      timeout: 5s
-      retries: 6
-
-  # ============================================================
   # Dedicated SoftHSM2 Container (PKCS#11 Hardware Security Module)
   # ============================================================
   hsm:
@@ -144,9 +94,6 @@ services:
     container_name: ocsp-hsm
     restart: unless-stopped
     networks: [ocsp-net]
-    depends_on:
-      kms-simulator:
-        condition: service_healthy
     environment:
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
       HSM_PIN: ${HSM_PIN:-1234}
@@ -157,7 +104,7 @@ services:
     volumes:
       - hsm-tokens:/var/lib/softhsm/tokens
       - hsm-conf:/etc/softhsm2
-      - pki-data:/data/pki
+      - ./data/pki:/data/pki
     healthcheck:
       test: ["CMD-SHELL", "pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label ocsp-signing --login --pin 1234 --list-objects 2>/dev/null | grep -q ocsp-signing-key || exit 1"]
       start_period: 15s
@@ -206,8 +153,6 @@ services:
       RABBITMQ_SSL_KEYSTORE_PASSWORD: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:-changeme}
       RABBITMQ_SSL_TRUSTSTORE: file:/certs/rabbitmq/client-truststore.p12
       RABBITMQ_SSL_TRUSTSTORE_PASSWORD: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:-changeme}
-      KMS_HOST: kms-simulator
-      KMS_PORT: 8090
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-incert-admin-secret-key}
@@ -226,7 +171,7 @@ services:
     volumes:
       - hsm-tokens:/var/lib/softhsm/tokens
       - hsm-conf:/etc/softhsm2
-      - pki-data:/data/pki:ro
+      - ./data/pki:/data/pki:ro
       - ./certs/rabbitmq:/certs/rabbitmq:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
@@ -257,8 +202,8 @@ services:
       OCSP_RESPONDER_URL: http://ocsp-responder:8080/ocsp
       PKI_DIR: /data/pki
     volumes:
-      - pki-data:/data/pki
-      - ./data/pki:/app/data/pki
+      - ./data/pki:/data/pki:ro
+      - ./data/pki:/app/data/pki:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
       start_period: 25s

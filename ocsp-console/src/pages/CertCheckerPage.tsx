@@ -7,12 +7,10 @@ import {
   Grid,
   Paper,
   TextInput,
-  Textarea,
   Button,
   Badge,
   Alert,
   Collapse,
-  Modal,
   Tabs,
   Switch,
   Radio,
@@ -24,7 +22,6 @@ import {
   IconShieldCheck,
   IconShieldX,
   IconHelp,
-  IconRefresh,
   IconCopy,
   IconKey,
   IconBolt,
@@ -36,13 +33,11 @@ import {
 } from '@tabler/icons-react'
 import {
   checkCertStatus,
-  requestCertRenewal,
   testOcspRequest,
-  getKmsCertificates,
+  getReplicatedCertificates,
 } from '../api/client'
 import type {
   CertStatusResponse,
-  RenewRequestResponse,
   OcspTestResult,
   KmsCertificate,
 } from '../types/api'
@@ -143,7 +138,7 @@ export function CertCheckerPage() {
   const [sampleHoldSerial, setSampleHoldSerial] = useState<string | null>(null)
 
   useEffect(() => {
-    getKmsCertificates()
+    getReplicatedCertificates()
       .then((certs: KmsCertificate[]) => {
         const good = certs.find((c) => c.status === 'GOOD')
         const revoked = certs.find(
@@ -161,7 +156,7 @@ export function CertCheckerPage() {
         if (hold) setSampleHoldSerial(hold.serialNumberHex)
       })
       .catch(() => {
-        // Fallback if KMS simulator is unreachable
+        // Fallback if responder DB has no replicated certificates yet
       })
   }, [])
   const [includeNonce, setIncludeNonce] = useState(false)
@@ -176,17 +171,6 @@ export function CertCheckerPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<CertStatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  // Renewal dialog
-  const [renewOpen, setRenewOpen] = useState(false)
-  const [renewReason, setRenewReason] = useState(
-    'REVOKED — renewal requested via admin console'
-  )
-  const [renewLoading, setRenewLoading] = useState(false)
-  const [renewResult, setRenewResult] = useState<RenewRequestResponse | null>(
-    null
-  )
-  const [renewError, setRenewError] = useState<string | null>(null)
 
   // Handle Live OCSP Test
   const handleRunOcspTest = async () => {
@@ -221,7 +205,6 @@ export function CertCheckerPage() {
     setLoading(true)
     setResult(null)
     setError(null)
-    setRenewResult(null)
     try {
       const data = await checkCertStatus(hex)
       setResult(data)
@@ -233,21 +216,6 @@ export function CertCheckerPage() {
       setError(msg)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleRenew = async () => {
-    if (!result) return
-    setRenewLoading(true)
-    setRenewError(null)
-    try {
-      const data = await requestCertRenewal(result.serialHex, renewReason)
-      setRenewResult(data)
-      setRenewOpen(false)
-    } catch {
-      setRenewError('Renewal request failed. Check the KMS service logs.')
-    } finally {
-      setRenewLoading(false)
     }
   }
 
@@ -783,66 +751,15 @@ export function CertCheckerPage() {
                   </Alert>
                 )}
 
-                {isRevoked && !renewResult && (
+                {isRevoked && (
                   <Alert
                     icon={<IconShieldX size={18} />}
                     color="red"
                     title="Certificate Revoked"
                   >
-                    <Group justify="space-between" align="center" mt="xs">
-                      <Text fz="sm">
-                        This certificate has been <strong>revoked</strong>. You
-                        can request KMS to issue a replacement signing
-                        certificate.
-                      </Text>
-                      <Button
-                        id="request-renewal-btn"
-                        color="red"
-                        variant="light"
-                        size="xs"
-                        leftSection={<IconRefresh size={14} />}
-                        onClick={() => setRenewOpen(true)}
-                      >
-                        Request Renewal
-                      </Button>
-                    </Group>
-                  </Alert>
-                )}
-
-                {renewResult && (
-                  <Alert
-                    icon={<IconRefresh size={18} />}
-                    color="teal"
-                    title="Renewal Request Accepted by KMS"
-                    mt="md"
-                  >
-                    <Stack gap={0} mt="xs">
-                      <DetailRow
-                        label="Request ID"
-                        value={renewResult.requestId}
-                        mono
-                      />
-                      <DetailRow
-                        label="KMS Status"
-                        value={renewResult.kmsStatus}
-                      />
-                      <DetailRow
-                        label="New valid until"
-                        value={
-                          renewResult.newNotAfter
-                            ? new Date(
-                                renewResult.newNotAfter
-                              ).toLocaleString()
-                            : null
-                        }
-                      />
-                      <DetailRow
-                        label="Submitted at"
-                        value={new Date(
-                          renewResult.submittedAt
-                        ).toLocaleString()}
-                      />
-                    </Stack>
+                    <Text fz="sm">
+                      This certificate has been <strong>revoked</strong> via RabbitMQ event stream from KMS.
+                    </Text>
                   </Alert>
                 )}
               </Card>
@@ -850,74 +767,6 @@ export function CertCheckerPage() {
           </Collapse>
         </Tabs.Panel>
       </Tabs>
-
-      {/* Renewal modal */}
-      <Modal
-        opened={renewOpen}
-        onClose={() => setRenewOpen(false)}
-        title={
-          <Group gap="xs">
-            <IconRefresh size={20} color="#6366f1" />
-            <Text fw={700} fz="md">
-              Request KMS Cert Renewal
-            </Text>
-          </Group>
-        }
-        centered
-        radius="md"
-        styles={{
-          content: {
-            backgroundColor: 'var(--mantine-color-dark-6)',
-            border: '1px solid var(--mantine-color-dark-4)',
-          },
-        }}
-      >
-        <Text fz="sm" c="dimmed" mb="md">
-          This will call the KMS service to rotate the OCSP signing certificate.
-          The old revoked certificate will be replaced with a fresh 90-day cert.
-        </Text>
-
-        <Textarea
-          id="renewal-reason-input"
-          label="Renewal Reason"
-          value={renewReason}
-          onChange={(e) => setRenewReason(e.target.value)}
-          rows={3}
-          mb="md"
-        />
-
-        {renewError && (
-          <Alert
-            icon={<IconAlertCircle size={16} />}
-            color="red"
-            title="Renewal Failed"
-            mb="md"
-          >
-            {renewError}
-          </Alert>
-        )}
-
-        <Group justify="flex-end" mt="lg">
-          <Button
-            id="cancel-renewal-btn"
-            variant="default"
-            onClick={() => setRenewOpen(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            id="confirm-renewal-btn"
-            onClick={handleRenew}
-            loading={renewLoading}
-            leftSection={<IconRefresh size={16} />}
-            style={{
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            }}
-          >
-            Confirm Renewal
-          </Button>
-        </Group>
-      </Modal>
     </Box>
   )
 }

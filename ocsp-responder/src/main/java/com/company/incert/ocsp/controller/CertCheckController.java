@@ -15,13 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.client.RestClient;
 
 @RestController
 @RequestMapping("/api/v1/admin/cert-check")
@@ -33,9 +27,6 @@ public class CertCheckController {
 
     private final CertificateStatusService statusService;
 
-    @Value("${kms.url:http://kms-simulator:8090}")
-    private String kmsUrl;
-
     @Schema(description = "Certificate status inspection response")
     public record CertStatusResponse(
         @Schema(description = "Serial number hex", example = "008a5232e619344f2ebdb9b35f93e6a70d") String serialHex,
@@ -43,15 +34,6 @@ public class CertCheckController {
         @Schema(description = "Revocation timestamp if revoked") String revocationTime,
         @Schema(description = "Revocation reason if revoked", example = "KEY_COMPROMISE") String revocationReason,
         @Schema(description = "Whether renewal/replacement is available") boolean renewalAvailable
-    ) {}
-
-    @Schema(description = "Certificate renewal / reinstatement response")
-    public record RenewRequestResponse(
-        @Schema(description = "Unique renewal request ID") String requestId,
-        @Schema(description = "Serial number hex") String serialHex,
-        @Schema(description = "New KMS status") String kmsStatus,
-        @Schema(description = "Updated validity end timestamp") String newNotAfter,
-        @Schema(description = "Submission timestamp") String submittedAt
     ) {}
 
     @Operation(summary = "Check certificate status by serial", description = "Looks up the current revocation status for a certificate serial in the local database")
@@ -75,30 +57,6 @@ public class CertCheckController {
             status.getRevocationTime() != null ? status.getRevocationTime().toString() : null,
             status.getRevocationReason(),
             status.getStatus() == com.company.incert.ocsp.entity.CertificateStatus.REVOKED
-        ));
-    }
-
-    @Operation(summary = "Request certificate renewal / reinstatement",
-               description = "Forwards a renewal / reinstatement request to the KMS Simulator and publishes the updated status via RabbitMQ")
-    @PostMapping("/{serialHex}/renew-request")
-    public ResponseEntity<RenewRequestResponse> requestRenewal(
-            @Parameter(description = "Hex-encoded serial number")
-            @PathVariable("serialHex") String serialHex,
-            @RequestBody(required = false) Map<String, String> body) {
-        RestClient.create(kmsUrl)
-            .post()
-            .uri("/kms/certificates/{serial}/status", serialHex)
-            .body(Map.of("status", "GOOD"))
-            .retrieve()
-            .toBodilessEntity();
-
-        Instant now = Instant.now();
-        return ResponseEntity.ok(new RenewRequestResponse(
-            "REQ-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
-            serialHex,
-            "GOOD (Reinstated via KMS)",
-            now.plus(90, ChronoUnit.DAYS).toString(),
-            now.toString()
         ));
     }
 }

@@ -24,14 +24,12 @@ import {
   IconAlertTriangle,
   IconSearch,
   IconCopy,
-  IconSend,
   IconShieldCheck,
 } from '@tabler/icons-react'
 import {
   getInboxEvents,
   getInboxStats,
   verifyReconciliation,
-  syncAllKmsCertificates,
 } from '../api/client'
 import type { InboxEventItem, ReconciliationReport } from '../types/api'
 
@@ -48,7 +46,6 @@ export function InboxAuditPage() {
 
   const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null)
   const [reconLoading, setReconLoading] = useState(false)
-  const [syncLoading, setSyncLoading] = useState(false)
   const [searchSerial, setSearchSerial] = useState('')
   const [banner, setBanner] = useState<{ color: 'teal' | 'red'; message: string } | null>(null)
 
@@ -86,26 +83,6 @@ export function InboxAuditPage() {
     }
   }
 
-  const handleSyncAll = async () => {
-    setSyncLoading(true)
-    setBanner(null)
-    try {
-      const res = await syncAllKmsCertificates()
-      setBanner({ color: 'teal', message: `Sync queued: ${res.message}` })
-      setTimeout(() => {
-        loadData()
-        handleVerifyReconciliation()
-      }, 1200)
-    } catch (err: any) {
-      setBanner({
-        color: 'red',
-        message: 'Sync failed: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
-      })
-    } finally {
-      setSyncLoading(false)
-    }
-  }
-
   useEffect(() => {
     loadData()
     handleVerifyReconciliation()
@@ -119,11 +96,11 @@ export function InboxAuditPage() {
           <Group gap="xs">
             <IconInbox size={26} color="#818cf8" />
             <Title order={2} c="white">
-              Responder Inbox &amp; Reconciliation Audit
+              Responder Inbox &amp; Event Audit
             </Title>
           </Group>
           <Text c="dimmed" fz="sm" mt={4}>
-            Records all certificate status events received from RabbitMQ and verifies parity with the KMS source of truth.
+            Records all certificate status events received from RabbitMQ and verifies parity with the Responder revocation table.
           </Text>
         </div>
 
@@ -146,18 +123,7 @@ export function InboxAuditPage() {
             onClick={handleVerifyReconciliation}
             loading={reconLoading}
           >
-            Verify KMS Sync
-          </Button>
-
-          <Button
-            leftSection={<IconSend size={16} />}
-            variant="gradient"
-            gradient={{ from: 'indigo', to: 'violet' }}
-            size="sm"
-            onClick={handleSyncAll}
-            loading={syncLoading}
-          >
-            Sync All to Responder
+            Verify Inbox Parity
           </Button>
         </Group>
       </Group>
@@ -200,7 +166,7 @@ export function InboxAuditPage() {
         <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card padding="md" radius="md" style={{ backgroundColor: 'var(--mantine-color-dark-6)', border: '1px solid var(--mantine-color-dark-4)' }}>
             <Text fz="xs" tt="uppercase" fw={700} c="dimmed">
-              KMS Parity Status
+              Inbox Parity Status
             </Text>
             <Box mt={6}>
               {reconciliation?.synchronized ? (
@@ -242,7 +208,7 @@ export function InboxAuditPage() {
           color={reconciliation.synchronized ? 'teal' : 'red'}
           title={
             reconciliation.synchronized
-              ? 'Complete Synchronization Verified with KMS'
+              ? 'Complete Synchronization Verified (RabbitMQ Inbox ↔ Responder DB)'
               : 'Reconciliation Discrepancy Detected'
           }
           radius="md"
@@ -251,11 +217,11 @@ export function InboxAuditPage() {
           <Group justify="space-between" align="center" wrap="wrap">
             <Text fz="sm">
               {reconciliation.synchronized
-                ? `All ${reconciliation.kmsTotal} KMS certificates exist in the Responder database with matching statuses.`
+                ? `All ${reconciliation.kmsTotal} certificate streams from RabbitMQ exist in the Responder database with matching statuses.`
                 : `${reconciliation.missingCount} certificates are missing in Responder, and ${reconciliation.mismatchCount} have mismatched statuses.`}
             </Text>
             <Text fz="xs" c="dimmed">
-              Verified: {new Date(reconciliation.verifiedAt).toLocaleTimeString()} · KMS: {reconciliation.kmsTotal} · Responder: {reconciliation.responderTotal} · Matched: {reconciliation.matchedCount}
+              Verified: {new Date(reconciliation.verifiedAt).toLocaleTimeString()} · Inbox Certs: {reconciliation.kmsTotal} · Responder DB: {reconciliation.responderTotal} · Matched: {reconciliation.matchedCount}
             </Text>
           </Group>
         </Alert>
