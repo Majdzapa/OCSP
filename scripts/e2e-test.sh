@@ -270,14 +270,18 @@ echo "${CLIENT_CHECK_NONCE}" | grep -q '"nonceEchoed"' || fail "Test j: Client c
 pass "Test j: Standalone OCSP Client verified (Web UI 200, Nonce-Free check OK, Nonce Echo check OK)"
 
 # -----------------------------------------------------------------------------
-# Test k: KMS Simulator Web Interface
+# Test k: KMS Simulator Dedicated Web UI (kms-console) & API
 # -----------------------------------------------------------------------------
-info "Test k: Verifying KMS Simulator Web UI..."
-KMS_WEB_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090/")
-if [ "${KMS_WEB_HTTP}" -ne 200 ]; then
-    fail "Test k: KMS web interface returned ${KMS_WEB_HTTP} instead of 200!"
+info "Test k: Verifying KMS Simulator Console UI (http://localhost:3001) and API..."
+KMS_UI_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3001/")
+if [ "${KMS_UI_HTTP}" -ne 200 ]; then
+    fail "Test k: KMS Console UI (http://localhost:3001/) returned ${KMS_UI_HTTP} instead of 200!"
 fi
-pass "Test k: KMS Simulator Web UI verified (HTTP 200)"
+KMS_API_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3001/api/kms/certificates")
+if [ "${KMS_API_HTTP}" -ne 200 ]; then
+    fail "Test k: KMS Console API proxy (/api/kms/certificates) returned ${KMS_API_HTTP} instead of 200!"
+fi
+pass "Test k: KMS Simulator Console UI (http://localhost:3001) and API proxy verified (HTTP 200)"
 
 # -----------------------------------------------------------------------------
 # Test l: KMS Status Update, Responder Inbox Table, and Parity Reconciliation
