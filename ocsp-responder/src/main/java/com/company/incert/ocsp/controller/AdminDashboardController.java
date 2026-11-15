@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -30,6 +31,10 @@ public class AdminDashboardController {
     private final CertificateStatusService statusService;
     private final OcspSigner ocspSigner;
     private final MeterRegistry meterRegistry;
+
+    private final AtomicLong lastTimerCount = new AtomicLong(0);
+    private final AtomicLong lastSampleNanos = new AtomicLong(System.nanoTime());
+    private volatile double lastRollingRps = 0.0;
 
     @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
     private boolean tlsEnabled;
@@ -69,6 +74,7 @@ public class AdminDashboardController {
             Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
             Map.entry("avgSigningLatencyMs", avgLatencyMs),
             Map.entry("requestsPerSecond", requestsPerSecond),
+            Map.entry("totalRequests", totalRequests),
             Map.entry("errorRate", errorRate),
             Map.entry("errorCount", errorCount),
             Map.entry("ocspSigningCertDaysRemaining", signingCertDaysLeft),
@@ -109,15 +115,33 @@ public class AdminDashboardController {
         }
     }
 
-    private double getRequestsPerSecond(String name) {
+    private synchronized double getRequestsPerSecond(String name) {
         try {
             Timer timer = meterRegistry.find(name).timer();
-            if (timer == null || timer.count() == 0) {
+            if (timer == null) {
+                return 0.0;
+            }
+            long currentCount = timer.count();
+            long nowNanos = System.nanoTime();
+            long prevNanos = lastSampleNanos.get();
+            double elapsedSec = (nowNanos - prevNanos) / 1_000_000_000.0;
+
+            if (elapsedSec >= 2.0) {
+                long prevCount = lastTimerCount.getAndSet(currentCount);
+                lastSampleNanos.set(nowNanos);
+                long delta = Math.max(0L, currentCount - prevCount);
+                lastRollingRps = delta / elapsedSec;
+            }
+
+            if (lastRollingRps > 0.0) {
+                return lastRollingRps;
+            }
+            if (currentCount == 0) {
                 return 0.0;
             }
             var uptimeGauge = meterRegistry.find("process.uptime").gauge();
             double uptimeSec = uptimeGauge != null ? uptimeGauge.value() : 60.0;
-            return uptimeSec > 0 ? timer.count() / uptimeSec : 0.0;
+            return uptimeSec > 0 ? currentCount / uptimeSec : 0.0;
         } catch (Exception e) {
             return 0.0;
         }

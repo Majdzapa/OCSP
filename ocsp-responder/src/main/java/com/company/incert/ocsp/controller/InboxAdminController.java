@@ -120,10 +120,12 @@ public class InboxAdminController {
             List<RevocationStatus> responderCerts = statusService.findAll();
             HexFormat hex = HexFormat.of();
 
-            // Index responder certs by normalized serial
+            // Index responder certs by canonical hex serial (minimal two's-complement bytes)
             Map<String, RevocationStatus> responderMap = new HashMap<>();
             for (RevocationStatus r : responderCerts) {
-                String sHex = hex.formatHex(r.getSerialNumber()).toLowerCase();
+                String sHex = hex.formatHex(
+                    new java.math.BigInteger(1, r.getSerialNumber()).toByteArray()
+                ).toLowerCase();
                 responderMap.put(sHex, r);
             }
 
@@ -136,7 +138,11 @@ public class InboxAdminController {
             int matched = 0;
 
             for (Map<String, Object> kc : kmsCerts) {
-                String serialHex = String.valueOf(kc.get("serialNumberHex")).toLowerCase();
+                String rawSerialHex = String.valueOf(kc.get("serialNumberHex")).toLowerCase().replaceAll("[^0-9a-f]", "");
+                if (rawSerialHex.length() % 2 != 0) rawSerialHex = "0" + rawSerialHex;
+                String serialHex = hex.formatHex(
+                    new java.math.BigInteger(1, hex.parseHex(rawSerialHex)).toByteArray()
+                ).toLowerCase();
                 String kmsStatus = String.valueOf(kc.get("status"));
                 String kmsReason = kc.get("revocationReason") != null ? String.valueOf(kc.get("revocationReason")) : null;
 

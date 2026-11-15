@@ -131,8 +131,14 @@ export function DashboardPage() {
         {[
           {
             title: 'Requests / sec',
-            value: loading || !stats ? '—' : (stats.requestsPerSecond ?? 0).toFixed(1),
-            subtitle: 'Rolling average',
+            value: loading || !stats
+              ? '—'
+              : (stats.requestsPerSecond ?? 0) > 0 && (stats.requestsPerSecond ?? 0) < 0.1
+                ? (stats.requestsPerSecond ?? 0).toFixed(2)
+                : (stats.requestsPerSecond ?? 0).toFixed(1),
+            subtitle: stats?.totalRequests !== undefined
+              ? `Rolling avg (${stats.totalRequests.toLocaleString()} OCSP reqs)`
+              : 'Rolling average',
             accent: '#6366f1',
           },
           {

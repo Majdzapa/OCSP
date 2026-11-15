@@ -2,6 +2,7 @@
 
 export interface DashboardStats {
   requestsPerSecond: number
+  totalRequests?: number
   avgSigningLatencyMs: number
   errorRate: number
   revokedCertificates: number
