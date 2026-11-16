@@ -2,6 +2,9 @@ package com.company.incert.ocsp.controller;
 
 import com.company.incert.ocsp.config.OpenApiConfig;
 import com.company.incert.ocsp.dto.AddSigningCertificateRequest;
+import com.company.incert.ocsp.dto.GenerateCsrRequest;
+import com.company.incert.ocsp.dto.GenerateCsrResponse;
+import com.company.incert.ocsp.dto.HsmInfoDto;
 import com.company.incert.ocsp.dto.SigningCertificateDto;
 import com.company.incert.ocsp.service.SigningCertificateService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -75,6 +78,27 @@ public class SigningCertificateController {
             SigningCertificateDto activated = certificateService.activate(id);
             return ResponseEntity.ok(activated);
         } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Get HSM PKCS#11 configuration and token key labels", description = "Returns configured PKCS#11 library path, token label, slot index, and existing key labels")
+    @GetMapping("/hsm-info")
+    public ResponseEntity<HsmInfoDto> getHsmInfo() {
+        return ResponseEntity.ok(certificateService.getHsmInfo());
+    }
+
+    @Operation(summary = "Generate a PKCS#10 CSR from the HSM", description = "Generates (or reuses) a non-extractable keypair in the HSM and returns a PEM-encoded PKCS#10 CSR")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "CSR generated successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid request or HSM key conflict")
+    })
+    @PostMapping("/csr")
+    public ResponseEntity<?> generateCsr(@Valid @RequestBody GenerateCsrRequest request) {
+        try {
+            GenerateCsrResponse csr = certificateService.generateCsr(request);
+            return ResponseEntity.ok(csr);
+        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }

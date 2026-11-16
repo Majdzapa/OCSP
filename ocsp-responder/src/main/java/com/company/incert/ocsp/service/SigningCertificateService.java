@@ -1,10 +1,14 @@
 package com.company.incert.ocsp.service;
 
 import com.company.incert.ocsp.dto.AddSigningCertificateRequest;
+import com.company.incert.ocsp.dto.GenerateCsrRequest;
+import com.company.incert.ocsp.dto.GenerateCsrResponse;
+import com.company.incert.ocsp.dto.HsmInfoDto;
 import com.company.incert.ocsp.dto.SigningCertificateDto;
 import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.OcspSigner;
+import com.company.incert.ocsp.signing.Pkcs11OcspSigner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -107,6 +111,9 @@ public class SigningCertificateService {
                 ? request.keyLabel().trim()
                 : ocspSigner.getActiveKeyLabel();
 
+        // Import and bind the signed certificate to its HSM private key if running with PKCS#11
+        ocspSigner.importCertificateToToken(keyLabel, holder);
+
         SigningCertificate entity = SigningCertificate.builder()
                 .alias(request.alias().trim())
                 .keyLabel(keyLabel)
@@ -184,6 +191,51 @@ public class SigningCertificateService {
 
         repository.delete(cert);
         log.info("Deleted inactive signing certificate: id={}, alias='{}'", id, cert.getAlias());
+    }
+
+    public GenerateCsrResponse generateCsr(GenerateCsrRequest request) {
+        String alg = (request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
+                ? request.keyAlgorithm().trim().toUpperCase()
+                : "RSA";
+        int keySize = request.keySize() != null
+                ? request.keySize()
+                : ("EC".equals(alg) || "ECDSA".equals(alg) ? 256 : 3072);
+        boolean reuse = Boolean.TRUE.equals(request.reuseExistingKey());
+
+        String csrPem = ocspSigner.generateCsr(
+                request.keyLabel().trim(),
+                request.subjectDn().trim(),
+                alg,
+                keySize,
+                reuse
+        );
+        return new GenerateCsrResponse(
+                request.keyLabel().trim(),
+                request.subjectDn().trim(),
+                alg,
+                csrPem
+        );
+    }
+
+    public HsmInfoDto getHsmInfo() {
+        if (ocspSigner instanceof Pkcs11OcspSigner p11) {
+            return new HsmInfoDto(
+                    p11.type(),
+                    p11.getLibraryPath(),
+                    p11.getTokenLabel(),
+                    p11.getSlotListIndex(),
+                    p11.getActiveKeyLabel(),
+                    p11.listKeyLabels()
+            );
+        }
+        return new HsmInfoDto(
+                ocspSigner.type(),
+                "N/A (Software)",
+                "software",
+                0,
+                ocspSigner.getActiveKeyLabel(),
+                ocspSigner.listKeyLabels()
+        );
     }
 
     private SigningCertificateDto toDto(SigningCertificate entity) {

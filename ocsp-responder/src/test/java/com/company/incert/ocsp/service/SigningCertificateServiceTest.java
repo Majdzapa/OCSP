@@ -1,6 +1,9 @@
 package com.company.incert.ocsp.service;
 
 import com.company.incert.ocsp.dto.AddSigningCertificateRequest;
+import com.company.incert.ocsp.dto.GenerateCsrRequest;
+import com.company.incert.ocsp.dto.GenerateCsrResponse;
+import com.company.incert.ocsp.dto.HsmInfoDto;
 import com.company.incert.ocsp.dto.SigningCertificateDto;
 import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
@@ -83,6 +86,7 @@ class SigningCertificateServiceTest {
         assertThat(dto.alias()).isEqualTo("new-cert");
         assertThat(dto.keyLabel()).isEqualTo("ocsp-signing-key");
         assertThat(dto.active()).isFalse();
+        verify(ocspSigner).importCertificateToToken(eq("ocsp-signing-key"), any(X509CertificateHolder.class));
         verify(repository).save(any(SigningCertificate.class));
     }
 
@@ -135,6 +139,31 @@ class SigningCertificateServiceTest {
         assertThatThrownBy(() -> service.delete(1L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Cannot delete the currently active signing certificate");
+    }
+
+    @Test
+    void generateCsr_delegatesToOcspSigner() {
+        when(ocspSigner.generateCsr("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false))
+                .thenReturn("-----BEGIN CERTIFICATE REQUEST-----\nMII...\n-----END CERTIFICATE REQUEST-----\n");
+
+        var req = new GenerateCsrRequest("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
+        GenerateCsrResponse res = service.generateCsr(req);
+
+        assertThat(res.keyLabel()).isEqualTo("key-2");
+        assertThat(res.csrPem()).contains("BEGIN CERTIFICATE REQUEST");
+        verify(ocspSigner).generateCsr("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
+    }
+
+    @Test
+    void getHsmInfo_returnsTokenDetails() {
+        when(ocspSigner.type()).thenReturn("SOFTWARE");
+        when(ocspSigner.getActiveKeyLabel()).thenReturn("ocsp-signing-key");
+        when(ocspSigner.listKeyLabels()).thenReturn(java.util.List.of("ocsp-signing-key", "key-2"));
+
+        HsmInfoDto info = service.getHsmInfo();
+
+        assertThat(info.signerType()).isEqualTo("SOFTWARE");
+        assertThat(info.tokenAliases()).containsExactly("ocsp-signing-key", "key-2");
     }
 }
 

@@ -161,10 +161,12 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-incert}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8081/realms/incert/protocol/openid-connect/certs}
       HSM_ENABLED: "true"
-      HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
+      HSM_PKCS11_LIBRARY: ${HSM_PKCS11_LIBRARY:-/usr/lib/softhsm/libsofthsm2.so}
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
       HSM_PIN: ${HSM_PIN:-1234}
       HSM_KEY_LABEL: ${HSM_KEY_LABEL:-ocsp-signing-key}
+      HSM_SLOT_INDEX: ${HSM_SLOT_INDEX:-0}
+      HSM_CONFIG_PATH: ${HSM_CONFIG_PATH:-}
       SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
       PKI_DIR: /data/pki
     volumes:

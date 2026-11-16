@@ -205,3 +205,27 @@ export interface AddSigningCertificateRequest {
   certificatePem: string
   activateImmediately?: boolean
 }
+
+export interface HsmInfoDto {
+  signerType: string
+  pkcs11Library: string
+  tokenLabel: string
+  slotIndex: number
+  activeKeyLabel: string
+  tokenAliases: string[]
+}
+
+export interface GenerateCsrRequest {
+  keyLabel: string
+  subjectDn: string
+  keyAlgorithm: 'RSA' | 'EC'
+  keySize: number
+  reuseExistingKey: boolean
+}
+
+export interface GenerateCsrResponse {
+  keyLabel: string
+  subjectDn: string
+  keyAlgorithm: string
+  csrPem: string
+}

@@ -3,6 +3,8 @@ package com.company.incert.ocsp.signing;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.operator.ContentSigner;
 
+import java.util.List;
+
 /**
  * Cryptographic HSM signing adapter interface for OCSP responses.
  *
@@ -13,10 +15,6 @@ import org.bouncycastle.operator.ContentSigner;
  *   <li>{@link Pkcs11OcspSigner}: Hardware Security Module (HSM) / SoftHSM2 adapter using PKCS#11</li>
  *   <li>{@link SoftwareKeyOcspSigner}: In-memory software key adapter (dev/test fallback only)</li>
  * </ul>
- *
- * To connect to a different HSM (e.g. AWS CloudHSM, Azure Key Vault, HashiCorp Vault,
- * or Thales Luna), simply implement this interface as an adapter and register it as an
- * {@link OcspSigner} bean. The rest of the application remains completely untouched.
  */
 public interface OcspSigner {
 
@@ -42,4 +40,21 @@ public interface OcspSigner {
     default String getActiveKeyLabel() {
         return "ocsp-signing-key";
     }
+
+    /** Returns all key aliases/labels currently stored in the HSM token. */
+    default List<String> listKeyLabels() {
+        return List.of(getActiveKeyLabel());
+    }
+
+    /**
+     * Generates (or reuses) a keypair inside the HSM and returns a PEM-encoded PKCS#10 CSR.
+     */
+    default String generateCsr(String keyLabel, String subjectDn, String keyAlgorithm, int keySize, boolean reuseExistingKey) {
+        throw new UnsupportedOperationException("CSR generation is only supported when PKCS#11 HSM is enabled");
+    }
+
+    /**
+     * Imports a CA-signed X.509 certificate into the HSM token for the given key label.
+     */
+    default void importCertificateToToken(String keyLabel, X509CertificateHolder certificate) {}
 }

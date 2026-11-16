@@ -1,30 +1,49 @@
 package com.company.incert.ocsp.signing;
 
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.StringWriter;
+import java.math.BigInteger;
 import java.security.*;
+import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * PKCS#11 (SoftHSM2) backed OcspSigner.
+ * PKCS#11 (SoftHSM2 / Hardware HSM) backed OcspSigner.
  * Accesses keys in the token using SunPKCS11 provider.
  * Private key is non-extractable and never leaves the token.
- * Supports dynamic switching of the active signing certificate/key at runtime.
+ * Supports keypair generation, PKCS#10 CSR creation, certificate import,
+ * and dynamic switching of the active signing certificate/key at runtime.
  */
 @Slf4j
 public class Pkcs11OcspSigner implements OcspSigner {
 
+    public static final String DEFAULT_PKCS11_LIBRARY = "/usr/lib/softhsm/libsofthsm2.so";
+
+    private final String libraryPath;
     private final String pkcs11ConfigPath;
     private final String tokenLabel;
+    private final int slotListIndex;
     private final char[] pin;
     private volatile String keyLabel;
 
@@ -38,25 +57,27 @@ public class Pkcs11OcspSigner implements OcspSigner {
     }
 
     public Pkcs11OcspSigner(String libraryPath, String tokenLabel, String pin, String keyLabel, int slotListIndex, String configPath) {
+        this.libraryPath = (libraryPath != null && !libraryPath.isBlank()) ? libraryPath.trim() : DEFAULT_PKCS11_LIBRARY;
         this.tokenLabel = tokenLabel;
+        this.slotListIndex = slotListIndex;
         this.pin = pin != null ? pin.toCharArray() : new char[0];
         this.keyLabel = keyLabel;
         this.pkcs11ConfigPath = (configPath != null && !configPath.isBlank())
-                ? configPath
-                : createConfigFileIfNecessary(libraryPath, tokenLabel, slotListIndex);
+                ? configPath.trim()
+                : createConfigFileIfNecessary(this.libraryPath, slotListIndex);
         load();
     }
 
-    private String createConfigFileIfNecessary(String libraryPath, String tokenLabel, int slotListIndex) {
-        if (libraryPath != null && libraryPath.endsWith(".cfg")) {
-            return libraryPath;
+    private String createConfigFileIfNecessary(String resolvedLibraryPath, int slotListIndex) {
+        if (resolvedLibraryPath.endsWith(".cfg")) {
+            return resolvedLibraryPath;
         }
         try {
             File cfgFile = File.createTempFile("sunpkcs11-", ".cfg");
             cfgFile.deleteOnExit();
             try (FileWriter fw = new FileWriter(cfgFile)) {
                 fw.write("name = SoftHSM\n");
-                fw.write("library = " + (libraryPath != null ? libraryPath : "/usr/lib/softhsm/libsofthsm2.so") + "\n");
+                fw.write("library = " + resolvedLibraryPath + "\n");
                 fw.write("slotListIndex = " + slotListIndex + "\n");
             }
             return cfgFile.getAbsolutePath();
@@ -66,10 +87,22 @@ public class Pkcs11OcspSigner implements OcspSigner {
         }
     }
 
+    public String getLibraryPath() {
+        return libraryPath;
+    }
+
+    public String getTokenLabel() {
+        return tokenLabel;
+    }
+
+    public int getSlotListIndex() {
+        return slotListIndex;
+    }
+
     public synchronized void load() {
         try {
-            log.info("Initializing PKCS#11 provider with config={}, token={}, keyLabel={}",
-                pkcs11ConfigPath, tokenLabel, keyLabel);
+            log.info("Initializing PKCS#11 provider with config={}, library={}, token={}, keyLabel={}",
+                pkcs11ConfigPath, libraryPath, tokenLabel, keyLabel);
 
             Provider sunPkcs11 = Security.getProvider("SunPKCS11");
             if (sunPkcs11 == null) {
@@ -89,6 +122,145 @@ public class Pkcs11OcspSigner implements OcspSigner {
     }
 
     @Override
+    public synchronized List<String> listKeyLabels() {
+        if (this.keyStore == null) {
+            return List.of();
+        }
+        try {
+            return Collections.list(this.keyStore.aliases());
+        } catch (KeyStoreException e) {
+            log.warn("Failed to list PKCS#11 aliases: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public synchronized String generateCsr(String targetKeyLabel, String subjectDn, String keyAlgorithm, int keySize, boolean reuseExistingKey) {
+        if (targetKeyLabel == null || targetKeyLabel.isBlank()) {
+            throw new IllegalArgumentException("Key label is required");
+        }
+        if (subjectDn == null || subjectDn.isBlank()) {
+            throw new IllegalArgumentException("Subject DN is required");
+        }
+        String cleanLabel = targetKeyLabel.trim();
+        String alg = (keyAlgorithm != null && !keyAlgorithm.isBlank()) ? keyAlgorithm.trim().toUpperCase() : "RSA";
+
+        try {
+            if (this.keyStore == null) {
+                load();
+            }
+
+            PrivateKey privateKey;
+            PublicKey publicKey;
+            String sigAlg;
+
+            boolean exists = keyStore.containsAlias(cleanLabel);
+            if (exists) {
+                if (!reuseExistingKey) {
+                    throw new IllegalArgumentException("Key label '" + cleanLabel + "' already exists in HSM token. Choose a new label or enable reuse.");
+                }
+                privateKey = (PrivateKey) keyStore.getKey(cleanLabel, pin);
+                Certificate existingCert = keyStore.getCertificate(cleanLabel);
+                if (privateKey == null || existingCert == null) {
+                    throw new IllegalStateException("Existing key or certificate for '" + cleanLabel + "' could not be loaded from HSM token");
+                }
+                publicKey = existingCert.getPublicKey();
+                sigAlg = "EC".equalsIgnoreCase(privateKey.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA";
+                log.info("Reusing existing HSM keypair '{}' (algorithm={}) for CSR generation", cleanLabel, privateKey.getAlgorithm());
+            } else {
+                KeyPair kp;
+                if ("EC".equals(alg) || "ECDSA".equals(alg)) {
+                    String curve = (keySize == 384) ? "secp384r1" : "secp256r1";
+                    KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", this.provider);
+                    kpg.initialize(new ECGenParameterSpec(curve));
+                    kp = kpg.generateKeyPair();
+                    sigAlg = "SHA256withECDSA";
+                } else {
+                    int rsaBits = (keySize == 2048 || keySize == 3072 || keySize == 4096) ? keySize : 3072;
+                    KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", this.provider);
+                    kpg.initialize(rsaBits);
+                    kp = kpg.generateKeyPair();
+                    sigAlg = "SHA256withRSA";
+                }
+                privateKey = kp.getPrivate();
+                publicKey = kp.getPublic();
+
+                // SunPKCS11 requires a certificate entry alongside a PrivateKey to persist the alias in KeyStore
+                X509Certificate placeholder = buildSelfSignedPlaceholder(subjectDn.trim(), publicKey, privateKey, sigAlg);
+                keyStore.setKeyEntry(cleanLabel, privateKey, null, new Certificate[]{placeholder});
+                log.info("Generated new HSM keypair '{}' (alg={}, sigAlg={}) in token '{}'", cleanLabel, alg, sigAlg, tokenLabel);
+            }
+
+            ContentSigner csrSigner = new JcaContentSignerBuilder(sigAlg)
+                    .setProvider(this.provider)
+                    .build(privateKey);
+
+            PKCS10CertificationRequest csr = new JcaPKCS10CertificationRequestBuilder(
+                    new X500Name(subjectDn.trim()),
+                    publicKey
+            ).build(csrSigner);
+
+            try (StringWriter sw = new StringWriter(); JcaPEMWriter pw = new JcaPEMWriter(sw)) {
+                pw.writeObject(csr);
+                pw.flush();
+                return sw.toString();
+            }
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to generate CSR in HSM for keyLabel='{}': {}", cleanLabel, e.getMessage(), e);
+            throw new RuntimeException("Failed to generate CSR in HSM: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public synchronized void importCertificateToToken(String targetKeyLabel, X509CertificateHolder certificateHolder) {
+        if (targetKeyLabel == null || targetKeyLabel.isBlank() || certificateHolder == null) {
+            return;
+        }
+        String cleanLabel = targetKeyLabel.trim();
+        try {
+            if (this.keyStore == null) {
+                load();
+            }
+            PrivateKey privateKey = (PrivateKey) keyStore.getKey(cleanLabel, pin);
+            if (privateKey == null) {
+                throw new IllegalArgumentException("Private key '" + cleanLabel + "' not found in HSM token. Available keys: " + listKeyLabels());
+            }
+
+            X509Certificate newCert = new JcaX509CertificateConverter().getCertificate(certificateHolder);
+            Certificate existingCert = keyStore.getCertificate(cleanLabel);
+            if (existingCert != null && !Arrays.equals(existingCert.getPublicKey().getEncoded(), newCert.getPublicKey().getEncoded())) {
+                throw new IllegalArgumentException("Imported certificate public key does not match the HSM private key '" + cleanLabel + "'");
+            }
+
+            keyStore.setKeyEntry(cleanLabel, privateKey, null, new Certificate[]{newCert});
+            log.info("Imported signed certificate (serial={}) into HSM token under keyLabel='{}'",
+                    certificateHolder.getSerialNumber().toString(16), cleanLabel);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to import certificate into HSM token for keyLabel='{}': {}", cleanLabel, e.getMessage(), e);
+            throw new RuntimeException("Failed to import certificate into HSM token: " + e.getMessage(), e);
+        }
+    }
+
+    private X509Certificate buildSelfSignedPlaceholder(String subjectDn, PublicKey pubKey, PrivateKey privKey, String sigAlg) throws Exception {
+        X500Name name = new X500Name(subjectDn);
+        Instant now = Instant.now();
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                name,
+                BigInteger.valueOf(System.nanoTime()),
+                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                Date.from(now.plus(30, ChronoUnit.DAYS)),
+                name,
+                SubjectPublicKeyInfo.getInstance(pubKey.getEncoded())
+        );
+        ContentSigner signer = new JcaContentSignerBuilder(sigAlg).setProvider(this.provider).build(privKey);
+        return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
+    }
+
+    @Override
     public synchronized void updateActiveCertificate(String newKeyLabel, X509CertificateHolder certificate) {
         if (newKeyLabel != null && !newKeyLabel.isBlank()) {
             this.keyLabel = newKeyLabel;
@@ -104,13 +276,13 @@ public class Pkcs11OcspSigner implements OcspSigner {
             PrivateKey privateKey = (PrivateKey) keyStore.getKey(this.keyLabel, pin);
             if (privateKey == null) {
                 log.warn("Key '{}' not found in PKCS#11 keystore. Available aliases: {}",
-                    this.keyLabel, java.util.Collections.list(keyStore.aliases()));
+                    this.keyLabel, Collections.list(keyStore.aliases()));
                 throw new IllegalStateException("Key '" + this.keyLabel + "' not found in PKCS#11 keystore");
             }
 
             X509CertificateHolder holder = certificate;
             if (holder == null) {
-                java.security.cert.Certificate cert = keyStore.getCertificate(this.keyLabel);
+                Certificate cert = keyStore.getCertificate(this.keyLabel);
                 if (cert == null) {
                     throw new IllegalStateException("Certificate for key '" + this.keyLabel + "' not found in PKCS#11 keystore");
                 }

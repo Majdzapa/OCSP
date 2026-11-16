@@ -13,6 +13,9 @@ import type {
   AuthConfig,
   SigningCertificateDto,
   AddSigningCertificateRequest,
+  HsmInfoDto,
+  GenerateCsrRequest,
+  GenerateCsrResponse,
 } from '../types/api'
 
 // API client for ocsp-responder (protected with X-API-KEY, Basic Auth, or Keycloak Bearer token)
@@ -180,3 +183,9 @@ export const activateSigningCertificate = (id: number): Promise<SigningCertifica
 
 export const deleteSigningCertificate = (id: number): Promise<void> =>
   api.delete(`/signing-certificates/${id}`).then((r) => r.data)
+
+export const getHsmInfo = (): Promise<HsmInfoDto> =>
+  api.get('/signing-certificates/hsm-info').then((r) => r.data)
+
+export const generateSigningCsr = (req: GenerateCsrRequest): Promise<GenerateCsrResponse> =>
+  api.post('/signing-certificates/csr', req).then((r) => r.data)
