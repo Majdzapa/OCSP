@@ -43,7 +43,7 @@ public class SigningConfig {
         }
     }
 
-    @Value("${hsm.pkcs11-library:/usr/lib/softhsm/libsofthsm2.so}")
+    @Value("${hsm.pkcs11-library:}")
     private String pkcs11Library;
 
     @Value("${hsm.token-label:ocsp-signing}")

@@ -48,8 +48,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public class Pkcs11OcspSigner implements OcspSigner {
 
-    public static final String DEFAULT_PKCS11_LIBRARY = "/usr/lib/softhsm/libsofthsm2.so";
-
     private final String libraryPath;
     private final String pkcs11ConfigPath;
     private final String tokenLabel;
@@ -68,31 +66,40 @@ public class Pkcs11OcspSigner implements OcspSigner {
     }
 
     public Pkcs11OcspSigner(String libraryPath, String tokenLabel, String pin, String keyLabel, int slotListIndex, String configPath) {
-        String rawLibrary = (libraryPath != null && !libraryPath.isBlank()) ? libraryPath.trim() : DEFAULT_PKCS11_LIBRARY;
-        this.libraryPath = resolveResourcePath(rawLibrary, ".so");
+        boolean hasConfig = configPath != null && !configPath.isBlank();
+        boolean hasLibrary = libraryPath != null && !libraryPath.isBlank();
+        if (!hasConfig && !hasLibrary) {
+            throw new IllegalArgumentException("hsm.pkcs11-library or hsm.config-path must be configured");
+        }
+        this.libraryPath = hasLibrary ? resolveResourcePath(libraryPath.trim()) : null;
         this.tokenLabel = tokenLabel;
         this.slotListIndex = slotListIndex;
         this.pin = pin != null ? pin.toCharArray() : new char[0];
         this.keyLabel = keyLabel;
-        this.pkcs11ConfigPath = (configPath != null && !configPath.isBlank())
-                ? resolveResourcePath(configPath.trim(), ".cfg")
-                : createConfigFileIfNecessary(this.libraryPath, slotListIndex);
+        this.pkcs11ConfigPath = hasConfig
+                ? resolveResourcePath(configPath.trim())
+                : createConfigFile(this.libraryPath, slotListIndex);
         load();
     }
 
-    private static String resolveResourcePath(String path, String suffix) {
+    private static String resolveResourcePath(String path) {
         if (!path.startsWith("classpath:")) {
             return path;
         }
         String resourceName = path.substring("classpath:".length()).replaceFirst("^/+", "");
+        String fileName = resourceName.contains("/")
+                ? resourceName.substring(resourceName.lastIndexOf('/') + 1)
+                : resourceName;
         try (InputStream is = Pkcs11OcspSigner.class.getClassLoader().getResourceAsStream(resourceName)) {
             if (is == null) {
                 throw new IllegalStateException("Classpath resource not found: " + path);
             }
-            File tempFile = File.createTempFile("pkcs11-res-", suffix);
-            tempFile.deleteOnExit();
-            Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            return tempFile.getAbsolutePath();
+            java.nio.file.Path tempDir = Files.createTempDirectory("pkcs11-res-");
+            tempDir.toFile().deleteOnExit();
+            java.nio.file.Path targetFile = tempDir.resolve(fileName);
+            targetFile.toFile().deleteOnExit();
+            Files.copy(is, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            return targetFile.toAbsolutePath().toString();
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
@@ -100,10 +107,7 @@ public class Pkcs11OcspSigner implements OcspSigner {
         }
     }
 
-    private String createConfigFileIfNecessary(String resolvedLibraryPath, int slotListIndex) {
-        if (resolvedLibraryPath.endsWith(".cfg")) {
-            return resolvedLibraryPath;
-        }
+    private String createConfigFile(String resolvedLibraryPath, int slotListIndex) {
         try {
             File cfgFile = File.createTempFile("sunpkcs11-", ".cfg");
             cfgFile.deleteOnExit();
@@ -114,8 +118,7 @@ public class Pkcs11OcspSigner implements OcspSigner {
             }
             return cfgFile.getAbsolutePath();
         } catch (Exception e) {
-            log.warn("Could not create temp PKCS11 config: {}", e.getMessage());
-            return "/etc/softhsm2/pkcs11.cfg";
+            throw new IllegalStateException("Could not create SunPKCS11 config for library " + resolvedLibraryPath, e);
         }
     }
 
