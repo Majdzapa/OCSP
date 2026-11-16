@@ -20,8 +20,11 @@ import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.InputStream;
 import java.io.StringWriter;
 import java.math.BigInteger;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
@@ -65,15 +68,36 @@ public class Pkcs11OcspSigner implements OcspSigner {
     }
 
     public Pkcs11OcspSigner(String libraryPath, String tokenLabel, String pin, String keyLabel, int slotListIndex, String configPath) {
-        this.libraryPath = (libraryPath != null && !libraryPath.isBlank()) ? libraryPath.trim() : DEFAULT_PKCS11_LIBRARY;
+        String rawLibrary = (libraryPath != null && !libraryPath.isBlank()) ? libraryPath.trim() : DEFAULT_PKCS11_LIBRARY;
+        this.libraryPath = resolveResourcePath(rawLibrary, ".so");
         this.tokenLabel = tokenLabel;
         this.slotListIndex = slotListIndex;
         this.pin = pin != null ? pin.toCharArray() : new char[0];
         this.keyLabel = keyLabel;
         this.pkcs11ConfigPath = (configPath != null && !configPath.isBlank())
-                ? configPath.trim()
+                ? resolveResourcePath(configPath.trim(), ".cfg")
                 : createConfigFileIfNecessary(this.libraryPath, slotListIndex);
         load();
+    }
+
+    private static String resolveResourcePath(String path, String suffix) {
+        if (!path.startsWith("classpath:")) {
+            return path;
+        }
+        String resourceName = path.substring("classpath:".length()).replaceFirst("^/+", "");
+        try (InputStream is = Pkcs11OcspSigner.class.getClassLoader().getResourceAsStream(resourceName)) {
+            if (is == null) {
+                throw new IllegalStateException("Classpath resource not found: " + path);
+            }
+            File tempFile = File.createTempFile("pkcs11-res-", suffix);
+            tempFile.deleteOnExit();
+            Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            return tempFile.getAbsolutePath();
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to extract classpath resource " + path + ": " + e.getMessage(), e);
+        }
     }
 
     private String createConfigFileIfNecessary(String resolvedLibraryPath, int slotListIndex) {
