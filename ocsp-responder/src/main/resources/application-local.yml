@@ -1,0 +1,49 @@
+# =============================================================================
+# Local Development Profile (run ocsp-responder directly on macOS host)
+# Activate with: --spring.profiles.active=local
+#   or: mvn -f ocsp-responder/pom.xml spring-boot:run -Dspring-boot.run.profiles=local
+# =============================================================================
+
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mariadb://localhost:3307/ocsp
+    username: ocsp_app
+    password: changeme
+
+  flyway:
+    user: root
+    password: rootpassword
+
+  rabbitmq:
+    host: localhost
+    port: 5671
+    username: ocsp_amqp
+    password: changeme
+    ssl:
+      verify-hostname: false
+
+rabbitmq:
+  tls:
+    enabled: true
+
+security:
+  auth-mode: KEYCLOAK
+
+keycloak:
+  auth-server-url: http://localhost:8081
+  public-url: http://localhost:8081
+
+hsm:
+  enabled: true
+  pkcs11-library: classpath:hsm/libsofthsm2.so
+  token-label: ocsp-signing
+  slot-index: 0
+  pin: "1234"
+  key-label: ocsp-signing-key
+
+logging:
+  level:
+    com.company.incert.ocsp: DEBUG
