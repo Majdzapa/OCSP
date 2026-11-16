@@ -31,7 +31,7 @@ spring-boot-devtools.properties
 !certs/rabbitmq/*
 !kms-simulator/src/main/resources/certs/**
 !ocsp-responder/src/main/resources/certs/**
-!data/pki/*.pem
+!data/pki/*
 
 # Node / React & Antora build output
 ocsp-console/node_modules/
@@ -43,7 +43,6 @@ build/
 
 # Docker volumes
 mariadb-data/
-data/pki/
 
 # Logs
 *.log

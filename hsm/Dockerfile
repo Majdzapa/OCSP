@@ -31,7 +31,7 @@ ENV PKI_DIR=/data/pki
 WORKDIR /var/lib/softhsm
 
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=6 \
-  CMD pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label "${HSM_TOKEN_LABEL}" --login --pin "${HSM_PIN}" --list-objects 2>/dev/null | grep -q "${HSM_KEY_LABEL}" || exit 1
+  CMD pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label "${HSM_TOKEN_LABEL}" --login --pin "${HSM_PIN}" --list-objects --type cert 2>/dev/null | grep -q "${HSM_KEY_LABEL}" || exit 1
 
 ENTRYPOINT ["/scripts/init-hsm.sh"]
 

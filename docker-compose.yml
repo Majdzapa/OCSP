@@ -105,7 +105,7 @@ services:
       - hsm-conf:/etc/softhsm2
       - ./data/pki:/data/pki
     healthcheck:
-      test: ["CMD-SHELL", "pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label ocsp-signing --login --pin 1234 --list-objects 2>/dev/null | grep -q ocsp-signing-key || exit 1"]
+      test: ["CMD-SHELL", "pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label ocsp-signing --login --pin 1234 --list-objects --type cert 2>/dev/null | grep -q ocsp-signing-key || exit 1"]
       start_period: 15s
       interval: 5s
       timeout: 5s
