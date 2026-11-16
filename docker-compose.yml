@@ -50,7 +50,6 @@ services:
       - "3307:3306"
     volumes:
       - mariadb-data:/var/lib/mysql
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       start_period: 30s

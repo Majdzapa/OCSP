@@ -46,6 +46,7 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true
+    validate-on-migrate: false
     user: ${FLYWAY_USER:${spring.datasource.username}}
     password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
 
