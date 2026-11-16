@@ -1,6 +1,7 @@
 package com.company.incert.ocsp.signing;
 
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.ocsp.CertificateID;
 import org.bouncycastle.operator.ContentSigner;
 
 import java.util.List;
@@ -57,4 +58,22 @@ public interface OcspSigner {
      * Imports a CA-signed X.509 certificate into the HSM token for the given key label.
      */
     default void importCertificateToToken(String keyLabel, X509CertificateHolder certificate) {}
+
+    /**
+     * Synchronizes the full list of non-expired registered signing certificates
+     * so the signer can automatically select the matching CA's signing certificate per request.
+     */
+    default void syncRegisteredSigners(List<RegisteredSigner> signers) {}
+
+    /**
+     * Selects the appropriate signing certificate chain and ContentSigner for the given OCSP CertID
+     * (matching the issuing CA), falling back to the default active signer if no CA-specific match exists.
+     */
+    default SigningSelection selectSigner(CertificateID certId) throws Exception {
+        return new SigningSelection(getSignerChain(), createContentSigner());
+    }
+
+    record RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred) {}
+
+    record SigningSelection(X509CertificateHolder[] chain, ContentSigner contentSigner) {}
 }

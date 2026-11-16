@@ -79,6 +79,7 @@ public class SigningCertificateService {
                 log.warn("Failed to synchronize active certificate from DB with signer: {}", e.getMessage());
             }
         }
+        syncAllSignersWithHsm();
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +136,7 @@ public class SigningCertificateService {
             return activate(saved.getId());
         }
 
+        syncAllSignersWithHsmAfterCommit();
         return toDto(saved);
     }
 
@@ -166,11 +168,13 @@ public class SigningCertificateService {
                 @Override
                 public void afterCommit() {
                     ocspSigner.updateActiveCertificate(keyLabel, holder);
+                    syncAllSignersWithHsm();
                     log.info("Signer updated after DB commit: keyLabel={}", keyLabel);
                 }
             });
         } else {
             ocspSigner.updateActiveCertificate(keyLabel, holder);
+            syncAllSignersWithHsm();
             log.info("Signer updated synchronously (no active transaction): keyLabel={}", keyLabel);
         }
 
@@ -190,7 +194,46 @@ public class SigningCertificateService {
         }
 
         repository.delete(cert);
+        syncAllSignersWithHsmAfterCommit();
         log.info("Deleted inactive signing certificate: id={}, alias='{}'", id, cert.getAlias());
+    }
+
+    private void syncAllSignersWithHsmAfterCommit() {
+        List<OcspSigner.RegisteredSigner> snapshot = buildRegisteredSignerSnapshot();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    ocspSigner.syncRegisteredSigners(snapshot);
+                }
+            });
+        } else {
+            ocspSigner.syncRegisteredSigners(snapshot);
+        }
+    }
+
+    private void syncAllSignersWithHsm() {
+        ocspSigner.syncRegisteredSigners(buildRegisteredSignerSnapshot());
+    }
+
+    private List<OcspSigner.RegisteredSigner> buildRegisteredSignerSnapshot() {
+        Instant now = Instant.now();
+        return repository.findAll().stream()
+                .filter(c -> c.getNotAfter() == null || !now.isAfter(c.getNotAfter()))
+                .map(c -> {
+                    try {
+                        return new OcspSigner.RegisteredSigner(
+                                c.getKeyLabel(),
+                                parsePem(c.getCertificatePem()),
+                                c.isActive()
+                        );
+                    } catch (Exception e) {
+                        log.warn("Skipping unparseable signing certificate alias='{}': {}", c.getAlias(), e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
     }
 
     public GenerateCsrResponse generateCsr(GenerateCsrRequest request) {

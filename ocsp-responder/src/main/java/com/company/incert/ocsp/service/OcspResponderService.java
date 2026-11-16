@@ -92,7 +92,9 @@ public class OcspResponderService {
         Date thisUpdate = Date.from(now);
         Date nextUpdate = Date.from(now.plus(nextUpdateWindow));
 
-        X509CertificateHolder[] chain = signer.getSignerChain();
+        // Select the signing certificate matching the issuing CA of the request (multi-CA RFC 6960 §4.2.2.2)
+        OcspSigner.SigningSelection selection = signer.selectSigner(requests[0].getCertID());
+        X509CertificateHolder[] chain = selection.chain();
         BasicOCSPRespBuilder builder = new BasicOCSPRespBuilder(new RespID(chain[0].getSubject()));
 
         for (Req req : requests) {
@@ -114,7 +116,7 @@ public class OcspResponderService {
             meterRegistry.counter("ocsp.request.nonce", "present", "false").increment();
         }
 
-        BasicOCSPResp basicResp = builder.build(signer.createContentSigner(), chain, thisUpdate);
+        BasicOCSPResp basicResp = builder.build(selection.contentSigner(), chain, thisUpdate);
         return new OCSPRespBuilder().build(OCSPRespBuilder.SUCCESSFUL, basicResp).getEncoded();
     }
 

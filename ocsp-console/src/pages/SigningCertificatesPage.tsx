@@ -228,8 +228,9 @@ export const SigningCertificatesPage: React.FC = () => {
               Signing Certificates &amp; HSM Keys
             </Title>
             <Text c="dimmed" size="sm">
-              Generate CSRs directly inside the PKCS#11 HSM, import multiple CA-signed certificates,
-              and switch the active OCSP signer without restarting.
+              Generate CSRs directly inside the PKCS#11 HSM and import multiple CA-signed certificates.
+              Each OCSP request automatically selects the signing certificate matching the target certificate&apos;s issuing CA
+              (with the Default Active certificate as fallback).
             </Text>
           </Box>
           <Group>
@@ -404,11 +405,15 @@ export const SigningCertificatesPage: React.FC = () => {
                       <Table.Td>
                         {cert.active ? (
                           <Badge color="green" variant="filled">
-                            ACTIVE
+                            DEFAULT ACTIVE
+                          </Badge>
+                        ) : cert.expired ? (
+                          <Badge color="red" variant="light">
+                            EXPIRED
                           </Badge>
                         ) : (
-                          <Badge color="gray" variant="light">
-                            STANDBY
+                          <Badge color="indigo" variant="light">
+                            AUTO-MATCH (CA)
                           </Badge>
                         )}
                       </Table.Td>
