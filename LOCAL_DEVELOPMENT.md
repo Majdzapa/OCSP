@@ -174,3 +174,4 @@ Exposed local endpoints used by `application-local.yml`:
 | `CKR_TOKEN_NOT_PRESENT` / slot 0 uninitialized | SoftHSM2 token `ocsp-signing` was not initialized | Run `softhsm2-util --init-token --free --label ocsp-signing --so-pin 12345678 --pin 1234` |
 | `Response Verify Failure` (`rsa_ossl_public_decrypt`) | `signing_certificates` in MariaDB still holds the Docker HSM container's certificate while running against a different local SoftHSM2 keypair | Generate a CSR (`reuseExistingKey=true`) and import + activate the new certificate in the UI, or reset DB (`docker compose down -v mariadb`) |
 | `dlopen` / `UnsatisfiedLinkError` on Windows | `libsofthsm2.so` is a macOS binary | Override `hsm.pkcs11-library` to `C:/SoftHSM2/lib/softhsm2-x64.dll` |
+
