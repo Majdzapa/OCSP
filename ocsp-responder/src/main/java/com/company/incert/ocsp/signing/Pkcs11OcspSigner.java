@@ -149,6 +149,12 @@ public class Pkcs11OcspSigner implements OcspSigner {
             this.keyStore = KeyStore.getInstance("PKCS11", this.provider);
             this.keyStore.load(null, pin);
 
+            if (!keyStore.containsAlias(this.keyLabel) || keyStore.getKey(this.keyLabel, pin) == null) {
+                log.info("No pre-existing key '{}' found in HSM token '{}'; generating RSA 3072 keypair on initialization...",
+                        this.keyLabel, tokenLabel);
+                generateAndStoreKeyPair(this.keyLabel, "CN=Incert OCSP Signer,O=Incert,C=CH", "RSA", 3072);
+            }
+
             updateActiveCertificate(this.keyLabel, null);
         } catch (Exception e) {
             log.error("Failed to load PKCS#11 signing key: {}", e.getMessage(), e);
@@ -203,27 +209,10 @@ public class Pkcs11OcspSigner implements OcspSigner {
                 sigAlg = "EC".equalsIgnoreCase(privateKey.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA";
                 log.info("Reusing existing HSM keypair '{}' (algorithm={}) for CSR generation", cleanLabel, privateKey.getAlgorithm());
             } else {
-                KeyPair kp;
-                if ("EC".equals(alg) || "ECDSA".equals(alg)) {
-                    String curve = (keySize == 384) ? "secp384r1" : "secp256r1";
-                    KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", this.provider);
-                    kpg.initialize(new ECGenParameterSpec(curve));
-                    kp = kpg.generateKeyPair();
-                    sigAlg = "SHA256withECDSA";
-                } else {
-                    int rsaBits = (keySize == 2048 || keySize == 3072 || keySize == 4096) ? keySize : 3072;
-                    KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", this.provider);
-                    kpg.initialize(rsaBits);
-                    kp = kpg.generateKeyPair();
-                    sigAlg = "SHA256withRSA";
-                }
-                privateKey = kp.getPrivate();
-                publicKey = kp.getPublic();
-
-                // SunPKCS11 requires a certificate entry alongside a PrivateKey to persist the alias in KeyStore
-                X509Certificate placeholder = buildSelfSignedPlaceholder(subjectDn.trim(), publicKey, privateKey, sigAlg);
-                keyStore.setKeyEntry(cleanLabel, privateKey, null, new Certificate[]{placeholder});
-                log.info("Generated new HSM keypair '{}' (alg={}, sigAlg={}) in token '{}'", cleanLabel, alg, sigAlg, tokenLabel);
+                GeneratedKeyPair generated = generateAndStoreKeyPair(cleanLabel, subjectDn.trim(), alg, keySize);
+                privateKey = generated.privateKey();
+                publicKey = generated.publicKey();
+                sigAlg = generated.sigAlg();
             }
 
             ContentSigner csrSigner = new JcaContentSignerBuilder(sigAlg)
@@ -279,6 +268,34 @@ public class Pkcs11OcspSigner implements OcspSigner {
             throw new RuntimeException("Failed to import certificate into HSM token: " + e.getMessage(), e);
         }
     }
+
+    private GeneratedKeyPair generateAndStoreKeyPair(String label, String subjectDn, String alg, int keySize) throws Exception {
+        KeyPair kp;
+        String sigAlg;
+        if ("EC".equals(alg) || "ECDSA".equals(alg)) {
+            String curve = (keySize == 384) ? "secp384r1" : "secp256r1";
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", this.provider);
+            kpg.initialize(new ECGenParameterSpec(curve));
+            kp = kpg.generateKeyPair();
+            sigAlg = "SHA256withECDSA";
+        } else {
+            int rsaBits = (keySize == 2048 || keySize == 3072 || keySize == 4096) ? keySize : 3072;
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", this.provider);
+            kpg.initialize(rsaBits);
+            kp = kpg.generateKeyPair();
+            sigAlg = "SHA256withRSA";
+        }
+        PrivateKey privateKey = kp.getPrivate();
+        PublicKey publicKey = kp.getPublic();
+
+        // SunPKCS11 requires a certificate entry alongside a PrivateKey to persist the alias in KeyStore
+        X509Certificate placeholder = buildSelfSignedPlaceholder(subjectDn, publicKey, privateKey, sigAlg);
+        keyStore.setKeyEntry(label, privateKey, null, new Certificate[]{placeholder});
+        log.info("Generated new HSM keypair '{}' (alg={}, sigAlg={}) in token '{}'", label, alg, sigAlg, tokenLabel);
+        return new GeneratedKeyPair(privateKey, publicKey, sigAlg);
+    }
+
+    private record GeneratedKeyPair(PrivateKey privateKey, PublicKey publicKey, String sigAlg) {}
 
     private X509Certificate buildSelfSignedPlaceholder(String subjectDn, PublicKey pubKey, PrivateKey privKey, String sigAlg) throws Exception {
         X500Name name = new X500Name(subjectDn);
