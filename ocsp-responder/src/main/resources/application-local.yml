@@ -47,3 +47,4 @@ hsm:
 logging:
   level:
     com.company.incert.ocsp: DEBUG
+
