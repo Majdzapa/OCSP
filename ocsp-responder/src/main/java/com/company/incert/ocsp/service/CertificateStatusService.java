@@ -34,7 +34,11 @@ public class CertificateStatusService {
 
     @Transactional(readOnly = true)
     public Optional<RevocationStatus> findByCertId(byte[] issuerNameHash, byte[] issuerKeyHash, byte[] serialNumber) {
-        return repository.findByCertId(issuerNameHash, issuerKeyHash, serialNumber);
+        Optional<RevocationStatus> exact = repository.findByCertId(issuerNameHash, issuerKeyHash, serialNumber);
+        if (exact.isPresent()) {
+            return exact;
+        }
+        return repository.findBySerialNumber(serialNumber).stream().findFirst();
     }
 
     @Transactional(readOnly = true)
@@ -85,7 +89,8 @@ public class CertificateStatusService {
         String reasonName = reason != null ? reason.name() : null;
         Instant now = Instant.now();
 
-        Optional<RevocationStatus> existing = repository.findByCertId(nameHash, keyHash, serial);
+        Optional<RevocationStatus> existing = repository.findByCertId(nameHash, keyHash, serial)
+            .or(() -> repository.findBySerialNumber(serial).stream().findFirst());
         if (existing.isPresent()) {
             RevocationStatus row = existing.get();
             boolean stale = event.sequence() < row.getSequence();
@@ -99,6 +104,8 @@ public class CertificateStatusService {
                 meterRegistry.counter("ocsp.sync.skipped").increment();
                 return false;
             }
+            row.setIssuerNameHash(nameHash);
+            row.setIssuerKeyHash(keyHash);
             row.setStatus(event.status());
             row.setRevocationTime(event.status() == CertificateStatus.REVOKED ? event.revocationTime() : null);
             row.setRevocationReason(event.status() == CertificateStatus.REVOKED ? reasonName : null);
