@@ -123,7 +123,32 @@ class SigningCertificateServiceTest {
 
         assertThat(result.active()).isTrue();
         verify(repository).deactivateAll();
-        verify(ocspSigner).updateActiveCertificate(eq("key-5"), any(X509CertificateHolder.class));
+        verify(ocspSigner).updateActiveCertificate(eq("key-5"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
+    }
+
+    @Test
+    void addCertificate_customSignatureAlgorithm_persistsChosenAlgorithm() {
+        when(repository.existsByAlias("rsa-384")).thenReturn(false);
+        when(repository.save(any(SigningCertificate.class))).thenAnswer(inv -> {
+            SigningCertificate c = inv.getArgument(0);
+            c.setId(11L);
+            return c;
+        });
+
+        var req = new AddSigningCertificateRequest("rsa-384", "ocsp-signing-key", testCertPem, false, "SHA384withRSA");
+        SigningCertificateDto dto = service.addCertificate(req);
+
+        assertThat(dto.signatureAlgorithm()).isEqualTo("SHA384withRSA");
+    }
+
+    @Test
+    void addCertificate_incompatibleAlgorithm_throwsException() {
+        when(repository.existsByAlias("bad-alg")).thenReturn(false);
+
+        var req = new AddSigningCertificateRequest("bad-alg", "ocsp-signing-key", testCertPem, false, "SHA256withECDSA");
+        assertThatThrownBy(() -> service.addCertificate(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported or incompatible RSA signature algorithm");
     }
 
     @Test

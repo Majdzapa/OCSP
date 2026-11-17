@@ -17,6 +17,12 @@ public record AddSigningCertificateRequest(
     String certificatePem,
 
     @Schema(description = "Whether to immediately activate this certificate for signing responses", defaultValue = "false")
-    Boolean activateImmediately
-) {}
+    Boolean activateImmediately,
 
+    @Schema(description = "Signature algorithm to use when signing OCSP responses with this certificate (e.g. SHA256withRSA, SHA384withRSA, SHA512withRSA, SHA256withECDSA, SHA384withECDSA)", example = "SHA256withRSA")
+    String signatureAlgorithm
+) {
+    public AddSigningCertificateRequest(String alias, String keyLabel, String certificatePem, Boolean activateImmediately) {
+        this(alias, keyLabel, certificatePem, activateImmediately, null);
+    }
+}

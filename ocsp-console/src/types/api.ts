@@ -204,6 +204,7 @@ export interface AddSigningCertificateRequest {
   keyLabel?: string
   certificatePem: string
   activateImmediately?: boolean
+  signatureAlgorithm?: string
 }
 
 export interface HsmInfoDto {

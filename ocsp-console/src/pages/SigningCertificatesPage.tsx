@@ -79,6 +79,7 @@ export const SigningCertificatesPage: React.FC = () => {
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [alias, setAlias] = useState('')
   const [keyLabel, setKeyLabel] = useState('ocsp-signing-key')
+  const [signatureAlgorithm, setSignatureAlgorithm] = useState<string>('SHA256withRSA')
   const [certificatePem, setCertificatePem] = useState('')
   const [activateImmediately, setActivateImmediately] = useState(false)
 
@@ -162,12 +163,14 @@ export const SigningCertificatesPage: React.FC = () => {
         keyLabel: keyLabel.trim() || 'ocsp-signing-key',
         certificatePem: certificatePem.trim(),
         activateImmediately,
+        signatureAlgorithm,
       }
       await addSigningCertificate(payload)
       setSuccess(`Signing certificate '${alias}' imported into HSM and registered${activateImmediately ? ' (activated)' : ''}.`)
       setAddModalOpen(false)
       setAlias('')
       setKeyLabel(hsmInfo?.activeKeyLabel || 'ocsp-signing-key')
+      setSignatureAlgorithm('SHA256withRSA')
       setCertificatePem('')
       setActivateImmediately(false)
       await fetchAll()
@@ -425,9 +428,14 @@ export const SigningCertificatesPage: React.FC = () => {
                         <Code>{cert.serialNumber}</Code>
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="outline" color="indigo" size="sm">
-                          {cert.keyLabel}
-                        </Badge>
+                        <Group gap={4}>
+                          <Badge variant="outline" color="indigo" size="sm">
+                            {cert.keyLabel}
+                          </Badge>
+                          <Badge variant="light" color="cyan" size="xs">
+                            {cert.signatureAlgorithm}
+                          </Badge>
+                        </Group>
                       </Table.Td>
                       <Table.Td>
                         <Text size="xs">{new Date(cert.notAfter).toLocaleDateString()}</Text>
@@ -684,6 +692,23 @@ export const SigningCertificatesPage: React.FC = () => {
               leftSection={<IconKey size={16} />}
               value={keyLabel}
               onChange={(e) => setKeyLabel(e.currentTarget.value)}
+              required
+            />
+
+            <Select
+              label="Signature Algorithm"
+              description="Algorithm used to sign OCSP responses with this certificate (must match the key type)"
+              data={[
+                { value: 'SHA256withRSA', label: 'SHA256withRSA (RSA)' },
+                { value: 'SHA384withRSA', label: 'SHA384withRSA (RSA)' },
+                { value: 'SHA512withRSA', label: 'SHA512withRSA (RSA)' },
+                { value: 'SHA256withRSAandMGF1', label: 'SHA256withRSAandMGF1 (RSA-PSS)' },
+                { value: 'SHA256withECDSA', label: 'SHA256withECDSA (EC)' },
+                { value: 'SHA384withECDSA', label: 'SHA384withECDSA (EC)' },
+                { value: 'SHA512withECDSA', label: 'SHA512withECDSA (EC)' },
+              ]}
+              value={signatureAlgorithm}
+              onChange={(val) => setSignatureAlgorithm(val || 'SHA256withRSA')}
               required
             />
 

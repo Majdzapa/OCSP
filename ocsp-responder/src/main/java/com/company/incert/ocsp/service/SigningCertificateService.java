@@ -72,9 +72,9 @@ public class SigningCertificateService {
             SigningCertificate activeCert = activeOpt.get();
             try {
                 X509CertificateHolder holder = parsePem(activeCert.getCertificatePem());
-                ocspSigner.updateActiveCertificate(activeCert.getKeyLabel(), holder);
-                log.info("Synchronized active signing certificate from database: alias='{}', keyLabel='{}'",
-                        activeCert.getAlias(), activeCert.getKeyLabel());
+                ocspSigner.updateActiveCertificate(activeCert.getKeyLabel(), holder, activeCert.getSignatureAlgorithm());
+                log.info("Synchronized active signing certificate from database: alias='{}', keyLabel='{}', algorithm='{}'",
+                        activeCert.getAlias(), activeCert.getKeyLabel(), activeCert.getSignatureAlgorithm());
             } catch (Exception e) {
                 log.warn("Failed to synchronize active certificate from DB with signer: {}", e.getMessage());
             }
@@ -112,6 +112,8 @@ public class SigningCertificateService {
                 ? request.keyLabel().trim()
                 : ocspSigner.getActiveKeyLabel();
 
+        String signatureAlgorithm = resolveSignatureAlgorithm(request.signatureAlgorithm(), holder);
+
         // Import and bind the signed certificate to its HSM private key if running with PKCS#11
         ocspSigner.importCertificateToToken(keyLabel, holder);
 
@@ -124,7 +126,7 @@ public class SigningCertificateService {
                 .serialNumber(holder.getSerialNumber().toString(16))
                 .notBefore(notBefore)
                 .notAfter(notAfter)
-                .signatureAlgorithm(getAlgorithm(holder))
+                .signatureAlgorithm(signatureAlgorithm)
                 .active(false)
                 .build();
 
@@ -163,19 +165,20 @@ public class SigningCertificateService {
         // Outside a transaction (unit tests, batch tools): invoke synchronously.
         X509CertificateHolder holder = parsePem(updated.getCertificatePem());
         String keyLabel = updated.getKeyLabel();
+        String sigAlg = updated.getSignatureAlgorithm();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    ocspSigner.updateActiveCertificate(keyLabel, holder);
+                    ocspSigner.updateActiveCertificate(keyLabel, holder, sigAlg);
                     syncAllSignersWithHsm();
-                    log.info("Signer updated after DB commit: keyLabel={}", keyLabel);
+                    log.info("Signer updated after DB commit: keyLabel={}, algorithm={}", keyLabel, sigAlg);
                 }
             });
         } else {
-            ocspSigner.updateActiveCertificate(keyLabel, holder);
+            ocspSigner.updateActiveCertificate(keyLabel, holder, sigAlg);
             syncAllSignersWithHsm();
-            log.info("Signer updated synchronously (no active transaction): keyLabel={}", keyLabel);
+            log.info("Signer updated synchronously (no active transaction): keyLabel={}, algorithm={}", keyLabel, sigAlg);
         }
 
         log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
@@ -225,7 +228,8 @@ public class SigningCertificateService {
                         return new OcspSigner.RegisteredSigner(
                                 c.getKeyLabel(),
                                 parsePem(c.getCertificatePem()),
-                                c.isActive()
+                                c.isActive(),
+                                c.getSignatureAlgorithm()
                         );
                     } catch (Exception e) {
                         log.warn("Skipping unparseable signing certificate alias='{}': {}", c.getAlias(), e.getMessage());
@@ -329,14 +333,44 @@ public class SigningCertificateService {
         }
     }
 
-    private String getAlgorithm(X509CertificateHolder holder) {
+    private static final java.util.Set<String> SUPPORTED_RSA_ALGORITHMS = java.util.Set.of(
+            "SHA256withRSA", "SHA384withRSA", "SHA512withRSA", "SHA256withRSAandMGF1"
+    );
+    private static final java.util.Set<String> SUPPORTED_EC_ALGORITHMS = java.util.Set.of(
+            "SHA256withECDSA", "SHA384withECDSA", "SHA512withECDSA"
+    );
+
+    private String resolveSignatureAlgorithm(String requested, X509CertificateHolder holder) {
+        if (requested == null || requested.isBlank()) {
+            return getAlgorithm(holder);
+        }
+        String trimmed = requested.trim();
+        boolean isEc = isEcCertificate(holder);
+        if (isEc) {
+            if (!SUPPORTED_EC_ALGORITHMS.contains(trimmed)) {
+                throw new IllegalArgumentException("Unsupported or incompatible ECDSA signature algorithm '" + trimmed
+                        + "'. Allowed: " + SUPPORTED_EC_ALGORITHMS);
+            }
+        } else {
+            if (!SUPPORTED_RSA_ALGORITHMS.contains(trimmed)) {
+                throw new IllegalArgumentException("Unsupported or incompatible RSA signature algorithm '" + trimmed
+                        + "'. Allowed: " + SUPPORTED_RSA_ALGORITHMS);
+            }
+        }
+        return trimmed;
+    }
+
+    private boolean isEcCertificate(X509CertificateHolder holder) {
         try {
             AlgorithmIdentifier algId = holder.getSubjectPublicKeyInfo().getAlgorithm();
-            if (X9ObjectIdentifiers.id_ecPublicKey.equals(algId.getAlgorithm())) {
-                return "SHA256withECDSA";
-            }
-        } catch (Exception ignored) {}
-        return "SHA256withRSA";
+            return X9ObjectIdentifiers.id_ecPublicKey.equals(algId.getAlgorithm());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String getAlgorithm(X509CertificateHolder holder) {
+        return isEcCertificate(holder) ? "SHA256withECDSA" : "SHA256withRSA";
     }
 }
 

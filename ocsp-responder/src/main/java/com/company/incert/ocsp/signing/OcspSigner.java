@@ -37,6 +37,13 @@ public interface OcspSigner {
      */
     default void updateActiveCertificate(String keyLabel, X509CertificateHolder certificate) {}
 
+    /**
+     * Dynamically updates the active signing certificate, key label, and signature algorithm.
+     */
+    default void updateActiveCertificate(String keyLabel, X509CertificateHolder certificate, String signatureAlgorithm) {
+        updateActiveCertificate(keyLabel, certificate);
+    }
+
     /** Returns the key label / alias currently active for signing. */
     default String getActiveKeyLabel() {
         return "ocsp-signing-key";
@@ -73,7 +80,11 @@ public interface OcspSigner {
         return new SigningSelection(getSignerChain(), createContentSigner());
     }
 
-    record RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred) {}
+    record RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred, String signatureAlgorithm) {
+        public RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred) {
+            this(keyLabel, certificate, preferred, null);
+        }
+    }
 
     record SigningSelection(X509CertificateHolder[] chain, ContentSigner contentSigner) {}
 }

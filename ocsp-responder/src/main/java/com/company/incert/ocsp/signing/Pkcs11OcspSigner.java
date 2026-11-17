@@ -314,6 +314,11 @@ public class Pkcs11OcspSigner implements OcspSigner {
 
     @Override
     public synchronized void updateActiveCertificate(String newKeyLabel, X509CertificateHolder certificate) {
+        updateActiveCertificate(newKeyLabel, certificate, null);
+    }
+
+    @Override
+    public synchronized void updateActiveCertificate(String newKeyLabel, X509CertificateHolder certificate, String signatureAlgorithm) {
         if (newKeyLabel != null && !newKeyLabel.isBlank()) {
             this.keyLabel = newKeyLabel;
         }
@@ -341,12 +346,9 @@ public class Pkcs11OcspSigner implements OcspSigner {
                 holder = new X509CertificateHolder(cert.getEncoded());
             }
 
-            String algorithm = "SHA256withRSA";
-            try {
-                if (holder.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId().contains("1.2.840.10045")) {
-                    algorithm = "SHA256withECDSA";
-                }
-            } catch (Exception ignored) {}
+            String algorithm = (signatureAlgorithm != null && !signatureAlgorithm.isBlank())
+                    ? signatureAlgorithm.trim()
+                    : detectSignatureAlgorithm(holder);
 
             stateRef.set(new SignerState(
                 privateKey,
@@ -385,7 +387,9 @@ public class Pkcs11OcspSigner implements OcspSigner {
                     log.warn("Skipping registered signer with missing HSM keyLabel='{}'", rs.keyLabel());
                     continue;
                 }
-                String alg = detectSignatureAlgorithm(holder);
+                String alg = (rs.signatureAlgorithm() != null && !rs.signatureAlgorithm().isBlank())
+                        ? rs.signatureAlgorithm().trim()
+                        : detectSignatureAlgorithm(holder);
                 byte[] issuerEncoded = holder.getIssuer().getEncoded();
                 byte[] aki = extractAuthorityKeyId(holder);
                 updated.add(new RegisteredSignerEntry(
