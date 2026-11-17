@@ -92,9 +92,9 @@ docker compose up --build -d
 | **OCSP Responder Inbox API** | `8080` | [http://localhost:8080/api/v1/admin/inbox](http://localhost:8080/api/v1/admin/inbox) (Event Stream & Received Inbox) | **Bearer JWT** / **API Key** |
 | **OCSP Reconciliation API** | `8080` | [http://localhost:8080/api/v1/admin/reconciliation/verify](http://localhost:8080/api/v1/admin/reconciliation/verify) | **Bearer JWT** / **API Key** |
 | **OCSP Responder Auth Config** | `8080` | [http://localhost:8080/api/v1/auth/config](http://localhost:8080/api/v1/auth/config) | Public config endpoint |
-| **RabbitMQ Management** | `15672` | [http://localhost:15672](http://localhost:15672) (Web Management UI) | `guest` / `guest` |
-| **RabbitMQ AMQPS (mTLS)** | `5671` | `localhost:5671` (Strict Mutual TLS with verified peer certs) | mTLS Client Certificate |
-| **RabbitMQ AMQP (Plaintext)** | `5672` | `localhost:5672` (Fallback port when TLS is deactivated) | `guest` / `guest` |
+| **RabbitMQ Management** | `15672` | [http://localhost:15672](http://localhost:15672) (Web Management UI) | `ocsp_amqp` / `changeme` |
+| **RabbitMQ AMQPS (mTLS)** | `5671` | `localhost:5671` (Strict Mutual TLS with verified peer certs) | mTLS Client Certificate + `ocsp_amqp` / `changeme` |
+| **RabbitMQ AMQP (Plaintext)** | `5672` | `localhost:5672` (Fallback port when TLS is deactivated) | `ocsp_amqp` / `changeme` |
 | **MariaDB** | `3307` | `localhost:3307` (Schemas: `ocsp`, `kms`) | `root` / `rootpassword` |
 
 ---
@@ -120,13 +120,24 @@ Authentication mode is configured via `security.auth-mode` (`AUTH_MODE: KEYCLOAK
 
 ---
 
-## Dynamic Signing Certificate Rotation
+## Dynamic & Multi-CA Signing Certificate Management
 
-The subsystem includes full runtime rotation of OCSP response signing certificates:
-- **Registry Table**: `signing_certificates` with audit timestamps and metadata.
-- **Single Active Invariant**: Exactly one certificate is active at any time; activating a certificate deactivates all others atomically.
-- **In-Memory HSM Switch**: `PUT /api/v1/admin/signing-certificates/{id}/activate` updates the PKCS#11 signer in-memory immediately without dropping connections or restarting containers.
-- **Console UI**: Inspect, add from PEM, and rotate certificates at [http://localhost:3000/signing-cert](http://localhost:3000/signing-cert).
+The subsystem supports runtime rotation and **multiple simultaneously active signing certificates** (e.g. one per CA):
+- **Registry Table**: `signing_certificates` with audit timestamps, `signature_algorithm`, and HSM `key_label` metadata.
+- **Multi-Active CA Selection**: Multiple certificates can be active at the same time; per OCSP request, `OcspSigner.selectSigner(CertID)` matches the request's `issuerNameHash` / `issuerKeyHash` to the corresponding active signing certificate (with fallback to the default active signer).
+- **Centralized `SigningAlgorithm` Enum**: Supports RSA (`SHA256withRSA`, `SHA384withRSA`, `SHA512withRSA`, `SHA256withRSAandMGF1`) and EC (`SHA256withECDSA`, `SHA384withECDSA`, `SHA512withECDSA`), filtered dynamically by HSM key type.
+- **Production-Safe Commit Sync**: Activation pre-validates expiration and HSM key presence, and updates the in-memory PKCS#11 signer via `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so a DB rollback never leaves HSM state out of sync. In the `prod` profile, `SoftwareKeyOcspSigner` fallback is disabled.
+- **Console UI**: Generate HSM CSRs, import certificates, select signature algorithms, and activate/deactivate certificates at [http://localhost:3000/signing-cert](http://localhost:3000/signing-cert).
+
+---
+
+## RabbitMQ Outbox–Inbox Traceability & Live Audit
+
+- **End-to-End Event Link**: `kms-simulator` sets AMQP `messageId` to `outbox_event.event_id`, and `ocsp-responder` extracts `AmqpHeaders.MESSAGE_ID` so `inbox_event.event_id` links directly to `kms.outbox_event.event_id` even when JSON deserialization fails.
+- **Broker Failure Tracking**: `InboxFailureRecorder` (`Propagation.REQUIRES_NEW`) persists `FAILED` inbox records independently of consumer rollback/DLQ routing, capturing `delivery_tag`, `consumer_queue`, `redelivered`, and `error_message`.
+- **Live Audit UI**: `InboxAuditPage` polls every **3 seconds** (with a `Live Auto-Refresh (3s)` toggle) and displays delivery tags, queue names, redelivery flags, and outbox-inbox reconciliation status.
+
+> For a complete reference of every feature, operational flow, and edge case, see [docs/FUNCTIONALITY_AND_CASES.md](./docs/FUNCTIONALITY_AND_CASES.md).
 
 ---
 
