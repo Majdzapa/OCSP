@@ -264,7 +264,18 @@ public class SigningCertificateService {
         );
     }
 
+    private static final java.util.List<String> SUPPORTED_RSA_LIST = java.util.List.of(
+            "SHA256withRSA", "SHA384withRSA", "SHA512withRSA", "SHA256withRSAandMGF1"
+    );
+    private static final java.util.List<String> SUPPORTED_EC_LIST = java.util.List.of(
+            "SHA256withECDSA", "SHA384withECDSA", "SHA512withECDSA"
+    );
+
     public HsmInfoDto getHsmInfo() {
+        java.util.Map<String, java.util.List<String>> supportedByType = java.util.Map.of(
+                "RSA", SUPPORTED_RSA_LIST,
+                "EC", SUPPORTED_EC_LIST
+        );
         if (ocspSigner instanceof Pkcs11OcspSigner p11) {
             return new HsmInfoDto(
                     p11.type(),
@@ -272,7 +283,9 @@ public class SigningCertificateService {
                     p11.getTokenLabel(),
                     p11.getSlotListIndex(),
                     p11.getActiveKeyLabel(),
-                    p11.listKeyLabels()
+                    p11.listKeyLabels(),
+                    p11.getKeyAlgorithms(),
+                    supportedByType
             );
         }
         return new HsmInfoDto(
@@ -281,7 +294,9 @@ public class SigningCertificateService {
                 "software",
                 0,
                 ocspSigner.getActiveKeyLabel(),
-                ocspSigner.listKeyLabels()
+                ocspSigner.listKeyLabels(),
+                ocspSigner.getKeyAlgorithms(),
+                supportedByType
         );
     }
 

@@ -214,6 +214,8 @@ export interface HsmInfoDto {
   slotIndex: number
   activeKeyLabel: string
   tokenAliases: string[]
+  keyAlgorithms?: Record<string, string>
+  supportedSignatureAlgorithms?: Record<string, string[]>
 }
 
 export interface GenerateCsrRequest {

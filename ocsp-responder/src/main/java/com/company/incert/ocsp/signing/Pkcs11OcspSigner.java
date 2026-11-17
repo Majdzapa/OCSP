@@ -176,6 +176,25 @@ public class Pkcs11OcspSigner implements OcspSigner {
     }
 
     @Override
+    public synchronized java.util.Map<String, String> getKeyAlgorithms() {
+        if (this.keyStore == null) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
+        try {
+            for (String alias : Collections.list(this.keyStore.aliases())) {
+                Certificate cert = this.keyStore.getCertificate(alias);
+                if (cert != null && cert.getPublicKey() != null) {
+                    result.put(alias, cert.getPublicKey().getAlgorithm());
+                }
+            }
+        } catch (KeyStoreException e) {
+            log.warn("Failed to read PKCS#11 key algorithms: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    @Override
     public synchronized String generateCsr(String targetKeyLabel, String subjectDn, String keyAlgorithm, int keySize, boolean reuseExistingKey) {
         if (targetKeyLabel == null || targetKeyLabel.isBlank()) {
             throw new IllegalArgumentException("Key label is required");

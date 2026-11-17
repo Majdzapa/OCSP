@@ -3,6 +3,7 @@ package com.company.incert.ocsp.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import java.util.Map;
 
 @Schema(description = "Configured PKCS#11 HSM information and available key labels")
 public record HsmInfoDto(
@@ -22,6 +23,11 @@ public record HsmInfoDto(
     String activeKeyLabel,
 
     @Schema(description = "All key aliases currently present in the HSM token")
-    List<String> tokenAliases
-) {}
+    List<String> tokenAliases,
 
+    @Schema(description = "Map of HSM key label -> key algorithm (e.g. RSA, EC)")
+    Map<String, String> keyAlgorithms,
+
+    @Schema(description = "Supported OCSP signature algorithms grouped by key algorithm (RSA, EC)")
+    Map<String, List<String>> supportedSignatureAlgorithms
+) {}

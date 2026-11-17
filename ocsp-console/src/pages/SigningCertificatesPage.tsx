@@ -221,6 +221,20 @@ export const SigningCertificatesPage: React.FC = () => {
 
   const activeCert = certificates.find((c) => c.active)
 
+  const rawKeyAlg = hsmInfo?.keyAlgorithms?.[keyLabel] || 'RSA'
+  const normalizedKeyType = rawKeyAlg.toUpperCase().startsWith('EC') ? 'EC' : 'RSA'
+  const compatibleAlgorithms =
+    hsmInfo?.supportedSignatureAlgorithms?.[normalizedKeyType] ??
+    (normalizedKeyType === 'EC'
+      ? ['SHA256withECDSA', 'SHA384withECDSA', 'SHA512withECDSA']
+      : ['SHA256withRSA', 'SHA384withRSA', 'SHA512withRSA', 'SHA256withRSAandMGF1'])
+
+  useEffect(() => {
+    if (!compatibleAlgorithms.includes(signatureAlgorithm)) {
+      setSignatureAlgorithm(compatibleAlgorithms[0])
+    }
+  }, [normalizedKeyType, compatibleAlgorithms, signatureAlgorithm])
+
   return (
     <Container size="xl" py="lg">
       <Stack gap="lg">
@@ -681,34 +695,38 @@ export const SigningCertificatesPage: React.FC = () => {
               required
             />
 
-            <TextInput
-              label="HSM Key Label / Alias"
-              placeholder="ocsp-signing-key"
-              description={
-                hsmInfo?.tokenAliases.length
-                  ? `Existing HSM keys: ${hsmInfo.tokenAliases.join(', ')}`
-                  : 'The private key label in the HSM token corresponding to this certificate'
-              }
-              leftSection={<IconKey size={16} />}
-              value={keyLabel}
-              onChange={(e) => setKeyLabel(e.currentTarget.value)}
-              required
-            />
+            {hsmInfo?.tokenAliases.length ? (
+              <Select
+                label="HSM Key Label / Alias"
+                description={`Detected key type for '${keyLabel}': ${normalizedKeyType}`}
+                leftSection={<IconKey size={16} />}
+                data={hsmInfo.tokenAliases.map((a) => ({
+                  value: a,
+                  label: hsmInfo.keyAlgorithms?.[a] ? `${a} (${hsmInfo.keyAlgorithms[a]})` : a,
+                }))}
+                value={keyLabel}
+                onChange={(val) => setKeyLabel(val || hsmInfo.tokenAliases[0])}
+                searchable
+                required
+              />
+            ) : (
+              <TextInput
+                label="HSM Key Label / Alias"
+                placeholder="ocsp-signing-key"
+                description="The private key label in the HSM token corresponding to this certificate"
+                leftSection={<IconKey size={16} />}
+                value={keyLabel}
+                onChange={(e) => setKeyLabel(e.currentTarget.value)}
+                required
+              />
+            )}
 
             <Select
               label="Signature Algorithm"
-              description="Algorithm used to sign OCSP responses with this certificate (must match the key type)"
-              data={[
-                { value: 'SHA256withRSA', label: 'SHA256withRSA (RSA)' },
-                { value: 'SHA384withRSA', label: 'SHA384withRSA (RSA)' },
-                { value: 'SHA512withRSA', label: 'SHA512withRSA (RSA)' },
-                { value: 'SHA256withRSAandMGF1', label: 'SHA256withRSAandMGF1 (RSA-PSS)' },
-                { value: 'SHA256withECDSA', label: 'SHA256withECDSA (EC)' },
-                { value: 'SHA384withECDSA', label: 'SHA384withECDSA (EC)' },
-                { value: 'SHA512withECDSA', label: 'SHA512withECDSA (EC)' },
-              ]}
+              description={`Compatible algorithms for ${normalizedKeyType} key '${keyLabel}'`}
+              data={compatibleAlgorithms.map((alg) => ({ value: alg, label: alg }))}
               value={signatureAlgorithm}
-              onChange={(val) => setSignatureAlgorithm(val || 'SHA256withRSA')}
+              onChange={(val) => setSignatureAlgorithm(val || compatibleAlgorithms[0])}
               required
             />
 

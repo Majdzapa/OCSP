@@ -5,6 +5,7 @@ import org.bouncycastle.cert.ocsp.CertificateID;
 import org.bouncycastle.operator.ContentSigner;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Cryptographic HSM signing adapter interface for OCSP responses.
@@ -52,6 +53,11 @@ public interface OcspSigner {
     /** Returns all key aliases/labels currently stored in the HSM token. */
     default List<String> listKeyLabels() {
         return List.of(getActiveKeyLabel());
+    }
+
+    /** Returns a map of HSM keyLabel -> key algorithm (e.g. "RSA", "EC"). */
+    default Map<String, String> getKeyAlgorithms() {
+        return Map.of();
     }
 
     /**
