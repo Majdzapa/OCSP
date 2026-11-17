@@ -181,6 +181,9 @@ export const addSigningCertificate = (
 export const activateSigningCertificate = (id: number): Promise<SigningCertificateDto> =>
   api.put(`/signing-certificates/${id}/activate`).then((r) => r.data)
 
+export const deactivateSigningCertificate = (id: number): Promise<SigningCertificateDto> =>
+  api.put(`/signing-certificates/${id}/deactivate`).then((r) => r.data)
+
 export const deleteSigningCertificate = (id: number): Promise<void> =>
   api.delete(`/signing-certificates/${id}`).then((r) => r.data)
 

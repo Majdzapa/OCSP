@@ -44,6 +44,7 @@ import {
   getSigningCertificates,
   addSigningCertificate,
   activateSigningCertificate,
+  deactivateSigningCertificate,
   deleteSigningCertificate,
   getHsmInfo,
   generateSigningCsr,
@@ -122,10 +123,24 @@ export const SigningCertificatesPage: React.FC = () => {
       setActionLoading(true)
       setError(null)
       await activateSigningCertificate(id)
-      setSuccess(`Signing certificate '${certAlias}' is now active! All subsequent responses are signed with this certificate.`)
+      setSuccess(`Signing certificate '${certAlias}' is now active and will be selected automatically for requests from its issuing CA.`)
       await fetchAll()
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to activate certificate')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDeactivate = async (id: number, certAlias: string) => {
+    try {
+      setActionLoading(true)
+      setError(null)
+      await deactivateSigningCertificate(id)
+      setSuccess(`Signing certificate '${certAlias}' has been deactivated.`)
+      await fetchAll()
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to deactivate certificate')
     } finally {
       setActionLoading(false)
     }
@@ -219,7 +234,7 @@ export const SigningCertificatesPage: React.FC = () => {
     reader.readAsText(file)
   }
 
-  const activeCert = certificates.find((c) => c.active)
+  const activeCerts = certificates.filter((c) => c.active)
 
   const rawKeyAlg = hsmInfo?.keyAlgorithms?.[keyLabel] || 'RSA'
   const normalizedKeyType = rawKeyAlg.toUpperCase().startsWith('EC') ? 'EC' : 'RSA'
@@ -245,9 +260,9 @@ export const SigningCertificatesPage: React.FC = () => {
               Signing Certificates &amp; HSM Keys
             </Title>
             <Text c="dimmed" size="sm">
-              Generate CSRs directly inside the PKCS#11 HSM and import multiple CA-signed certificates.
-              Each OCSP request automatically selects the signing certificate matching the target certificate&apos;s issuing CA
-              (with the Default Active certificate as fallback).
+              Generate CSRs directly inside the PKCS#11 HSM and activate multiple CA-signed certificates simultaneously.
+              Before signing each OCSP response, the responder matches the request&apos;s issuing CA (Issuer DN &amp; Public Key hash)
+              against all active signing certificates.
             </Text>
           </Box>
           <Group>
@@ -329,8 +344,8 @@ export const SigningCertificatesPage: React.FC = () => {
           </Alert>
         )}
 
-        {/* Hero Card: Currently Active Signing Certificate */}
-        {activeCert && (
+        {/* Hero Card: Active Signing Certificates */}
+        {activeCerts.length > 0 && (
           <Paper
             withBorder
             p="lg"
@@ -344,47 +359,42 @@ export const SigningCertificatesPage: React.FC = () => {
               <Group gap="xs">
                 <IconShieldCheck size={26} color="#22c55e" />
                 <Title order={3} fw={700}>
-                  Active Signing Certificate: {activeCert.alias}
+                  Active Signing Certificates ({activeCerts.length})
                 </Title>
               </Group>
               <Badge color="green" size="lg" variant="filled">
-                ACTIVE SIGNER
+                MULTI-CA ACTIVE
               </Badge>
             </Group>
 
-            <SimpleGrid cols={{ base: 1, md: 3 }} spacing="sm" mt="md">
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Subject DN</Text>
-                <Text size="sm" fw={600} style={{ wordBreak: 'break-all' }}>{activeCert.subjectDn}</Text>
-              </Box>
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Issuer DN</Text>
-                <Text size="sm" fw={600} style={{ wordBreak: 'break-all' }}>{activeCert.issuerDn}</Text>
-              </Box>
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>HSM Key Label / Algorithm</Text>
-                <Group gap="xs">
-                  <Badge variant="outline" color="indigo">{activeCert.keyLabel}</Badge>
-                  <Badge variant="light" color="cyan">{activeCert.signatureAlgorithm}</Badge>
-                </Group>
-              </Box>
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Serial Number (Hex)</Text>
-                <Code>{activeCert.serialNumber}</Code>
-              </Box>
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Validity Period</Text>
-                <Text size="xs">
-                  {new Date(activeCert.notBefore).toLocaleDateString()} – {new Date(activeCert.notAfter).toLocaleDateString()}
-                </Text>
-              </Box>
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Lifecycle Status</Text>
-                <Badge color={activeCert.daysUntilExpiry < 7 ? 'red' : activeCert.daysUntilExpiry < 30 ? 'orange' : 'teal'} variant="light">
-                  {activeCert.expired ? 'Expired' : `${activeCert.daysUntilExpiry} days remaining`}
-                </Badge>
-              </Box>
-            </SimpleGrid>
+            <Stack gap="sm" mt="sm">
+              {activeCerts.map((cert) => (
+                <Paper key={cert.id} withBorder p="sm" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                  <SimpleGrid cols={{ base: 1, md: 3 }} spacing="sm">
+                    <Box>
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Alias / Subject DN</Text>
+                      <Text size="sm" fw={700}>{cert.alias}</Text>
+                      <Text size="xs" c="dimmed" style={{ wordBreak: 'break-all' }}>{cert.subjectDn}</Text>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Issuing CA (Matched on OCSP)</Text>
+                      <Text size="xs" fw={600} style={{ wordBreak: 'break-all' }}>{cert.issuerDn}</Text>
+                      <Code>{cert.serialNumber}</Code>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>HSM Key / Algorithm / Expiry</Text>
+                      <Group gap="xs" mt={4}>
+                        <Badge variant="outline" color="indigo">{cert.keyLabel}</Badge>
+                        <Badge variant="light" color="cyan">{cert.signatureAlgorithm}</Badge>
+                        <Badge color={cert.daysUntilExpiry < 7 ? 'red' : cert.daysUntilExpiry < 30 ? 'orange' : 'teal'} variant="light">
+                          {cert.expired ? 'Expired' : `${cert.daysUntilExpiry}d left`}
+                        </Badge>
+                      </Group>
+                    </Box>
+                  </SimpleGrid>
+                </Paper>
+              ))}
+            </Stack>
           </Paper>
         )}
 
@@ -422,15 +432,15 @@ export const SigningCertificatesPage: React.FC = () => {
                       <Table.Td>
                         {cert.active ? (
                           <Badge color="green" variant="filled">
-                            DEFAULT ACTIVE
+                            ACTIVE
                           </Badge>
                         ) : cert.expired ? (
                           <Badge color="red" variant="light">
                             EXPIRED
                           </Badge>
                         ) : (
-                          <Badge color="indigo" variant="light">
-                            AUTO-MATCH (CA)
+                          <Badge color="gray" variant="light">
+                            INACTIVE
                           </Badge>
                         )}
                       </Table.Td>
@@ -468,7 +478,18 @@ export const SigningCertificatesPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Group justify="flex-end" gap="xs">
-                          {!cert.active && (
+                          {cert.active ? (
+                            <Button
+                              size="compact-xs"
+                              variant="light"
+                              color="orange"
+                              loading={actionLoading}
+                              disabled={activeCerts.length <= 1}
+                              onClick={() => handleDeactivate(cert.id, cert.alias)}
+                            >
+                              Deactivate
+                            </Button>
+                          ) : (
                             <Button
                               size="compact-xs"
                               variant="filled"
@@ -478,7 +499,7 @@ export const SigningCertificatesPage: React.FC = () => {
                               disabled={cert.expired}
                               onClick={() => handleActivate(cert.id, cert.alias)}
                             >
-                              Make Active
+                              Activate
                             </Button>
                           )}
                           <Tooltip label="View Certificate PEM">

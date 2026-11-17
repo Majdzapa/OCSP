@@ -45,8 +45,8 @@ public class SigningCertificateService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initDefaultCertificate() {
-        Optional<SigningCertificate> activeOpt = repository.findByActiveTrue();
-        if (activeOpt.isEmpty()) {
+        List<SigningCertificate> activeList = repository.findAllByActiveTrueOrderByActivatedAtDesc();
+        if (activeList.isEmpty()) {
             X509CertificateHolder[] chain = ocspSigner.getSignerChain();
             if (chain != null && chain.length > 0) {
                 X509CertificateHolder activeHolder = chain[0];
@@ -72,12 +72,12 @@ public class SigningCertificateService {
                         defaultCert.getAlias(), keyLabel, defaultCert.getNotAfter());
             }
         } else {
-            SigningCertificate activeCert = activeOpt.get();
+            SigningCertificate primary = activeList.get(0);
             try {
-                X509CertificateHolder holder = parsePem(activeCert.getCertificatePem());
-                ocspSigner.updateActiveCertificate(activeCert.getKeyLabel(), holder, activeCert.getSignatureAlgorithm());
-                log.info("Synchronized active signing certificate from database: alias='{}', keyLabel='{}', algorithm='{}'",
-                        activeCert.getAlias(), activeCert.getKeyLabel(), activeCert.getSignatureAlgorithm());
+                X509CertificateHolder holder = parsePem(primary.getCertificatePem());
+                ocspSigner.updateActiveCertificate(primary.getKeyLabel(), holder, primary.getSignatureAlgorithm());
+                log.info("Synchronized {} active signing certificate(s) from database (primary alias='{}', keyLabel='{}', algorithm='{}')",
+                        activeList.size(), primary.getAlias(), primary.getKeyLabel(), primary.getSignatureAlgorithm());
             } catch (Exception e) {
                 log.warn("Failed to synchronize active certificate from DB with signer: {}", e.getMessage());
             }
@@ -94,7 +94,9 @@ public class SigningCertificateService {
 
     @Transactional(readOnly = true)
     public Optional<SigningCertificateDto> getActiveCertificate() {
-        return repository.findByActiveTrue().map(this::toDto);
+        return repository.findAllByActiveTrueOrderByActivatedAtDesc().stream()
+                .findFirst()
+                .map(this::toDto);
     }
 
     @Transactional
@@ -160,10 +162,7 @@ public class SigningCertificateService {
                     + "': HSM key '" + target.getKeyLabel() + "' not found in token");
         }
 
-        // Deactivate all certificates
-        repository.deactivateAll();
-
-        // Mark target active
+        // Mark target active (multiple signing certificates can be active simultaneously, e.g. one per CA)
         target.setActive(true);
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
@@ -175,6 +174,38 @@ public class SigningCertificateService {
         log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
                 updated.getId(), updated.getAlias(), updated.getKeyLabel(), updated.getNotAfter());
 
+        return toDto(updated);
+    }
+
+    @Transactional
+    public SigningCertificateDto deactivate(Long id) {
+        SigningCertificate target = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Signing certificate not found with id: " + id));
+
+        if (!target.isActive()) {
+            return toDto(target);
+        }
+
+        if (repository.countByActiveTrue() <= 1) {
+            throw new IllegalStateException("Cannot deactivate the last remaining active signing certificate");
+        }
+
+        target.setActive(false);
+        SigningCertificate updated = repository.save(target);
+
+        List<SigningCertificate> remainingActive = repository.findAllByActiveTrueOrderByActivatedAtDesc();
+        SigningCertificate fallback = remainingActive.isEmpty() ? null : remainingActive.get(0);
+        if (fallback != null) {
+            eventPublisher.publishEvent(new SigningConfigurationChangedEvent(
+                    fallback.getKeyLabel(),
+                    parsePem(fallback.getCertificatePem()),
+                    fallback.getSignatureAlgorithm(),
+                    true));
+        } else {
+            eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+        }
+
+        log.info("Deactivated signing certificate: id={}, alias='{}'", updated.getId(), updated.getAlias());
         return toDto(updated);
     }
 
@@ -216,6 +247,7 @@ public class SigningCertificateService {
     private List<OcspSigner.RegisteredSigner> buildRegisteredSignerSnapshot() {
         Instant now = Instant.now();
         return repository.findAll().stream()
+                .filter(SigningCertificate::isActive)
                 .filter(c -> c.getNotAfter() == null || !now.isAfter(c.getNotAfter()))
                 .map(c -> {
                     try {

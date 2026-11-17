@@ -130,8 +130,42 @@ class SigningCertificateServiceTest {
         SigningCertificateDto result = service.activate(5L);
 
         assertThat(result.active()).isTrue();
-        verify(repository).deactivateAll();
         verify(ocspSigner).updateActiveCertificate(eq("key-5"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
+    }
+
+    @Test
+    void deactivate_lastActiveCertificate_throwsException() {
+        SigningCertificate activeCert = SigningCertificate.builder()
+                .id(1L)
+                .alias("only-active")
+                .active(true)
+                .build();
+        when(repository.findById(1L)).thenReturn(Optional.of(activeCert));
+        when(repository.countByActiveTrue()).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.deactivate(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cannot deactivate the last remaining active signing certificate");
+    }
+
+    @Test
+    void deactivate_whenMultipleActive_deactivatesTargetAndFallsBackToRemaining() {
+        SigningCertificate cert1 = SigningCertificate.builder()
+                .id(1L).alias("ca1-signer").keyLabel("key-1").certificatePem(testCertPem)
+                .signatureAlgorithm("SHA256withRSA").active(true).build();
+        SigningCertificate cert2 = SigningCertificate.builder()
+                .id(2L).alias("ca2-signer").keyLabel("key-2").certificatePem(testCertPem)
+                .signatureAlgorithm("SHA256withRSA").active(true).build();
+
+        when(repository.findById(2L)).thenReturn(Optional.of(cert2));
+        when(repository.countByActiveTrue()).thenReturn(2L);
+        when(repository.save(any(SigningCertificate.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findAllByActiveTrueOrderByActivatedAtDesc()).thenReturn(java.util.List.of(cert1));
+
+        SigningCertificateDto dto = service.deactivate(2L);
+
+        assertThat(dto.active()).isFalse();
+        verify(ocspSigner).updateActiveCertificate(eq("key-1"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
     }
 
     @Test

@@ -65,10 +65,10 @@ public class SigningCertificateController {
         }
     }
 
-    @Operation(summary = "Activate signing certificate", description = "Makes the specified certificate the sole active certificate for signing responses")
+    @Operation(summary = "Activate signing certificate", description = "Marks the specified certificate as active for signing responses for its issuing CA (multiple active signers supported)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Certificate activated successfully"),
-        @ApiResponse(responseCode = "400", description = "Certificate is expired or not found")
+        @ApiResponse(responseCode = "400", description = "Certificate is expired, missing HSM key, or not found")
     })
     @PutMapping("/{id}/activate")
     public ResponseEntity<?> activate(
@@ -77,6 +77,23 @@ public class SigningCertificateController {
         try {
             SigningCertificateDto activated = certificateService.activate(id);
             return ResponseEntity.ok(activated);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Deactivate signing certificate", description = "Deactivates an active signing certificate (at least one active certificate must remain)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Certificate deactivated successfully"),
+        @ApiResponse(responseCode = "400", description = "Cannot deactivate the last remaining active certificate or not found")
+    })
+    @PutMapping("/{id}/deactivate")
+    public ResponseEntity<?> deactivate(
+            @Parameter(description = "ID of the signing certificate to deactivate")
+            @PathVariable Long id) {
+        try {
+            SigningCertificateDto deactivated = certificateService.deactivate(id);
+            return ResponseEntity.ok(deactivated);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
