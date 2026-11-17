@@ -74,13 +74,13 @@ class CertificateStatusConsumerServiceTest {
     }
 
     @Test
-    void shouldRecordFailureWithDeliveryTagOnMalformedPayload() {
+    void shouldRecordFailureWithDeliveryTagAndMessageIdOnMalformedPayload() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                consumerService.consume("{bad-json", 77L, "ocsp.certificate.status", true)
+                consumerService.consume("{bad-json", "outbox-evt-99", 77L, "ocsp.certificate.status", true)
         ).isInstanceOf(RuntimeException.class);
 
         verify(failureRecorder).recordFailure(
-                isNull(), isNull(), isNull(), eq(0L), eq("{bad-json"),
+                eq("outbox-evt-99"), isNull(), isNull(), eq(0L), eq("{bad-json"),
                 eq(77L), eq("ocsp.certificate.status"), eq(true), any(Throwable.class)
         );
     }

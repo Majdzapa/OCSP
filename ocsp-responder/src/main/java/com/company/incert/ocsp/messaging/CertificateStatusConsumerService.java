@@ -32,14 +32,15 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
 
     @Override
     @Transactional
-    public void consume(String payload, Long deliveryTag, String consumerQueue, Boolean redelivered) {
+    public void consume(String payload, String messageId, Long deliveryTag, String consumerQueue, Boolean redelivered) {
         Instant now = Instant.now();
         CertificateStatusEvent event;
         try {
             event = objectMapper.readValue(payload, CertificateStatusEvent.class);
         } catch (Exception e) {
-            log.error("Failed to parse certificate status payload (deliveryTag={}): {}", deliveryTag, payload, e);
-            failureRecorder.recordFailure(null, null, null, 0L, payload, deliveryTag, consumerQueue, redelivered, e);
+            log.error("Failed to parse certificate status payload (messageId={}, deliveryTag={}): {}",
+                    messageId, deliveryTag, payload, e);
+            failureRecorder.recordFailure(messageId, null, null, 0L, payload, deliveryTag, consumerQueue, redelivered, e);
             throw new RuntimeException("Malformed certificate status message", e);
         }
 
