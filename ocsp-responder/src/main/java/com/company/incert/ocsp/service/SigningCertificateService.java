@@ -9,6 +9,7 @@ import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.OcspSigner;
 import com.company.incert.ocsp.signing.Pkcs11OcspSigner;
+import com.company.incert.ocsp.signing.SigningAlgorithm;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -264,18 +265,8 @@ public class SigningCertificateService {
         );
     }
 
-    private static final java.util.List<String> SUPPORTED_RSA_LIST = java.util.List.of(
-            "SHA256withRSA", "SHA384withRSA", "SHA512withRSA", "SHA256withRSAandMGF1"
-    );
-    private static final java.util.List<String> SUPPORTED_EC_LIST = java.util.List.of(
-            "SHA256withECDSA", "SHA384withECDSA", "SHA512withECDSA"
-    );
-
     public HsmInfoDto getHsmInfo() {
-        java.util.Map<String, java.util.List<String>> supportedByType = java.util.Map.of(
-                "RSA", SUPPORTED_RSA_LIST,
-                "EC", SUPPORTED_EC_LIST
-        );
+        java.util.Map<String, java.util.List<String>> supportedByType = SigningAlgorithm.groupedByKeyType();
         if (ocspSigner instanceof Pkcs11OcspSigner p11) {
             return new HsmInfoDto(
                     p11.type(),
@@ -348,29 +339,15 @@ public class SigningCertificateService {
         }
     }
 
-    private static final java.util.Set<String> SUPPORTED_RSA_ALGORITHMS = java.util.Set.of(
-            "SHA256withRSA", "SHA384withRSA", "SHA512withRSA", "SHA256withRSAandMGF1"
-    );
-    private static final java.util.Set<String> SUPPORTED_EC_ALGORITHMS = java.util.Set.of(
-            "SHA256withECDSA", "SHA384withECDSA", "SHA512withECDSA"
-    );
-
     private String resolveSignatureAlgorithm(String requested, X509CertificateHolder holder) {
+        String keyType = isEcCertificate(holder) ? "EC" : "RSA";
         if (requested == null || requested.isBlank()) {
-            return getAlgorithm(holder);
+            return SigningAlgorithm.defaultForKeyType(keyType).getAlgorithmName();
         }
         String trimmed = requested.trim();
-        boolean isEc = isEcCertificate(holder);
-        if (isEc) {
-            if (!SUPPORTED_EC_ALGORITHMS.contains(trimmed)) {
-                throw new IllegalArgumentException("Unsupported or incompatible ECDSA signature algorithm '" + trimmed
-                        + "'. Allowed: " + SUPPORTED_EC_ALGORITHMS);
-            }
-        } else {
-            if (!SUPPORTED_RSA_ALGORITHMS.contains(trimmed)) {
-                throw new IllegalArgumentException("Unsupported or incompatible RSA signature algorithm '" + trimmed
-                        + "'. Allowed: " + SUPPORTED_RSA_ALGORITHMS);
-            }
+        if (!SigningAlgorithm.isSupportedForKeyType(trimmed, keyType)) {
+            throw new IllegalArgumentException("Unsupported or incompatible " + keyType + " signature algorithm '" + trimmed
+                    + "'. Allowed: " + SigningAlgorithm.namesForKeyType(keyType));
         }
         return trimmed;
     }
@@ -385,7 +362,8 @@ public class SigningCertificateService {
     }
 
     private String getAlgorithm(X509CertificateHolder holder) {
-        return isEcCertificate(holder) ? "SHA256withECDSA" : "SHA256withRSA";
+        String keyType = isEcCertificate(holder) ? "EC" : "RSA";
+        return SigningAlgorithm.defaultForKeyType(keyType).getAlgorithmName();
     }
 }
 
