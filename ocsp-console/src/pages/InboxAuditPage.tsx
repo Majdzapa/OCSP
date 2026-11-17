@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Box,
   Title,
@@ -16,6 +16,7 @@ import {
   ActionIcon,
   CopyButton,
   Loader,
+  Switch,
 } from '@mantine/core'
 import {
   IconInbox,
@@ -47,10 +48,11 @@ export function InboxAuditPage() {
   const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null)
   const [reconLoading, setReconLoading] = useState(false)
   const [searchSerial, setSearchSerial] = useState('')
+  const [autoRefresh, setAutoRefresh] = useState(true)
   const [banner, setBanner] = useState<{ color: 'teal' | 'red'; message: string } | null>(null)
 
-  const loadData = async () => {
-    setLoading(true)
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [eventsRes, statsRes] = await Promise.all([
         getInboxEvents(0, 100, searchSerial || undefined),
@@ -59,34 +61,47 @@ export function InboxAuditPage() {
       setEvents(eventsRes.events || [])
       setStats(statsRes)
     } catch (err: any) {
-      setBanner({
-        color: 'red',
-        message: 'Failed to load inbox data: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
-      })
+      if (!silent) {
+        setBanner({
+          color: 'red',
+          message: 'Failed to load inbox data: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+        })
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }
+  }, [searchSerial])
 
-  const handleVerifyReconciliation = async () => {
-    setReconLoading(true)
+  const handleVerifyReconciliation = useCallback(async (silent = false) => {
+    if (!silent) setReconLoading(true)
     try {
       const report = await verifyReconciliation()
       setReconciliation(report)
     } catch (err: any) {
-      setBanner({
-        color: 'red',
-        message: 'Reconciliation check failed: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
-      })
+      if (!silent) {
+        setBanner({
+          color: 'red',
+          message: 'Reconciliation check failed: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+        })
+      }
     } finally {
-      setReconLoading(false)
+      if (!silent) setReconLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    loadData()
-    handleVerifyReconciliation()
-  }, [])
+    loadData(false)
+    handleVerifyReconciliation(false)
+  }, [loadData, handleVerifyReconciliation])
+
+  useEffect(() => {
+    if (!autoRefresh) return
+    const timer = setInterval(() => {
+      loadData(true)
+      handleVerifyReconciliation(true)
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [autoRefresh, loadData, handleVerifyReconciliation])
 
   return (
     <Box p="md">
@@ -104,12 +119,20 @@ export function InboxAuditPage() {
           </Text>
         </div>
 
-        <Group gap="xs">
+        <Group gap="sm">
+          <Switch
+            label="Live Auto-Refresh (3s)"
+            size="sm"
+            color="teal"
+            checked={autoRefresh}
+            onChange={(e) => setAutoRefresh(e.currentTarget.checked)}
+          />
+
           <Button
             leftSection={<IconRefresh size={16} />}
             variant="default"
             size="sm"
-            onClick={loadData}
+            onClick={() => loadData(false)}
             loading={loading}
           >
             Refresh
@@ -120,7 +143,7 @@ export function InboxAuditPage() {
             variant="light"
             color="indigo"
             size="sm"
-            onClick={handleVerifyReconciliation}
+            onClick={() => handleVerifyReconciliation(false)}
             loading={reconLoading}
           >
             Verify Inbox Parity
@@ -237,10 +260,10 @@ export function InboxAuditPage() {
             onChange={(e) => setSearchSerial(e.currentTarget.value)}
             style={{ flex: 1 }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') loadData()
+              if (e.key === 'Enter') loadData(false)
             }}
           />
-          <Button variant="default" onClick={loadData}>
+          <Button variant="default" onClick={() => loadData(false)}>
             Apply Filter
           </Button>
           {searchSerial && (
