@@ -18,8 +18,8 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Single test constructor: authMode, tlsEnabled, username, password, apiKey
-        controller = new AuthController("SELF_MANAGED", true, "admin", "changeme", "incert-admin-secret-key");
+        controller = new AuthController("SELF_MANAGED", true, "admin", "changeme", "incert-admin-secret-key",
+                "http://localhost:8081", "incert", "ocsp-console");
     }
 
     @Test

@@ -61,13 +61,6 @@ public class AuthController {
         this.keycloakClientId = keycloakClientId;
     }
 
-    /** Constructor used by unit tests only — avoids Spring context. */
-    AuthController(String authModeStr, boolean tlsEnabled,
-                   String adminUsername, String adminPassword, String adminApiKey) {
-        this(authModeStr, tlsEnabled, adminUsername, adminPassword, adminApiKey,
-             "http://localhost:8081", "incert", "ocsp-console");
-    }
-
     @Schema(description = "Credentials payload for login (supports username/password or API key)")
     public record LoginPayload(
         @Schema(description = "Admin username", example = "admin") String username,

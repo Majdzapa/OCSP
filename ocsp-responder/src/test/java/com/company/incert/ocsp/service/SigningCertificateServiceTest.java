@@ -48,7 +48,15 @@ class SigningCertificateServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new SigningCertificateService(repository, ocspSigner);
+        service = new SigningCertificateService(
+                repository,
+                ocspSigner,
+                event -> {
+                    if (event instanceof SigningCertificateService.SigningConfigurationChangedEvent e) {
+                        service.onSigningConfigurationChanged(e);
+                    }
+                }
+        );
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(2048);

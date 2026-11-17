@@ -19,11 +19,12 @@ import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -39,6 +40,7 @@ public class SigningCertificateService {
 
     private final SigningCertificateRepository repository;
     private final OcspSigner ocspSigner;
+    private final ApplicationEventPublisher eventPublisher;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -139,7 +141,7 @@ public class SigningCertificateService {
             return activate(saved.getId());
         }
 
-        syncAllSignersWithHsmAfterCommit();
+        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
         return toDto(saved);
     }
 
@@ -152,6 +154,12 @@ public class SigningCertificateService {
             throw new IllegalStateException("Cannot activate an expired certificate (expired at: " + target.getNotAfter() + ")");
         }
 
+        List<String> hsmKeys = ocspSigner.listKeyLabels();
+        if (!hsmKeys.isEmpty() && !hsmKeys.contains(target.getKeyLabel())) {
+            throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
+                    + "': HSM key '" + target.getKeyLabel() + "' not found in token");
+        }
+
         // Deactivate all certificates
         repository.deactivateAll();
 
@@ -160,27 +168,9 @@ public class SigningCertificateService {
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
 
-        // Update the in-memory HSM signer.
-        // In production (inside a live @Transactional): defer until AFTER commit so that
-        // a DB rollback cannot leave the signer and DB out of sync.
-        // Outside a transaction (unit tests, batch tools): invoke synchronously.
         X509CertificateHolder holder = parsePem(updated.getCertificatePem());
-        String keyLabel = updated.getKeyLabel();
-        String sigAlg = updated.getSignatureAlgorithm();
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    ocspSigner.updateActiveCertificate(keyLabel, holder, sigAlg);
-                    syncAllSignersWithHsm();
-                    log.info("Signer updated after DB commit: keyLabel={}, algorithm={}", keyLabel, sigAlg);
-                }
-            });
-        } else {
-            ocspSigner.updateActiveCertificate(keyLabel, holder, sigAlg);
-            syncAllSignersWithHsm();
-            log.info("Signer updated synchronously (no active transaction): keyLabel={}, algorithm={}", keyLabel, sigAlg);
-        }
+        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(
+                updated.getKeyLabel(), holder, updated.getSignatureAlgorithm(), true));
 
         log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
                 updated.getId(), updated.getAlias(), updated.getKeyLabel(), updated.getNotAfter());
@@ -198,23 +188,26 @@ public class SigningCertificateService {
         }
 
         repository.delete(cert);
-        syncAllSignersWithHsmAfterCommit();
+        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
         log.info("Deleted inactive signing certificate: id={}, alias='{}'", id, cert.getAlias());
     }
 
-    private void syncAllSignersWithHsmAfterCommit() {
-        List<OcspSigner.RegisteredSigner> snapshot = buildRegisteredSignerSnapshot();
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    ocspSigner.syncRegisteredSigners(snapshot);
-                }
-            });
-        } else {
-            ocspSigner.syncRegisteredSigners(snapshot);
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onSigningConfigurationChanged(SigningConfigurationChangedEvent event) {
+        if (event.activateDefault() && event.holder() != null) {
+            ocspSigner.updateActiveCertificate(event.keyLabel(), event.holder(), event.signatureAlgorithm());
+            log.info("Signer updated after DB commit: keyLabel={}, algorithm={}",
+                    event.keyLabel(), event.signatureAlgorithm());
         }
+        syncAllSignersWithHsm();
     }
+
+    public record SigningConfigurationChangedEvent(
+            String keyLabel,
+            X509CertificateHolder holder,
+            String signatureAlgorithm,
+            boolean activateDefault
+    ) {}
 
     private void syncAllSignersWithHsm() {
         ocspSigner.syncRegisteredSigners(buildRegisteredSignerSnapshot());

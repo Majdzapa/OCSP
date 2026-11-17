@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -73,6 +74,7 @@ public class SigningConfig {
     }
 
     @Bean
+    @Profile("!prod")
     @ConditionalOnProperty(name = "hsm.enabled", havingValue = "false")
     public OcspSigner softwareSigner() {
         log.info("HSM disabled by configuration; using software signer.");
