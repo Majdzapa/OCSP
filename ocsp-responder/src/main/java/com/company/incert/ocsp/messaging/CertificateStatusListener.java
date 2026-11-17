@@ -3,17 +3,15 @@ package com.company.incert.ocsp.messaging;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 /**
  * RabbitMQ messaging adapter for receiving certificate status events.
- *
- * Listens to the AMQP queue and delegates message processing directly to {@link CertificateStatusConsumer}.
- * Decouples broker delivery mechanics from business and transactional inbox logic.
- *
- * If switching to Apache Kafka, AWS SQS, or GCP Pub/Sub in the future, simply implement
- * an equivalent consumer adapter invoking {@link CertificateStatusConsumer#consume(String)}.
+ * Captures AMQP delivery metadata (deliveryTag, consumerQueue, redelivered)
+ * so every processed or failed message can be traced back to its RabbitMQ delivery.
  */
 @Slf4j
 @Component
@@ -24,7 +22,11 @@ public class CertificateStatusListener {
     private final CertificateStatusConsumer consumer;
 
     @RabbitListener(queues = "${ocsp.rabbitmq.queue}")
-    public void onMessage(String payload) {
-        consumer.consume(payload);
+    public void onMessage(
+            String payload,
+            @Header(name = AmqpHeaders.DELIVERY_TAG, required = false) Long deliveryTag,
+            @Header(name = AmqpHeaders.CONSUMER_QUEUE, required = false) String consumerQueue,
+            @Header(name = AmqpHeaders.REDELIVERED, required = false) Boolean redelivered) {
+        consumer.consume(payload, deliveryTag, consumerQueue, redelivered);
     }
 }

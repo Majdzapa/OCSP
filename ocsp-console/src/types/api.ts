@@ -161,6 +161,9 @@ export interface InboxEventItem {
   processedAt?: string | null
   processingStatus: 'RECEIVED' | 'PROCESSED' | 'DUPLICATE' | 'SKIPPED' | 'FAILED' | string
   errorMessage?: string | null
+  deliveryTag?: number | null
+  consumerQueue?: string | null
+  redelivered?: boolean | null
 }
 
 export interface ReconciliationReport {

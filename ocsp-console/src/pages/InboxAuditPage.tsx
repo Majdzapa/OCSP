@@ -289,7 +289,8 @@ export function InboxAuditPage() {
               <Table.Th>Event ID</Table.Th>
               <Table.Th>Certificate Serial</Table.Th>
               <Table.Th>Status / Reason</Table.Th>
-              <Table.Th>Seq</Table.Th>
+              <Table.Th>KMS Seq</Table.Th>
+              <Table.Th>RabbitMQ Tag</Table.Th>
               <Table.Th>Received Time</Table.Th>
               <Table.Th>Processing State</Table.Th>
             </Table.Tr>
@@ -297,7 +298,7 @@ export function InboxAuditPage() {
           <Table.Tbody>
             {loading ? (
               <Table.Tr>
-                <Table.Td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>
+                <Table.Td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
                   <Group justify="center" gap="sm">
                     <Loader size="sm" color="indigo" />
                     <Text fz="sm" c="dimmed">Loading inbox events...</Text>
@@ -306,7 +307,7 @@ export function InboxAuditPage() {
               </Table.Tr>
             ) : events.length === 0 ? (
               <Table.Tr>
-                <Table.Td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>
+                <Table.Td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
                   <Text fz="sm" c="dimmed">No inbox events found.</Text>
                 </Table.Td>
               </Table.Tr>
@@ -389,6 +390,25 @@ export function InboxAuditPage() {
                       <Badge variant="outline" color="gray" size="sm">
                         v{e.sequence}
                       </Badge>
+                    </Table.Td>
+
+                    <Table.Td>
+                      {e.deliveryTag != null ? (
+                        <Group gap={4}>
+                          <Tooltip label={e.consumerQueue ? `Queue: ${e.consumerQueue}` : 'AMQP Delivery Tag'}>
+                            <Badge variant="light" color="cyan" size="sm">
+                              #{e.deliveryTag}
+                            </Badge>
+                          </Tooltip>
+                          {e.redelivered && (
+                            <Badge variant="filled" color="orange" size="xs">
+                              REDELIVERED
+                            </Badge>
+                          )}
+                        </Group>
+                      ) : (
+                        <Text fz="xs" c="dimmed">--</Text>
+                      )}
                     </Table.Td>
 
                     <Table.Td>

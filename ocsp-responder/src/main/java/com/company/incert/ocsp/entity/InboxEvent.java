@@ -57,5 +57,14 @@ public class InboxEvent {
 
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
+
+    @Column(name = "delivery_tag")
+    private Long deliveryTag;
+
+    @Column(name = "consumer_queue", length = 128)
+    private String consumerQueue;
+
+    @Column(name = "redelivered")
+    private Boolean redelivered;
 }
 

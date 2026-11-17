@@ -29,12 +29,15 @@ class CertificateStatusConsumerServiceTest {
     @Mock
     private InboxEventRepository inboxRepository;
 
+    @Mock
+    private InboxFailureRecorder failureRecorder;
+
     private CertificateStatusConsumerService consumerService;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     @BeforeEach
     void setUp() {
-        consumerService = new CertificateStatusConsumerService(statusService, inboxRepository, objectMapper);
+        consumerService = new CertificateStatusConsumerService(statusService, inboxRepository, objectMapper, failureRecorder);
     }
 
     @Test
@@ -56,7 +59,7 @@ class CertificateStatusConsumerServiceTest {
         when(inboxRepository.save(any(InboxEvent.class))).thenAnswer(i -> i.getArgument(0));
         when(statusService.applyStatusChange(any())).thenReturn(true);
 
-        consumerService.consume(payload);
+        consumerService.consume(payload, 42L, "ocsp.certificate.status", false);
 
         verify(statusService).applyStatusChange(any(CertificateStatusEvent.class));
 
@@ -66,6 +69,20 @@ class CertificateStatusConsumerServiceTest {
         InboxEvent processed = captor.getAllValues().get(1);
         assertThat(processed.getProcessingStatus()).isEqualTo("PROCESSED");
         assertThat(processed.getCertificateSerial()).isEqualTo("00a1b2c3");
+        assertThat(processed.getDeliveryTag()).isEqualTo(42L);
+        assertThat(processed.getConsumerQueue()).isEqualTo("ocsp.certificate.status");
+    }
+
+    @Test
+    void shouldRecordFailureWithDeliveryTagOnMalformedPayload() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                consumerService.consume("{bad-json", 77L, "ocsp.certificate.status", true)
+        ).isInstanceOf(RuntimeException.class);
+
+        verify(failureRecorder).recordFailure(
+                isNull(), isNull(), isNull(), eq(0L), eq("{bad-json"),
+                eq(77L), eq("ocsp.certificate.status"), eq(true), any(Throwable.class)
+        );
     }
 
     @Test

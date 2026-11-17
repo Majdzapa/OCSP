@@ -2,22 +2,20 @@ package com.company.incert.ocsp.messaging;
 
 /**
  * Consumer interface for incoming certificate status change messages.
- *
- * Decouples payload ingestion, idempotency deduplication, and transactional inbox
- * recording from specific message broker implementations (RabbitMQ, Kafka, AWS SQS, etc.).
- *
- * To switch messaging brokers, simply implement an adapter that receives the broker
- * message and calls {@link #consume(String)}.
  */
 public interface CertificateStatusConsumer {
 
-    /**
-     * Ingests and processes a raw certificate status JSON payload.
-     * Records the event in the transactional inbox, guarantees idempotency,
-     * and updates the local revocation status database.
-     *
-     * @param payload raw JSON string from the message broker
-     */
-    void consume(String payload);
-}
+    default void consume(String payload) {
+        consume(payload, null, null, null);
+    }
 
+    /**
+     * Ingests and processes a raw certificate status JSON payload along with broker delivery metadata.
+     *
+     * @param payload       raw JSON string from the message broker
+     * @param deliveryTag   RabbitMQ AMQP channel delivery tag (if delivered via AMQP)
+     * @param consumerQueue RabbitMQ queue name
+     * @param redelivered   whether the broker marked the message as redelivered
+     */
+    void consume(String payload, Long deliveryTag, String consumerQueue, Boolean redelivered);
+}
