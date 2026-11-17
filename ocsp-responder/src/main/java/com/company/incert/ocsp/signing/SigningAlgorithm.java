@@ -57,3 +57,4 @@ public enum SigningAlgorithm {
         return "EC".equalsIgnoreCase(keyType) ? SHA256_WITH_ECDSA : SHA256_WITH_RSA;
     }
 }
+
