@@ -103,6 +103,7 @@ EOF
     CERT_DER=$(mktemp)
     CSR_FILE=$(mktemp)
     SRL_FILE=$(mktemp)
+    rm -f "${SRL_FILE}"
 
     trap 'rm -f "$PUBKEY_DER" "$PUBKEY_PEM" "$EXT_FILE" "$CERT_PEM" "$CERT_DER" "$CSR_FILE" "$SRL_FILE"' EXIT
 
