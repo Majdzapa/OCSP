@@ -172,6 +172,13 @@ export const getInboxStats = (): Promise<{
 export const verifyReconciliation = (): Promise<ReconciliationReport> =>
   api.get('/reconciliation/verify').then((r) => r.data)
 
+export const replayMissingEventsViaRabbitMq = (): Promise<{
+  status: string
+  requestedEventIds: string[]
+  requestedSerials: string[]
+  requestedAt: string
+}> => api.post('/reconciliation/replay').then((r) => r.data)
+
 // ---- Signing Certificates Management ----
 export const getSigningCertificates = (): Promise<SigningCertificateDto[]> =>
   api.get('/signing-certificates').then((r) => r.data)

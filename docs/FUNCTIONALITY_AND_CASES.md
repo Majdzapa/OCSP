@@ -50,9 +50,11 @@ This document provides a complete, structured reference of all implemented featu
    - RSA algorithms: `SHA256withRSA`, `SHA384withRSA`, `SHA512withRSA`, `SHA256withRSAandMGF1`.
    - ECDSA algorithms: `SHA256withECDSA`, `SHA384withECDSA`, `SHA512withECDSA`.
    - `GET /api/v1/admin/signing-certificates/hsm-info` exposes available HSM key labels, key types, and compatible `SigningAlgorithm` values so the Console UI filters signature algorithms by the selected HSM key type.
-3. **HSM CSR Generation & Certificate Import**:
-   - Auto-generates an initial HSM keypair on initialization when the SoftHSM2 token has no key.
-   - Supports generating a CSR from an HSM key (`generate-csr`) and importing the CA-signed PEM certificate (`POST /api/v1/admin/signing-certificates`) with user-selected `signatureAlgorithm`.
+3. **HSM Token Initialization, CSR Generation & Certificate Import**:
+   - `init-hsm.sh` only initializes an empty SoftHSM2 token (`ocsp-signing`); no static CA, keypair, or default signing certificate is pre-provisioned.
+   - Until a user imports and activates a signing certificate, `/ocsp` responds with RFC 6960 `TRY_LATER` (`SignerNotConfiguredException`).
+   - `POST /api/v1/admin/signing-certificates/csr` generates a new RSA (`2048`/`3072`/`4096`) or EC (`256`/`384`) keypair inside the HSM token (or reuses an existing `keyLabel` when `reuseExistingKey=true`) and returns a signed PKCS#10 CSR.
+   - In KMS Console (`http://localhost:3001/cas`), the user creates a Root/Subordinate CA (`POST /kms/cas`), issues the certificate from the CSR (`POST /kms/cas/{id}/certificates` with profile `OCSP_SIGNING`, `TLS_SERVER`, `TLS_CLIENT`, or `GENERIC`), and imports/activates it in OCSP Console (`POST /api/v1/admin/signing-certificates`).
 4. **Production-Safe Commit Synchronization**:
    - `SigningCertificateService.activate(id)` pre-validates certificate expiration and HSM key existence (`ocspSigner.listKeyLabels()`), saves DB state, and publishes `SigningConfigurationChangedEvent`.
    - `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)` updates the in-memory `OcspSigner` and syncs all active signers **only after the DB transaction commits**, preventing DB/HSM drift on rollback.
@@ -101,9 +103,19 @@ This document provides a complete, structured reference of all implemented featu
   - `error_message`: Root exception message.
 - Re-delivering a previously `FAILED` event with the same `event_id` is allowed to reprocess (idempotency check explicitly skips `DUPLICATE` marking when prior status is `FAILED`).
 
-### Live Audit & Reconciliation (`ocsp-console` & API)
-- **Live Inbox Audit (`InboxAuditPage.tsx`)**: Automatically polls inbox events and reconciliation status every **3 seconds** when `Live Auto-Refresh (3s)` is enabled (can be paused/resumed via switch or refreshed manually).
-- **Reconciliation API**: `GET /api/v1/admin/reconciliation/verify` compares `kms.outbox_event` against `ocsp.inbox_event` to detect missing, failed, or delayed events.
+### Purely RabbitMQ-Based Outbox ↔ Inbox Reconciliation & Replay (Zero REST Calls)
+- **Outbox Manifest Broadcast (`kms -> ocsp`)**:
+  - `KmsReconciliationService` broadcasts `OutboxManifestEvent` to queue `ocsp.reconciliation.manifest` (`incert.reconciliation.manifest.v1`) every 3 seconds and on demand, carrying `outboxEventIds`, `totalOutboxEvents`, `sentOutboxEvents`, `pendingOutboxEvents`, and per-certificate `(serialNumberHex, status, revocationReason, sequence, latestEventId)` digests.
+- **Outbox ↔ Inbox Verification (`GET /api/v1/admin/reconciliation/verify`)**:
+  - `OutboxReconciliationService` compares the KMS Outbox manifest against `ocsp.inbox_event` and `ocsp.revocation_status` without any HTTP call to KMS, reporting:
+    - `missingInInboxEventIds`: Outbox `event_id`s never received in `ocsp.inbox_event`.
+    - `failedInInboxEventIds`: Inbox events with `processing_status = FAILED`.
+    - `missingSerials` & `statusMismatches`: Certificates missing or out-of-date in `ocsp.revocation_status`.
+- **Self-Healing Replay (`POST /api/v1/admin/reconciliation/replay`)**:
+  - Publishes a `ReconciliationCommandMessage` (`command = "REPLAY_EVENTS"`) to queue `kms.reconciliation.request` (`incert.reconciliation.request.v1`) listing the missing/failed `eventId`s and `serialNumberHex`s.
+  - `KmsReconciliationService` consumes the command and re-publishes the matching `kms.outbox_event` rows over RabbitMQ.
+- **Live Inbox Audit (`InboxAuditPage.tsx`)**:
+  - Automatically polls inbox events and Outbox ↔ Inbox reconciliation status every **3 seconds** when `Live Auto-Refresh (3s)` is enabled, and provides a one-click **Replay via RabbitMQ** button.
 
 ---
 

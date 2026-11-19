@@ -122,20 +122,25 @@ Authentication mode is configured via `security.auth-mode` (`AUTH_MODE: KEYCLOAK
 
 ## Dynamic & Multi-CA Signing Certificate Management
 
-The subsystem supports runtime rotation and **multiple simultaneously active signing certificates** (e.g. one per CA):
+The subsystem starts with **zero static or pre-seeded keys/certificates** (`init-hsm.sh` only initializes the SoftHSM2 token `ocsp-signing`) and supports runtime rotation with **multiple simultaneously active signing certificates** (e.g. one per CA):
+- **On-Demand HSM Key & CSR Generation**: `POST /api/v1/admin/signing-certificates/csr` generates (or reuses) an RSA (`2048`/`3072`/`4096`) or EC (`256`/`384`) keypair directly inside the SoftHSM2 token and signs a PKCS#10 CSR. Until at least one signing certificate is imported and activated, `/ocsp` answers with RFC 6960 `TRY_LATER`.
 - **Registry Table**: `signing_certificates` with audit timestamps, `signature_algorithm`, and HSM `key_label` metadata.
 - **Multi-Active CA Selection**: Multiple certificates can be active at the same time; per OCSP request, `OcspSigner.selectSigner(CertID)` matches the request's `issuerNameHash` / `issuerKeyHash` to the corresponding active signing certificate (with fallback to the default active signer).
 - **Centralized `SigningAlgorithm` Enum**: Supports RSA (`SHA256withRSA`, `SHA384withRSA`, `SHA512withRSA`, `SHA256withRSAandMGF1`) and EC (`SHA256withECDSA`, `SHA384withECDSA`, `SHA512withECDSA`), filtered dynamically by HSM key type.
 - **Production-Safe Commit Sync**: Activation pre-validates expiration and HSM key presence, and updates the in-memory PKCS#11 signer via `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so a DB rollback never leaves HSM state out of sync. In the `prod` profile, `SoftwareKeyOcspSigner` fallback is disabled.
-- **Console UI**: Generate HSM CSRs, import certificates, select signature algorithms, and activate/deactivate certificates at [http://localhost:3000/signing-cert](http://localhost:3000/signing-cert).
+- **Console UI**: Generate HSM CSRs, import CA-signed certificates, select signature algorithms, and activate/deactivate certificates at [http://localhost:3000/signing-certificates](http://localhost:3000/signing-certificates).
 
 ---
 
-## RabbitMQ Outbox–Inbox Traceability & Live Audit
+## RabbitMQ Outbox–Inbox Traceability, Reconciliation & Live Audit
 
 - **End-to-End Event Link**: `kms-simulator` sets AMQP `messageId` to `outbox_event.event_id`, and `ocsp-responder` extracts `AmqpHeaders.MESSAGE_ID` so `inbox_event.event_id` links directly to `kms.outbox_event.event_id` even when JSON deserialization fails.
 - **Broker Failure Tracking**: `InboxFailureRecorder` (`Propagation.REQUIRES_NEW`) persists `FAILED` inbox records independently of consumer rollback/DLQ routing, capturing `delivery_tag`, `consumer_queue`, `redelivered`, and `error_message`.
-- **Live Audit UI**: `InboxAuditPage` polls every **3 seconds** (with a `Live Auto-Refresh (3s)` toggle) and displays delivery tags, queue names, redelivery flags, and outbox-inbox reconciliation status.
+- **Purely RabbitMQ-Based Outbox ↔ Inbox Reconciliation (Zero REST Calls)**:
+  - `kms-simulator` (`KmsReconciliationService`) broadcasts `OutboxManifestEvent` messages to queue `ocsp.reconciliation.manifest` (`incert.reconciliation.manifest.v1`) every 3 seconds and on demand.
+  - `ocsp-responder` (`OutboxReconciliationService`, `GET /api/v1/admin/reconciliation/verify`) compares the KMS Outbox manifest against `ocsp.inbox_event` and `ocsp.revocation_status` to detect `missingInInboxEventIds`, `failedInInboxEventIds`, `missingSerials`, and `statusMismatches`.
+  - Self-healing replay (`POST /api/v1/admin/reconciliation/replay`) publishes a `REPLAY_EVENTS` command to queue `kms.reconciliation.request` (`incert.reconciliation.request.v1`) so KMS re-publishes missing/failed events over RabbitMQ without any REST call.
+- **Live Audit UI**: `InboxAuditPage` polls every **3 seconds** (with a `Live Auto-Refresh (3s)` toggle), shows Outbox vs. Inbox totals, and provides a **Replay via RabbitMQ** action.
 
 > For a complete reference of every feature, operational flow, and edge case, see [docs/FUNCTIONALITY_AND_CASES.md](./docs/FUNCTIONALITY_AND_CASES.md).
 

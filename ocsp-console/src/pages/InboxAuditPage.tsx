@@ -31,6 +31,7 @@ import {
   getInboxEvents,
   getInboxStats,
   verifyReconciliation,
+  replayMissingEventsViaRabbitMq,
 } from '../api/client'
 import type { InboxEventItem, ReconciliationReport } from '../types/api'
 
@@ -47,6 +48,7 @@ export function InboxAuditPage() {
 
   const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null)
   const [reconLoading, setReconLoading] = useState(false)
+  const [replayLoading, setReplayLoading] = useState(false)
   const [searchSerial, setSearchSerial] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [banner, setBanner] = useState<{ color: 'teal' | 'red'; message: string } | null>(null)
@@ -88,6 +90,28 @@ export function InboxAuditPage() {
       if (!silent) setReconLoading(false)
     }
   }, [])
+
+  const handleReplayViaRabbitMq = async () => {
+    setReplayLoading(true)
+    try {
+      const res = await replayMissingEventsViaRabbitMq()
+      setBanner({
+        color: 'teal',
+        message: `Published REPLAY_EVENTS over RabbitMQ (events=${res.requestedEventIds?.length ?? 0}, serials=${res.requestedSerials?.length ?? 0}). Zero REST calls used.`,
+      })
+      setTimeout(() => {
+        loadData(true)
+        handleVerifyReconciliation(true)
+      }, 1000)
+    } catch (err: any) {
+      setBanner({
+        color: 'red',
+        message: 'Failed to request RabbitMQ replay: ' + (err?.response?.data?.error || err?.message || 'Unknown error'),
+      })
+    } finally {
+      setReplayLoading(false)
+    }
+  }
 
   useEffect(() => {
     loadData(false)
@@ -146,7 +170,18 @@ export function InboxAuditPage() {
             onClick={() => handleVerifyReconciliation(false)}
             loading={reconLoading}
           >
-            Verify Inbox Parity
+            Verify Outbox ↔ Inbox
+          </Button>
+
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="light"
+            color="teal"
+            size="sm"
+            onClick={handleReplayViaRabbitMq}
+            loading={replayLoading}
+          >
+            Replay via RabbitMQ
           </Button>
         </Group>
       </Group>
@@ -231,8 +266,8 @@ export function InboxAuditPage() {
           color={reconciliation.synchronized ? 'teal' : 'red'}
           title={
             reconciliation.synchronized
-              ? 'Complete Synchronization Verified (RabbitMQ Inbox ↔ Responder DB)'
-              : 'Reconciliation Discrepancy Detected'
+              ? 'Complete Synchronization Verified (KMS Outbox ↔ RabbitMQ ↔ OCSP Inbox & Responder DB)'
+              : 'Outbox ↔ Inbox Reconciliation Discrepancy Detected'
           }
           radius="md"
           mb="lg"
@@ -240,11 +275,11 @@ export function InboxAuditPage() {
           <Group justify="space-between" align="center" wrap="wrap">
             <Text fz="sm">
               {reconciliation.synchronized
-                ? `All ${reconciliation.kmsTotal} certificate streams from RabbitMQ exist in the Responder database with matching statuses.`
-                : `${reconciliation.missingCount} certificates are missing in Responder, and ${reconciliation.mismatchCount} have mismatched statuses.`}
+                ? `All ${reconciliation.outboxTotalEvents ?? reconciliation.inboxEventsReceived} KMS Outbox events and ${reconciliation.kmsTotal} certificate streams match OCSP Inbox and Responder DB (0 REST calls).`
+                : `Missing in Inbox: ${reconciliation.missingInInboxCount ?? 0} · Failed in Inbox: ${reconciliation.failedInInboxCount ?? 0} · Missing in Responder DB: ${reconciliation.missingCount} · Mismatched Statuses: ${reconciliation.mismatchCount}`}
             </Text>
             <Text fz="xs" c="dimmed">
-              Verified: {new Date(reconciliation.verifiedAt).toLocaleTimeString()} · Inbox Certs: {reconciliation.kmsTotal} · Responder DB: {reconciliation.responderTotal} · Matched: {reconciliation.matchedCount}
+              Outbox Events: {reconciliation.outboxTotalEvents ?? '--'} (Pending: {reconciliation.outboxPendingEvents ?? 0}) · Inbox Received: {reconciliation.inboxEventsReceived} · KMS Certs: {reconciliation.kmsTotal} · Responder DB: {reconciliation.responderTotal} · Matched: {reconciliation.matchedCount}
             </Text>
           </Group>
         </Alert>

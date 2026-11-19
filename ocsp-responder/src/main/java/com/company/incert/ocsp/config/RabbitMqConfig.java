@@ -55,6 +55,18 @@ public class RabbitMqConfig {
     @Value("${ocsp.rabbitmq.dead-letter-queue}")
     private String deadLetterQueue;
 
+    @Value("${ocsp.rabbitmq.reconciliation-manifest-queue:ocsp.reconciliation.manifest}")
+    private String reconciliationManifestQueue;
+
+    @Value("${ocsp.rabbitmq.reconciliation-manifest-routing-key:incert.reconciliation.manifest.v1}")
+    private String reconciliationManifestRoutingKey;
+
+    @Value("${ocsp.rabbitmq.reconciliation-request-queue:kms.reconciliation.request}")
+    private String reconciliationRequestQueue;
+
+    @Value("${ocsp.rabbitmq.reconciliation-request-routing-key:incert.reconciliation.request.v1}")
+    private String reconciliationRequestRoutingKey;
+
     @Bean
     public DirectExchange certificateStatusExchange() {
         return ExchangeBuilder.directExchange(exchange).durable(true).build();
@@ -87,6 +99,28 @@ public class RabbitMqConfig {
     public Binding certificateStatusDeadLetterBinding() {
         return BindingBuilder.bind(certificateStatusDeadLetterQueue())
             .to(certificateStatusDeadLetterExchange()).with(deadLetterQueue);
+    }
+
+    @Bean
+    public Queue reconciliationManifestQueue() {
+        return QueueBuilder.durable(reconciliationManifestQueue).build();
+    }
+
+    @Bean
+    public Binding reconciliationManifestBinding() {
+        return BindingBuilder.bind(reconciliationManifestQueue())
+            .to(certificateStatusExchange()).with(reconciliationManifestRoutingKey);
+    }
+
+    @Bean
+    public Queue reconciliationRequestQueue() {
+        return QueueBuilder.durable(reconciliationRequestQueue).build();
+    }
+
+    @Bean
+    public Binding reconciliationRequestBinding() {
+        return BindingBuilder.bind(reconciliationRequestQueue())
+            .to(certificateStatusExchange()).with(reconciliationRequestRoutingKey);
     }
 
     @Bean

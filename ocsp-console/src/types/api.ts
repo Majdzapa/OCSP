@@ -168,6 +168,15 @@ export interface InboxEventItem {
 
 export interface ReconciliationReport {
   synchronized: boolean
+  manifestReceived?: boolean
+  manifestGeneratedAt?: string | null
+  outboxTotalEvents?: number
+  outboxSentEvents?: number
+  outboxPendingEvents?: number
+  missingInInboxCount?: number
+  missingInInboxEventIds?: string[]
+  failedInInboxCount?: number
+  failedInInboxEventIds?: string[]
   kmsTotal: number
   responderTotal: number
   inboxEventsReceived: number
@@ -179,6 +188,8 @@ export interface ReconciliationReport {
     serialNumberHex: string
     kmsStatus: string
     responderStatus: string
+    kmsSequence?: number
+    responderSequence?: number
     subjectDn?: string
   }>
   verifiedAt: string

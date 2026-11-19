@@ -5,6 +5,7 @@ import com.company.incert.ocsp.entity.InboxEvent;
 import com.company.incert.ocsp.entity.RevocationStatus;
 import com.company.incert.ocsp.repository.InboxEventRepository;
 import com.company.incert.ocsp.service.CertificateStatusService;
+import com.company.incert.ocsp.service.OutboxReconciliationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -32,6 +33,7 @@ public class InboxAdminController {
 
     private final InboxEventRepository inboxRepository;
     private final CertificateStatusService statusService;
+    private final OutboxReconciliationService reconciliationService;
 
     @Operation(summary = "List replicated certificate statuses",
                description = "Returns all certificates replicated into the OCSP responder database via RabbitMQ events")
@@ -117,95 +119,26 @@ public class InboxAdminController {
         ));
     }
 
-    @Operation(summary = "Verify synchronization between RabbitMQ Inbox and Responder DB",
-               description = "Compares the latest RabbitMQ inbox event per certificate serial against the active revocation_status table (purely event-driven, no REST calls to KMS)")
+    @Operation(summary = "Verify synchronization between KMS Outbox, RabbitMQ Inbox, and Responder DB",
+               description = "Compares the KMS Outbox manifest received via RabbitMQ against ocsp.inbox_event and ocsp.revocation_status (purely event-driven, no REST calls to KMS)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Reconciliation report returned successfully"),
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/reconciliation/verify")
     public ResponseEntity<Map<String, Object>> verifyReconciliation() {
-        List<InboxEvent> allInboxEvents = inboxRepository.findAll();
-        List<RevocationStatus> responderCerts = statusService.findAll();
-        HexFormat hex = HexFormat.of();
+        return ResponseEntity.ok(reconciliationService.verifyReconciliation());
+    }
 
-        // Index responder certs by canonical hex serial (minimal two's-complement bytes)
-        Map<String, RevocationStatus> responderMap = new HashMap<>();
-        for (RevocationStatus r : responderCerts) {
-            String sHex = hex.formatHex(
-                new java.math.BigInteger(1, r.getSerialNumber()).toByteArray()
-            ).toLowerCase();
-            responderMap.put(sHex, r);
-        }
-
-        // Determine the latest RabbitMQ event per certificate serial by highest sequence (then receivedAt)
-        Map<String, InboxEvent> latestInboxBySerial = new LinkedHashMap<>();
-        for (InboxEvent ev : allInboxEvents) {
-            if ("FAILED".equalsIgnoreCase(ev.getProcessingStatus())) {
-                continue;
-            }
-            String rawSerialHex = String.valueOf(ev.getCertificateSerial()).toLowerCase().replaceAll("[^0-9a-f]", "");
-            if (rawSerialHex.isEmpty()) continue;
-            if (rawSerialHex.length() % 2 != 0) rawSerialHex = "0" + rawSerialHex;
-            String canonicalSerial = hex.formatHex(
-                new java.math.BigInteger(1, hex.parseHex(rawSerialHex)).toByteArray()
-            ).toLowerCase();
-
-            InboxEvent current = latestInboxBySerial.get(canonicalSerial);
-            if (current == null
-                    || ev.getSequence() > current.getSequence()
-                    || (ev.getSequence() == current.getSequence()
-                        && ev.getReceivedAt() != null
-                        && (current.getReceivedAt() == null || ev.getReceivedAt().isAfter(current.getReceivedAt())))) {
-                latestInboxBySerial.put(canonicalSerial, ev);
-            }
-        }
-
-        int inboxDistinctTotal = latestInboxBySerial.size();
-        int responderTotal = responderCerts.size();
-        long inboxCount = allInboxEvents.size();
-
-        List<String> missingSerials = new ArrayList<>();
-        List<Map<String, Object>> mismatches = new ArrayList<>();
-        int matched = 0;
-
-        for (Map.Entry<String, InboxEvent> entry : latestInboxBySerial.entrySet()) {
-            String serialHex = entry.getKey();
-            InboxEvent latestEv = entry.getValue();
-            String expectedStatus = String.valueOf(latestEv.getStatus());
-
-            RevocationStatus rc = responderMap.get(serialHex);
-            if (rc == null) {
-                missingSerials.add(serialHex);
-            } else {
-                String respStatus = rc.getStatus().name();
-                if (!expectedStatus.equalsIgnoreCase(respStatus)) {
-                    mismatches.add(Map.of(
-                            "serialNumberHex", serialHex,
-                            "kmsStatus", expectedStatus,
-                            "responderStatus", respStatus
-                    ));
-                } else {
-                    matched++;
-                }
-            }
-        }
-
-        boolean isSynchronized = missingSerials.isEmpty() && mismatches.isEmpty();
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("synchronized", isSynchronized);
-        result.put("kmsTotal", inboxDistinctTotal);
-        result.put("responderTotal", responderTotal);
-        result.put("inboxEventsReceived", inboxCount);
-        result.put("matchedCount", matched);
-        result.put("missingCount", missingSerials.size());
-        result.put("missingSerials", missingSerials);
-        result.put("mismatchCount", mismatches.size());
-        result.put("statusMismatches", mismatches);
-        result.put("verifiedAt", Instant.now().toString());
-
-        return ResponseEntity.ok(result);
+    @Operation(summary = "Request replay of missing or failed Outbox events via RabbitMQ",
+               description = "Publishes a REPLAY_EVENTS command over RabbitMQ asking KMS to re-emit missing or failed outbox events (zero REST calls)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay command published to RabbitMQ"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
+    @PostMapping("/reconciliation/replay")
+    public ResponseEntity<Map<String, Object>> replayMissingEvents() {
+        return ResponseEntity.ok(reconciliationService.triggerReplayViaRabbitMq());
     }
 }
 
