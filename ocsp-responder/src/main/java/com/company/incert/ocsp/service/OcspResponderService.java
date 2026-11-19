@@ -4,6 +4,7 @@ import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.entity.RevocationReason;
 import com.company.incert.ocsp.entity.RevocationStatus;
 import com.company.incert.ocsp.signing.OcspSigner;
+import com.company.incert.ocsp.signing.SignerNotConfiguredException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +66,11 @@ public class OcspResponderService {
             log.warn("Malformed OCSP request: {}", e.getMessage());
             meterRegistry.counter("ocsp.request.error", "reason", "malformed").increment();
             return buildErrorResponse(OCSPRespBuilder.MALFORMED_REQUEST);
+        } catch (SignerNotConfiguredException e) {
+            // RFC 6960 tryLater: the responder is up but has no signing certificate yet.
+            log.warn("OCSP request not answered: {}", e.getMessage());
+            meterRegistry.counter("ocsp.request.error", "reason", "no_signer").increment();
+            return buildErrorResponse(OCSPRespBuilder.TRY_LATER);
         } catch (Exception e) {
             log.error("OCSP processing error: {}", e.getMessage(), e);
             meterRegistry.counter("ocsp.request.error", "reason", "internal").increment();

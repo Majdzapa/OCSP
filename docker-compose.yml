@@ -97,15 +97,12 @@ services:
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
       HSM_PIN: ${HSM_PIN:-1234}
       HSM_SO_PIN: ${HSM_SO_PIN:-12345678}
-      HSM_KEY_LABEL: ${HSM_KEY_LABEL:-ocsp-signing-key}
       HSM_PKCS11_LIBRARY: /usr/lib/softhsm/libsofthsm2.so
-      PKI_DIR: /data/pki
     volumes:
       - hsm-tokens:/var/lib/softhsm/tokens
       - hsm-conf:/etc/softhsm2
-      - ./data/pki:/data/pki
     healthcheck:
-      test: ["CMD-SHELL", "pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label ocsp-signing --login --pin 1234 --list-objects --type cert 2>/dev/null | grep -q ocsp-signing-key || exit 1"]
+      test: ["CMD-SHELL", "softhsm2-util --show-slots | grep -q 'Label:.*ocsp-signing' || exit 1"]
       start_period: 15s
       interval: 5s
       timeout: 5s
@@ -168,11 +165,9 @@ services:
       HSM_SLOT_INDEX: ${HSM_SLOT_INDEX:-0}
       HSM_CONFIG_PATH: ${HSM_CONFIG_PATH:-}
       SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
-      PKI_DIR: /data/pki
     volumes:
       - hsm-tokens:/var/lib/softhsm/tokens
       - hsm-conf:/etc/softhsm2
-      - ./data/pki:/data/pki:ro
       - ./certs/rabbitmq:/certs/rabbitmq:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
@@ -201,10 +196,6 @@ services:
       <<: *spring-opts
       SERVER_PORT: 8082
       OCSP_RESPONDER_URL: http://ocsp-responder:8080/ocsp
-      PKI_DIR: /data/pki
-    volumes:
-      - ./data/pki:/data/pki:ro
-      - ./data/pki:/app/data/pki:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
       start_period: 25s

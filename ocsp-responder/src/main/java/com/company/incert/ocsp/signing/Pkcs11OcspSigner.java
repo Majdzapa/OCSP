@@ -149,13 +149,15 @@ public class Pkcs11OcspSigner implements OcspSigner {
             this.keyStore = KeyStore.getInstance("PKCS11", this.provider);
             this.keyStore.load(null, pin);
 
-            if (!keyStore.containsAlias(this.keyLabel) || keyStore.getKey(this.keyLabel, pin) == null) {
-                log.info("No pre-existing key '{}' found in HSM token '{}'; generating RSA 3072 keypair on initialization...",
+            if (keyStore.containsAlias(this.keyLabel) && keyStore.getKey(this.keyLabel, pin) != null) {
+                updateActiveCertificate(this.keyLabel, null);
+            } else {
+                // Nothing is pre-provisioned: the user generates a CSR in the HSM, has it signed by a CA,
+                // then imports and activates the resulting certificate.
+                log.info("No signing key '{}' in HSM token '{}'. Generate a CSR, have it signed by your CA, "
+                        + "then import and activate the certificate. OCSP requests answer tryLater until then.",
                         this.keyLabel, tokenLabel);
-                generateAndStoreKeyPair(this.keyLabel, "CN=Incert OCSP Signer,O=Incert,C=CH", "RSA", 3072);
             }
-
-            updateActiveCertificate(this.keyLabel, null);
         } catch (Exception e) {
             log.error("Failed to load PKCS#11 signing key: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to load PKCS#11 signing key: " + e.getMessage(), e);
@@ -432,7 +434,11 @@ public class Pkcs11OcspSigner implements OcspSigner {
 
     @Override
     public SigningSelection selectSigner(CertificateID certId) throws Exception {
-        if (certId != null && !registeredSigners.isEmpty()) {
+        if (registeredSigners.isEmpty()) {
+            throw new SignerNotConfiguredException(
+                    "No active signing certificate is configured (activate one under Signing Certificates)");
+        }
+        if (certId != null) {
             Instant now = Instant.now();
             byte[] reqIssuerNameHash = certId.getIssuerNameHash();
             byte[] reqIssuerKeyHash = certId.getIssuerKeyHash();
@@ -530,7 +536,7 @@ public class Pkcs11OcspSigner implements OcspSigner {
     @Override
     public long signingCertDaysUntilExpiry() {
         SignerState state = stateRef.get();
-        if (state == null) return -1;
+        if (state == null || registeredSigners.isEmpty()) return -1;
         return ChronoUnit.DAYS.between(Instant.now(), state.notAfter());
     }
 

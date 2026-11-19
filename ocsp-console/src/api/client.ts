@@ -121,9 +121,15 @@ export const getReplicatedCertificates = (): Promise<KmsCertificate[]> =>
 export const testOcspRequest = (
   serialHex: string,
   includeNonce: boolean,
-  method: 'POST' | 'GET' = 'POST'
+  method: 'POST' | 'GET' = 'POST',
+  issuerPem?: string
 ): Promise<OcspTestResult> =>
-  ocspClientApi.post('/check', { serialHex, includeNonce, method }).then((r) => {
+  ocspClientApi.post('/check', {
+    serialHex,
+    includeNonce,
+    method,
+    ...(issuerPem?.trim() ? { issuerPem: issuerPem.trim() } : {}),
+  }).then((r) => {
     const data = r.data
     return {
       serialHex: data.serialHex,

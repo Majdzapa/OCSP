@@ -271,13 +271,7 @@
       <div class="grid" style="margin-bottom: 16px;">
         <div>
           <label for="serialInput">Certificate Serial Number (hex)</label>
-          <input type="text" id="serialInput" value="00b59d41baf78afe0de1bbe7ae28c0450f" placeholder="e.g. 00b59d41baf78afe0de1bbe7ae28c0450f">
-          <div class="presets">
-            <span style="font-size: 0.72rem; color: var(--text-dim); line-height: 24px;">Presets:</span>
-            <button class="preset-btn" onclick="setSerial('00b59d41baf78afe0de1bbe7ae28c0450f')">ee-01 (GOOD)</button>
-            <button class="preset-btn" onclick="setSerial('008a5232e619344f2ebdb9b35f93e6a70d')">ee-02 (REVOKED)</button>
-            <button class="preset-btn" onclick="setSerial('00dcd6e3751e8e68a43f3fc6561007e833')">ee-03 (HOLD / GOOD)</button>
-          </div>
+          <input type="text" id="serialInput" value="" placeholder="Enter hex serial number issued by your KMS CA">
         </div>
 
         <div>
@@ -556,7 +550,7 @@
       // OpenSSL command
       const cleanSerial = (data.serialHex || '').toLowerCase().replace(/[^0-9a-f]/g, '');
       const nonceFlag = data.includeNonce ? ' -nonce' : ' -no_nonce';
-      const cmd = `openssl ocsp -issuer data/pki/intermediate-ca-cert.pem -serial 0x${cleanSerial} -url ${data.responderUrl || 'http://localhost:8080/ocsp'} -CAfile data/pki/ca-chain.pem -resp_text${nonceFlag}`;
+      const cmd = `openssl ocsp -issuer ca.pem -serial 0x${cleanSerial} -url ${data.responderUrl || 'http://localhost:8080/ocsp'} -CAfile ca-chain.pem -resp_text${nonceFlag}`;
       document.getElementById('opensslCmd').innerText = cmd;
 
       card.scrollIntoView({ behavior: 'smooth' });

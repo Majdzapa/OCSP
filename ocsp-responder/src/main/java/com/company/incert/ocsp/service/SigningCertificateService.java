@@ -45,32 +45,11 @@ public class SigningCertificateService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initDefaultCertificate() {
+        // No default signing certificate is ever created: signing certificates are configured by the user
+        // (generate CSR in the HSM -> issue from a CA -> import -> activate).
         List<SigningCertificate> activeList = repository.findAllByActiveTrueOrderByActivatedAtDesc();
         if (activeList.isEmpty()) {
-            X509CertificateHolder[] chain = ocspSigner.getSignerChain();
-            if (chain != null && chain.length > 0) {
-                X509CertificateHolder activeHolder = chain[0];
-                String pem = toPem(activeHolder);
-                String keyLabel = ocspSigner.getActiveKeyLabel();
-
-                SigningCertificate defaultCert = SigningCertificate.builder()
-                        .alias("Default OCSP Signer (" + keyLabel + ")")
-                        .keyLabel(keyLabel)
-                        .certificatePem(pem)
-                        .subjectDn(activeHolder.getSubject().toString())
-                        .issuerDn(activeHolder.getIssuer().toString())
-                        .serialNumber(activeHolder.getSerialNumber().toString(16))
-                        .notBefore(activeHolder.getNotBefore().toInstant())
-                        .notAfter(activeHolder.getNotAfter().toInstant())
-                        .signatureAlgorithm(getAlgorithm(activeHolder))
-                        .active(true)
-                        .activatedAt(Instant.now())
-                        .build();
-
-                repository.save(defaultCert);
-                log.info("Initialized default signing certificate in database: alias='{}', keyLabel='{}', notAfter={}",
-                        defaultCert.getAlias(), keyLabel, defaultCert.getNotAfter());
-            }
+            log.info("No active signing certificate configured; OCSP requests answer tryLater until one is activated");
         } else {
             SigningCertificate primary = activeList.get(0);
             try {
@@ -384,11 +363,6 @@ public class SigningCertificateService {
         } catch (Exception ignored) {
             return false;
         }
-    }
-
-    private String getAlgorithm(X509CertificateHolder holder) {
-        String keyType = isEcCertificate(holder) ? "EC" : "RSA";
-        return SigningAlgorithm.defaultForKeyType(keyType).getAlgorithmName();
     }
 }
 

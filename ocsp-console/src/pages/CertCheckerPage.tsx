@@ -7,6 +7,7 @@ import {
   Grid,
   Paper,
   TextInput,
+  Textarea,
   Button,
   Badge,
   Alert,
@@ -133,6 +134,7 @@ export function CertCheckerPage() {
 
   // Tab 0: Live OCSP Protocol Tester
   const [testSerial, setTestSerial] = useState('')
+  const [issuerPem, setIssuerPem] = useState(() => localStorage.getItem('ocsp_checker_issuer_pem') || '')
   const [sampleGoodSerial, setSampleGoodSerial] = useState<string | null>(null)
   const [sampleRevokedSerial, setSampleRevokedSerial] = useState<string | null>(null)
   const [sampleHoldSerial, setSampleHoldSerial] = useState<string | null>(null)
@@ -179,7 +181,7 @@ export function CertCheckerPage() {
     setTestLoading(true)
     setTestError(null)
     try {
-      const res = await testOcspRequest(hex, includeNonce, httpMethod)
+      const res = await testOcspRequest(hex, includeNonce, httpMethod, issuerPem)
       if (res.error) {
         setTestError(res.error)
         setTestResult(null)
@@ -340,6 +342,29 @@ export function CertCheckerPage() {
                     <Radio value="GET" label="GET (base64url)" />
                   </Group>
                 </Radio.Group>
+              </Grid.Col>
+
+              <Grid.Col span={12}>
+                <Textarea
+                  label="Issuer CA Certificate (PEM)"
+                  description="Required to build CertID and verify the OCSP response signature (download from KMS > Certificate Authorities)"
+                  placeholder={'-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----'}
+                  value={issuerPem}
+                  onChange={(e) => {
+                    const val = e.currentTarget.value
+                    setIssuerPem(val)
+                    localStorage.setItem('ocsp_checker_issuer_pem', val)
+                  }}
+                  autosize
+                  minRows={3}
+                  maxRows={6}
+                  styles={{
+                    input: {
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '0.75rem',
+                    },
+                  }}
+                />
               </Grid.Col>
 
               <Grid.Col span={12}>

@@ -3,6 +3,8 @@ package com.company.incert.ocsp.service;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.entity.RevocationReason;
 import com.company.incert.ocsp.entity.RevocationStatus;
+import com.company.incert.ocsp.signing.OcspSigner;
+import com.company.incert.ocsp.signing.SignerNotConfiguredException;
 import com.company.incert.ocsp.signing.SoftwareKeyOcspSigner;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
@@ -192,6 +194,24 @@ class OcspResponderServiceTest {
         BasicOCSPResp basicResp = (BasicOCSPResp) new OCSPResp(responseBytes).getResponseObject();
         Extension echoedNonce = basicResp.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nonce);
         assertThat(echoedNonce).isNotNull();
+    }
+
+    @Test
+    void shouldAnswerTryLaterWhenNoSigningCertificateIsConfigured() throws Exception {
+        OcspSigner unconfigured = org.mockito.Mockito.mock(OcspSigner.class);
+        when(unconfigured.selectSigner(any())).thenThrow(new SignerNotConfiguredException("no active signing certificate"));
+        OcspResponderService noSignerService =
+                new OcspResponderService(statusService, unconfigured, meterRegistry, Duration.ofHours(24));
+
+        DigestCalculatorProvider digCalcProv = new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        CertificateID certId = new CertificateID(digCalcProv.get(CertificateID.HASH_SHA1), caCertHolder, BigInteger.valueOf(4242));
+        OCSPReqBuilder reqBuilder = new OCSPReqBuilder();
+        reqBuilder.addRequest(certId);
+
+        OCSPResp response = new OCSPResp(noSignerService.handle(reqBuilder.build().getEncoded()));
+
+        assertThat(response.getStatus()).isEqualTo(OCSPRespBuilder.TRY_LATER);
+        assertThat(meterRegistry.counter("ocsp.request.error", "reason", "no_signer").count()).isEqualTo(1.0);
     }
 
 }

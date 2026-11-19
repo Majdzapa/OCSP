@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure default SoftHSM directories
-RUN mkdir -p /etc/softhsm2 /var/lib/softhsm/tokens /data/pki /scripts \
+RUN mkdir -p /etc/softhsm2 /var/lib/softhsm/tokens /scripts \
     && echo "directories.tokendir = /var/lib/softhsm/tokens" > /etc/softhsm2/softhsm2.conf \
     && echo "objectstore.backend = file" >> /etc/softhsm2/softhsm2.conf \
     && echo "log.level = INFO" >> /etc/softhsm2/softhsm2.conf
@@ -24,14 +24,13 @@ ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf
 ENV HSM_TOKEN_LABEL=ocsp-signing
 ENV HSM_PIN=changeme-pin
 ENV HSM_SO_PIN=changeme-sopin
-ENV HSM_KEY_LABEL=ocsp-signing-key
 ENV HSM_PKCS11_LIBRARY=/usr/lib/softhsm/libsofthsm2.so
-ENV PKI_DIR=/data/pki
 
 WORKDIR /var/lib/softhsm
 
+# Healthy once the token exists (keys are created later by the user through the responder)
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=6 \
-  CMD pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label "${HSM_TOKEN_LABEL}" --login --pin "${HSM_PIN}" --list-objects --type cert 2>/dev/null | grep -q "${HSM_KEY_LABEL}" || exit 1
+  CMD softhsm2-util --show-slots | grep -q "Label:.*${HSM_TOKEN_LABEL}" || exit 1
 
 ENTRYPOINT ["/scripts/init-hsm.sh"]
 
