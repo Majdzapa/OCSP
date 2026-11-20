@@ -129,6 +129,20 @@ class CertificateStatusServiceTest {
             .isEqualTo(serial.toByteArray());
     }
 
+    @Test
+    void findByCertIdShouldReturnEmptyWithoutSerialFallbackWhenIssuerHashesDoNotMatch() {
+        byte[] wrongNameHash = new byte[]{9, 9};
+        byte[] wrongKeyHash = new byte[]{8, 8};
+        byte[] serial = new byte[]{1, 2, 3};
+
+        when(repository.findByCertId(wrongNameHash, wrongKeyHash, serial)).thenReturn(Optional.empty());
+
+        Optional<RevocationStatus> result = service.findByCertId(wrongNameHash, wrongKeyHash, serial);
+
+        assertThat(result).isEmpty();
+        verify(repository, never()).findBySerialNumber(any());
+    }
+
     @org.junit.jupiter.api.Test
     void parseSerial_highBitClear_dropsRedundantLeadingZero() {
         assertThat(CertificateStatusService.parseSerial("007f01")).isEqualTo(new byte[]{0x7f, 0x01});

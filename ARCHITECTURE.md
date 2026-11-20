@@ -167,10 +167,7 @@ sequenceDiagram
 
         loop For each CertID in request
             Svc->>DB_Svc: findByCertId(issuerNameHash, issuerKeyHash, serialBytes)
-            DB_Svc->>DB: SELECT by (issuer_name_hash, issuer_key_hash, serial_number)
-            alt Exact CertID match not found
-                DB_Svc->>DB: Fallback SELECT by serial_number
-            end
+            DB_Svc->>DB: Strict RFC 6960 SELECT by (issuer_name_hash, issuer_key_hash, serial_number)
             DB-->>DB_Svc: Optional<RevocationStatus> (GOOD, REVOKED, or empty -> UNKNOWN)
             DB_Svc-->>Svc: Optional<RevocationStatus>
         end

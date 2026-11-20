@@ -34,11 +34,7 @@ public class CertificateStatusService {
 
     @Transactional(readOnly = true)
     public Optional<RevocationStatus> findByCertId(byte[] issuerNameHash, byte[] issuerKeyHash, byte[] serialNumber) {
-        Optional<RevocationStatus> exact = repository.findByCertId(issuerNameHash, issuerKeyHash, serialNumber);
-        if (exact.isPresent()) {
-            return exact;
-        }
-        return repository.findBySerialNumber(serialNumber).stream().findFirst();
+        return repository.findByCertId(issuerNameHash, issuerKeyHash, serialNumber);
     }
 
     @Transactional(readOnly = true)
@@ -89,8 +85,7 @@ public class CertificateStatusService {
         String reasonName = reason != null ? reason.name() : null;
         Instant now = Instant.now();
 
-        Optional<RevocationStatus> existing = repository.findByCertId(nameHash, keyHash, serial)
-            .or(() -> repository.findBySerialNumber(serial).stream().findFirst());
+        Optional<RevocationStatus> existing = repository.findByCertId(nameHash, keyHash, serial);
         if (existing.isPresent()) {
             RevocationStatus row = existing.get();
             boolean stale = event.sequence() < row.getSequence();
