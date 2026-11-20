@@ -16,6 +16,7 @@ import type {
   HsmInfoDto,
   GenerateCsrRequest,
   GenerateCsrResponse,
+  SigningCertValidityReportDto,
 } from '../types/api'
 
 // API client for ocsp-responder (protected with X-API-KEY, Basic Auth, or Keycloak Bearer token)
@@ -205,3 +206,15 @@ export const getHsmInfo = (): Promise<HsmInfoDto> =>
 
 export const generateSigningCsr = (req: GenerateCsrRequest): Promise<GenerateCsrResponse> =>
   api.post('/signing-certificates/csr', req).then((r) => r.data)
+
+export const getSigningCertValidityReport = (): Promise<SigningCertValidityReportDto> =>
+  api.get('/signing-certificates/validity').then((r) => r.data)
+
+export const runSigningCertValidityCheckNow = (): Promise<SigningCertValidityReportDto> =>
+  api.post('/signing-certificates/validity/check').then((r) => r.data)
+
+export const createSigningCertRenewalRequest = (
+  id: number,
+  req?: { reuseExistingKey?: boolean; newKeyLabel?: string; keySize?: number }
+): Promise<GenerateCsrResponse> =>
+  api.post(`/signing-certificates/${id}/renew-request`, req ?? { reuseExistingKey: true }).then((r) => r.data)

@@ -5,8 +5,10 @@ import com.company.incert.ocsp.dto.AddSigningCertificateRequest;
 import com.company.incert.ocsp.dto.GenerateCsrRequest;
 import com.company.incert.ocsp.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.dto.HsmInfoDto;
+import com.company.incert.ocsp.dto.SigningCertValidityReportDto;
 import com.company.incert.ocsp.dto.SigningCertificateDto;
 import com.company.incert.ocsp.service.SigningCertificateService;
+import com.company.incert.ocsp.service.SigningCertificateValidityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -14,7 +16,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,13 +26,25 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/admin/signing-certificates")
-@RequiredArgsConstructor
 @Tag(name = "Signing Certificates", description = "Management of OCSP response signing certificates and key rotation")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
 @SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
 public class SigningCertificateController {
 
     private final SigningCertificateService certificateService;
+    private final SigningCertificateValidityService validityService;
+
+    public SigningCertificateController(SigningCertificateService certificateService) {
+        this(certificateService, null);
+    }
+
+    @Autowired
+    public SigningCertificateController(
+            SigningCertificateService certificateService,
+            SigningCertificateValidityService validityService) {
+        this.certificateService = certificateService;
+        this.validityService = validityService;
+    }
 
     @Operation(summary = "List all signing certificates", description = "Retrieves all registered signing certificates and their active status")
     @GetMapping
@@ -136,6 +150,39 @@ public class SigningCertificateController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Get signing certificates validity report and 3-day expiry alerts",
+               description = "Returns the current validity report for all signing certificates, including active alerts for certificates expiring within 3 days or already expired")
+    @GetMapping("/validity")
+    public ResponseEntity<SigningCertValidityReportDto> getValidityReport() {
+        return ResponseEntity.ok(validityService.getValidityReport());
+    }
+
+    @Operation(summary = "Run the daily signing certificate validity check now",
+               description = "Triggers the daily validity check job immediately, logs alerts for certificates expiring within 3 days, and returns the updated report")
+    @PostMapping("/validity/check")
+    public ResponseEntity<SigningCertValidityReportDto> runValidityCheckNow() {
+        return ResponseEntity.ok(validityService.runDailyValidityCheck());
+    }
+
+    public record RenewalCsrRequest(Boolean reuseExistingKey, String newKeyLabel, Integer keySize) {}
+
+    @Operation(summary = "Create a renewal CSR for an existing signing certificate",
+               description = "Generates a PKCS#10 renewal CSR for the specified signing certificate (reusing its HSM key by default or generating a new key)")
+    @PostMapping("/{id}/renew-request")
+    public ResponseEntity<?> createRenewalRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) RenewalCsrRequest request) {
+        try {
+            Boolean reuse = request != null ? request.reuseExistingKey() : Boolean.TRUE;
+            String newLabel = request != null ? request.newKeyLabel() : null;
+            Integer keySize = request != null ? request.keySize() : null;
+            GenerateCsrResponse csr = validityService.createRenewalRequest(id, reuse, newLabel, keySize);
+            return ResponseEntity.ok(csr);
+        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }

@@ -246,3 +246,49 @@ export interface GenerateCsrResponse {
   keyAlgorithm: string
   csrPem: string
 }
+
+export interface ValidityAlertDto {
+  certificateId: number
+  alias: string
+  keyLabel: string
+  subjectDn: string
+  issuerDn: string
+  notAfter: string
+  daysUntilExpiry: number
+  hoursUntilExpiry: number
+  active: boolean
+  severity: 'EXPIRED' | 'EXPIRING_SOON'
+  message: string
+}
+
+export interface CertificateValidityItemDto {
+  id: number
+  alias: string
+  keyLabel: string
+  subjectDn: string
+  issuerDn: string
+  serialNumber: string
+  signatureAlgorithm: string
+  notBefore: string
+  notAfter: string
+  daysUntilExpiry: number
+  hoursUntilExpiry: number
+  active: boolean
+  expired: boolean
+  expiringWithinThreshold: boolean
+  validityStatus: 'HEALTHY' | 'EXPIRING_SOON' | 'EXPIRED'
+}
+
+export interface SigningCertValidityReportDto {
+  lastCheckedAt: string
+  alertThresholdDays: number
+  dailyCron: string
+  totalCount: number
+  activeCount: number
+  healthyCount: number
+  expiringWithinThresholdCount: number
+  expiredCount: number
+  alertActive: boolean
+  alerts: ValidityAlertDto[]
+  certificates: CertificateValidityItemDto[]
+}
