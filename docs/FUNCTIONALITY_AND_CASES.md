@@ -12,7 +12,7 @@ This document provides the complete functional specification of the **Incert OCS
 | Module | Port | Schema / Storage | Core Responsibility |
 |---|---|---|---|
 | **`ocsp-responder`** | `8080` | MariaDB `ocsp` + SoftHSM2 token | RFC 6960 OCSP endpoint (`/ocsp`), PKCS#11 HSM signing, multi-CA signing certificate registry, RabbitMQ inbox consumer, zero-REST Outbox–Inbox reconciliation, dual-mode Spring Security |
-| **`ocsp-console`** | `3000` | Browser `localStorage` | React 18 + Mantine v7 Admin UI (Dashboard, Signing Certificates, Revocations, Live Inbox Audit & Reconciliation, Cert Checker, Keycloak SSO / mTLS Login) |
+| **`ocsp-console`** | `3002` | Browser `localStorage` | React 18 + Mantine v7 Admin UI (Dashboard, Signing Certificates, Revocations, Live Inbox Audit & Reconciliation, Cert Checker, Keycloak SSO / mTLS Login) |
 | **`ocsp-client`** | `8082` | Stateless | Standalone RFC 6960 test client & web UI (`POST`/`GET`, Nonce generation & verification, response signature verification against CA PEM) |
 | **`kms-simulator`** | `8090` | MariaDB `kms` | Root & Subordinate CA creation (`/kms/cas`), CSR & keygen certificate issuance, certificate revocation/hold/unrevoke (`/kms/certificates`), Transactional Outbox (`outbox_event`), RabbitMQ relay & manifest broadcaster |
 | **`kms-console`** | `3001` | Stateless | React 18 + Mantine v7 KMS UI (Certificate Inventory, Certificate Authorities & CSR Issuance, RabbitMQ Outbox Monitor) |

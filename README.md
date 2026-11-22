@@ -10,7 +10,7 @@
 
 ```
                       ┌───────────────────────────────────────┐
-                      │    Mantine Console (Port 3000)        │
+                      │    Mantine Console (Port 3002)        │
                       │    [LoginPage / Keycloak SSO / UI]    │
                       └───────┬───────────────────────┬───────┘
        (Admin API + Auth)     │                       │ (RFC 6960 Test Checks)
@@ -79,7 +79,7 @@ docker compose up --build -d
 
 | Service | Port | Endpoint / Description | Authentication |
 |---|---|---|---|
-| **OCSP Console (Mantine)** | `3000` | [http://localhost:3000](http://localhost:3000) (Dashboard, Signing Certs, Inventory) | **Keycloak SSO / Token / API Key** |
+| **OCSP Console (Mantine)** | `3002` | [http://localhost:3002](http://localhost:3002) (Dashboard, Signing Certs, Inventory) | **Keycloak SSO / Token / API Key** |
 | **Keycloak IAM** | `8081` | [http://localhost:8081](http://localhost:8081) (Realm: `incert`, Client: `ocsp-console`) | `admin` / `admin` (Admin Console) |
 | **OCSP Responder Swagger UI** | `8080` | [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) (`/v3/api-docs`) | Public Docs (Supports Auth in UI) |
 | **OCSP Client Swagger UI** | `8082` | [http://localhost:8082/swagger-ui/index.html](http://localhost:8082/swagger-ui/index.html) (`/v3/api-docs`) | Public Docs |
@@ -128,7 +128,7 @@ The subsystem starts with **zero static or pre-seeded keys/certificates** (`init
 - **Multi-Active CA Selection**: Multiple certificates can be active at the same time; per OCSP request, `OcspSigner.selectSigner(CertID)` matches the request's `issuerNameHash` / `issuerKeyHash` to the corresponding active signing certificate (with fallback to the default active signer).
 - **Centralized `SigningAlgorithm` Enum**: Supports RSA (`SHA256withRSA`, `SHA384withRSA`, `SHA512withRSA`, `SHA256withRSAandMGF1`) and EC (`SHA256withECDSA`, `SHA384withECDSA`, `SHA512withECDSA`), filtered dynamically by HSM key type.
 - **Production-Safe Commit Sync**: Activation pre-validates expiration and HSM key presence, and updates the in-memory PKCS#11 signer via `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so a DB rollback never leaves HSM state out of sync. In the `prod` profile, `SoftwareKeyOcspSigner` fallback is disabled.
-- **Console UI**: Generate HSM CSRs, import CA-signed certificates, select signature algorithms, and activate/deactivate certificates at [http://localhost:3000/signing-certificates](http://localhost:3000/signing-certificates).
+- **Console UI**: Generate HSM CSRs, import CA-signed certificates, select signature algorithms, and activate/deactivate certificates at [http://localhost:3002/signing-certificates](http://localhost:3002/signing-certificates).
 
 ---
 
@@ -193,7 +193,7 @@ The OCSP Responder and Admin Console support activating and deactivating TLS for
 | [`ocsp-responder`](./ocsp-responder) | `8080` | RFC 6960 OCSP responder with dynamic signing certificate registry, PKCS#11 HSM integration, RabbitMQ inbox consumer, and dual-mode Spring Security. |
 | [`ocsp-client`](./ocsp-client) | `8082` | Standalone OCSP Client application with embedded web UI for testing RFC 6960 requests (with/without nonce, POST/GET) and verifying cryptographic signatures against the CA cert. |
 | [`kms-simulator`](./kms-simulator) | `8090` | Source of truth for certificates and revocation lifecycle. Test PKI generator, transactional outbox pattern, embedded web UI, and RabbitMQ publisher. |
-| [`ocsp-console`](./ocsp-console) | `3000` | Full administrative React 18 single page application with Mantine v7 components, Keycloak SSO redirect flow, and dynamic signing certificate management UI. |
+| [`ocsp-console`](./ocsp-console) | `3002` | Full administrative React 18 single page application with Mantine v7 components, Keycloak SSO redirect flow, and dynamic signing certificate management UI. |
 
 ---
 

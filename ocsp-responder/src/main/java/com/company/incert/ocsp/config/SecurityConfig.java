@@ -57,7 +57,7 @@ public class SecurityConfig {
         return AuthenticationMode.fromString(authModeStr);
     }
 
-    @Value("${security.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    @Value("${security.cors.allowed-origins:http://localhost:3002,http://localhost:3000,http://localhost:5173}")
     private String allowedOriginsRaw;
 
     @Bean

@@ -3,7 +3,7 @@ security:
   tls:
     enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # Activate or deactivate TLS for OCSP login & transport
   cors:
-    allowed-origins: ${SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    allowed-origins: ${SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:3002,http://localhost:3000,http://localhost:5173}
 
 rabbitmq:
   tls:

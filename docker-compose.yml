@@ -12,7 +12,7 @@
 #   hsm              SoftHSM2 Dedicated HSM Container   (PKCS#11 Token & Key Module)
 #   ocsp-responder   RFC 6960 OCSP Responder + Auth    (host 8080, internal 8080)
 #   ocsp-client      RFC 6960 Client + Test Web UI      (host 8082, internal 8082)
-#   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3000)
+#   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3002)
 # =============================================================================
 
 networks:
@@ -223,7 +223,7 @@ services:
       ocsp-client:
         condition: service_healthy
     ports:
-      - "3000:80"
+      - "3002:80"
     volumes:
       - ./build/site:/usr/share/nginx/html/docs:ro
     healthcheck:

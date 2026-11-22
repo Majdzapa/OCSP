@@ -47,7 +47,7 @@ flowchart TB
         Q_REPLAY[["📬 Queue: kms.reconciliation.request\nKey: incert.reconciliation.request.v1"]]
     end
 
-    subgraph OCSP_SIDE["OCSP Responder (:8080) & Console (:3000)"]
+    subgraph OCSP_SIDE["OCSP Responder (:8080) & Console (:3002)"]
         L1_SVC["⚙️ Listener L1: CertificateStatusListener\n-> CertificateStatusConsumerService"]
         FAIL_SVC["⚙️ InboxFailureRecorder.recordFailure()\n@Transactional(REQUIRES_NEW)"]
         L2_SVC["⚙️ Listener L2: OutboxReconciliationService\n.onOutboxManifest() & .verifyReconciliation()"]
@@ -328,3 +328,4 @@ flowchart TD
 4. **Post-Commit HSM Signer Synchronization (`Hook H3`)**:
    - When the renewed certificate PEM (signed by the KMS CA) is imported and activated (`POST /api/v1/admin/signing-certificates`), `SigningCertificateService` saves the row in `ocsp.signing_certificates` and publishes `SigningConfigurationChangedEvent`.
    - `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` fires **only after the MariaDB transaction commits**, calling `ocspSigner.updateActiveCertificate(...)` and `ocspSigner.syncRegisteredSigners(...)` so a DB rollback can never leave the in-memory PKCS#11 signer out of sync with the database.
+
