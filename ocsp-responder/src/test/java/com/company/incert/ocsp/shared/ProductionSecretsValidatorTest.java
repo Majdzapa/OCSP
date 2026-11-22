@@ -50,3 +50,4 @@ class ProductionSecretsValidatorTest {
         assertThatCode(() -> new ProductionSecretsValidator(env).validate()).doesNotThrowAnyException();
     }
 }
+

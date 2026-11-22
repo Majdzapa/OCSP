@@ -19,3 +19,4 @@ public record CertificateStatusUpdateCommand(
     String revocationReason,
     long sequence
 ) {}
+
