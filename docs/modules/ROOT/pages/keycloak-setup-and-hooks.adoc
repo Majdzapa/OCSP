@@ -1,0 +1,207 @@
+= Keycloak Configuration & Event Hooks (Step-by-Step)
+:toc:
+:toclevels: 3
+
+This guide provides a complete, step-by-step walkthrough for configuring Keycloak for the **Incert OCSP Responder** (`app.auth.mode=KEYCLOAK`) and wiring the Keycloak user lifecycle **webhook (hook)** to `/api/v1/internal/keycloak/events`.
+
+== Option A: Automated Realm Import (Docker Compose)
+
+When running via Docker Compose, `ocsp-keycloak` (`quay.io/keycloak/keycloak:24.0`) automatically imports `keycloak/realm-export.json` at startup (`--import-realm`), provisioning:
+
+* **Realm**: `incert`
+* **Realm Roles**: `ROLE_ADMIN`, `ROLE_AGENT`, `ROLE_OPERATOR`, `ROLE_AUDITOR`, `admin`
+* **Groups**: `/ocsp-administrators`, `/ocsp-agents`, `/ocsp-operators`, `/ocsp-auditors`
+* **Public Frontend Client**: `ocsp-console` (with `group-membership` protocol mapper)
+* **Least-Privilege Service Account Client**: `ocsp-user-sync` (with `realm-management` roles `view-users` and `manage-users`)
+* **Seed Users**: `admin`, `operator`, `auditor` (default password `changeme`)
+
+NOTE: Keycloak only imports `realm-export.json` if the `incert` realm does not already exist in its database. To re-import from scratch, recreate the Keycloak container/volume.
+
+== Option B: Step-by-Step Manual Configuration in Keycloak Admin Console
+
+Follow these steps when setting up a fresh Keycloak instance (e.g. `http://localhost:8081` or a production Keycloak cluster).
+
+=== Step 1: Create the `incert` Realm
+
+. Log in to the Keycloak Admin Console (`http://localhost:8081/admin`).
+. Open the realm selector dropdown (top-left) and click **Create realm**.
+. Set **Realm name** to `incert` and ensure **Enabled** is `ON`.
+. Click **Create**.
+
+=== Step 2: Create Coarse Realm Roles and Groups
+
+Create the coarse RBAC roles under **Realm roles** -> **Create role**:
+
+[cols="1,3",options="header"]
+|===
+| Role Name | Purpose
+| `ROLE_ADMIN` | Full administrative access (signing cert activation, user management, CA/HSM ops)
+| `ROLE_AGENT` | Operational agent (CSR generation, cert import, reconciliation trigger)
+| `ROLE_OPERATOR` | Operator access
+| `ROLE_AUDITOR` | Read-only audit access
+|===
+
+Optionally create groups under **Groups** -> **Create group** and map each group to its realm role under **Role mapping**:
+
+* `/ocsp-administrators` -> `ROLE_ADMIN`
+* `/ocsp-agents` -> `ROLE_AGENT`
+* `/ocsp-operators` -> `ROLE_AGENT`, `ROLE_OPERATOR`
+* `/ocsp-auditors` -> `ROLE_AUDITOR`
+
+=== Step 3: Create the Console OIDC Client (`ocsp-console`)
+
+. Go to **Clients** -> **Create client**.
+. **General settings**:
+  * **Client type**: `OpenID Connect`
+  * **Client ID**: `ocsp-console`
+  * **Name**: `Incert OCSP Console`
+. **Capability config**:
+  * **Client authentication**: `OFF` (Public client)
+  * **Authentication flow**: Enable **Standard flow**, **Implicit flow** (required by the console's `response_type=token` redirect flow), and optionally **Direct access grants**.
+. **Login settings**:
+  * **Valid redirect URIs**:
+    ** `http://localhost:3002/*`
+    ** `http://127.0.0.1:3002/*`
+    ** (Add your production console URL, e.g. `https://ocsp.example.com/*`)
+  * **Valid post logout redirect URIs**: `+` (inherits Valid redirect URIs so OIDC logout returns to `/login`)
+  * **Web origins**: `*` (or your exact console origin in production)
+. Click **Save**.
+. **Add the Group Membership Protocol Mapper**:
+  * Open **Clients** -> `ocsp-console` -> **Client scopes** -> `ocsp-console-dedicated` -> **Add mapper** -> **By configuration** -> **Group Membership**.
+  * **Name**: `group-membership`
+  * **Token Claim Name**: `groups`
+  * **Full group path**: `OFF`
+  * **Add to ID token**: `ON`, **Add to access token**: `ON`, **Add to userinfo**: `ON`
+  * Click **Save**.
+
+=== Step 4: Create the Least-Privilege Service Account (`ocsp-user-sync`)
+
+`ocsp-responder` uses this confidential client for Admin REST API user management (`KeycloakIdentityService`) and nightly reconciliation (`KeycloakSyncService`).
+
+. Go to **Clients** -> **Create client**.
+. **General settings**:
+  * **Client type**: `OpenID Connect`
+  * **Client ID**: `ocsp-user-sync`
+  * **Name**: `OCSP Identity Sync Service Account`
+. **Capability config**:
+  * **Client authentication**: `ON` (Confidential client)
+  * **Authorization**: `OFF`
+  * **Authentication flow**: Enable **Service accounts roles** ONLY. Disable Standard flow, Implicit flow, and Direct access grants.
+. Click **Save**.
+. Open the **Credentials** tab and copy the **Client secret** (e.g. `ocsp-user-sync-secret` in dev).
+. Open the **Service accounts roles** tab -> **Assign role** -> filter by **Clients** (`realm-management`):
+  * Assign **only** `view-users` and `manage-users` (least privilege; never assign `realm-admin`).
+
+=== Step 5: Configure `ocsp-responder` Properties
+
+Set the following properties in `application*.yml` or via environment variables:
+
+[source,yaml]
+----
+app:
+  auth:
+    mode: KEYCLOAK # Env: APP_AUTH_MODE (or AUTH_MODE)
+
+keycloak:
+  auth-server-url: http://keycloak:8081         # Env: KEYCLOAK_URL (backend -> Keycloak)
+  public-url: http://localhost:8081             # Env: KEYCLOAK_PUBLIC_URL (browser -> Keycloak)
+  realm: incert                                 # Env: KEYCLOAK_REALM
+  client-id: ocsp-console                       # Env: KEYCLOAK_CLIENT_ID
+  jwk-set-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs
+  issuer-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}
+  webhook-secret: incert-keycloak-webhook-secret # Env: KEYCLOAK_WEBHOOK_SECRET
+  service-account:
+    client-id: ocsp-user-sync                   # Env: KEYCLOAK_SERVICE_CLIENT_ID
+    client-secret: ocsp-user-sync-secret        # Env: KEYCLOAK_SERVICE_CLIENT_SECRET
+----
+
+== Keycloak Event Hook (Webhook) Configuration
+
+To keep the responder's local `users` replica synchronized in real time when an administrator creates, updates, disables, or deletes a user directly in Keycloak, `ocsp-responder` exposes an internal webhook receiver:
+
+* **Endpoint**: `POST /api/v1/internal/keycloak/events`
+* **Controller**: `KeycloakWebhookController`
+* **Authentication**: Shared secret HTTP header `X-Webhook-Secret` validated in constant time against `keycloak.webhook-secret` (`KEYCLOAK_WEBHOOK_SECRET`). Requests missing or mismatching the secret receive `401 Unauthorized`.
+
+=== Webhook Payload Contract
+
+[source,json]
+----
+{
+  "eventType": "CREATE | UPDATE | DISABLE | DELETE",
+  "externalId": "<Keycloak user UUID (sub)>",
+  "username": "jdoe",
+  "email": "jdoe@example.com",
+  "emailVerified": true,
+  "fullName": "Jane Doe",
+  "enabled": true
+}
+----
+
+[cols="1,3",options="header"]
+|===
+| `eventType` | Responder Action (Idempotent by `external_id`)
+| `CREATE` / `UPDATE` | Upserts the `users` replica row (`auth_source=KEYCLOAK`, `password_hash=NULL`, `deleted_at=NULL`) with the latest `username`, `email`, `emailVerified`, `fullName`, and `enabled`.
+| `DISABLE` | Sets `enabled = false` on the matching `external_id` row.
+| `DELETE` | Sets `enabled = false`, `deleted_at = now()`, and clears `password_hash` on the matching `external_id` row.
+|===
+
+=== Wiring Keycloak Admin Events to the Hook
+
+Keycloak does not ship a built-in HTTP webhook sender in the base image. Connect Keycloak to `/api/v1/internal/keycloak/events` using one of these approaches:
+
+. **Keycloak Webhook Event Listener SPI** (recommended in production):
+  * Install a Keycloak Event Listener provider JAR (such as `keycloak-webhook-provider`) into `/opt/keycloak/providers/` and rebuild Keycloak (`kc.sh build`).
+  * In Keycloak Admin Console -> **Realm settings** -> **Events**:
+    ** Under **Event listeners**, add your webhook listener.
+    ** Under **Admin events settings**, enable **Save events** and **Include representation** so `USER` `CREATE`, `UPDATE`, and `DELETE` admin events include the user's `id`, `username`, `email`, `firstName`/`lastName`, and `enabled` fields.
+    ** Configure the listener's target URL to `http://ocsp-responder:8080/api/v1/internal/keycloak/events` with header `X-Webhook-Secret: <KEYCLOAK_WEBHOOK_SECRET>`.
+. **External Event Forwarder / Sidecar**:
+  * Poll Keycloak Admin Events (`GET /admin/realms/incert/admin-events?resourceTypes=USER`) using `ocsp-user-sync` or consume from a broker (e.g. Kafka/RabbitMQ) and POST the normalized payload above to `/api/v1/internal/keycloak/events`.
+
+=== Testing the Webhook Locally
+
+You can verify the hook end-to-end with `curl`:
+
+[source,bash]
+----
+# 1. Create / Upsert user replica
+curl -i -X POST http://localhost:8080/api/v1/internal/keycloak/events \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: incert-keycloak-webhook-secret" \
+  -d '{
+    "eventType": "CREATE",
+    "externalId": "11111111-2222-3333-4444-555555555555",
+    "username": "hookuser",
+    "email": "hookuser@incert.local",
+    "emailVerified": true,
+    "fullName": "Hook User",
+    "enabled": true
+  }'
+
+# 2. Disable user
+curl -i -X POST http://localhost:8080/api/v1/internal/keycloak/events \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: incert-keycloak-webhook-secret" \
+  -d '{
+    "eventType": "DISABLE",
+    "externalId": "11111111-2222-3333-4444-555555555555"
+  }'
+
+# 3. Soft-delete user
+curl -i -X POST http://localhost:8080/api/v1/internal/keycloak/events \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: incert-keycloak-webhook-secret" \
+  -d '{
+    "eventType": "DELETE",
+    "externalId": "11111111-2222-3333-4444-555555555555"
+  }'
+----
+
+=== Defense-in-Depth (If a Hook Is Missed)
+
+Even if a webhook delivery is missed or delayed, `ocsp-responder` guarantees eventual consistency via:
+
+. **JIT Provisioning on Login**: `KeycloakJwtAuthenticationConverter` upserts the user on every authenticated JWT request using the `sub` claim.
+. **Nightly Reconciliation Job**: `ScheduledJobsConfig` (`ocsp.jobs.keycloak-reconciliation`, default `0 0 2 * * *`) fetches all users from Keycloak via `ocsp-user-sync` and reconciles the local replica.
+
