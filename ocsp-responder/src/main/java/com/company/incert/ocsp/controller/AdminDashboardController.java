@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequiredArgsConstructor
 @Tag(name = "Admin Dashboard", description = "System metrics, health indicators, and signing key lifecycle statistics")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class AdminDashboardController {
 
     private final CertificateStatusService statusService;

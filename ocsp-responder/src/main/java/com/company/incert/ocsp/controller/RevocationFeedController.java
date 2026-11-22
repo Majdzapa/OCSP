@@ -27,7 +27,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Tag(name = "Revocations", description = "Endpoints for inspecting revoked certificates and event synchronization feeds")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class RevocationFeedController {
 
     private final CertificateStatusService statusService;

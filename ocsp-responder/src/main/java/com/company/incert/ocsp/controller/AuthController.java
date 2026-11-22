@@ -16,18 +16,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.MessageDigest;
 import java.util.Map;
 
 /**
  * Authentication configuration and session endpoints.
  *
- * <p>TLS is a deployment setting ({@code security.tls.enabled}); it is exposed read-only.
+ * <p>Supports {@code KEYCLOAK} (OAuth2 / OIDC Bearer JWT) and {@code SELF_MANAGED}
+ * (username & password). TLS is a deployment setting ({@code security.tls.enabled});
+ * it is exposed read-only.
  *
- * <p>IMPORTANT: No credential values (passwords, raw API keys) are ever
- * included in HTTP responses. The client uses its own token / session cookie
- * obtained through Spring Security filters; this controller only confirms
- * authentication status and returns safe metadata.
+ * <p>IMPORTANT: No credential values (passwords) are ever included in HTTP responses.
  */
 @Slf4j
 @RestController
@@ -47,11 +45,10 @@ public class AuthController {
         this.keycloakProperties = keycloakProperties;
     }
 
-    @Schema(description = "Credentials payload for login (supports username/password or API key)")
+    @Schema(description = "Credentials payload for username/password login")
     public record LoginPayload(
         @Schema(description = "Admin username", example = "admin") String username,
-        @Schema(description = "Admin password") String password,
-        @Schema(description = "Admin API Key") String apiKey
+        @Schema(description = "Admin password") String password
     ) {}
 
     // -------------------------------------------------------------------------
@@ -102,7 +99,7 @@ public class AuthController {
     }
 
     @Operation(summary = "Authenticate admin credentials",
-               description = "Validates credentials and returns a session confirmation. No raw secrets in response.")
+               description = "Validates username/password or Keycloak Bearer session and returns confirmation. No raw secrets in response.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Authentication successful"),
         @ApiResponse(responseCode = "401", description = "Invalid credentials")
@@ -115,19 +112,14 @@ public class AuthController {
 
         AuthenticationMode mode = securityProperties.authenticationMode();
 
-        // 1. Already authenticated by Spring Security (HttpBasic / ApiKeyFilter / JWT Bearer)
+        // 1. Already authenticated by Spring Security (HttpBasic / JWT Bearer)
         if (isAuthenticated(auth)) {
             return ok(mode, auth.getName(), "SESSION");
         }
 
-        // 2. Credential payload provided
-        if (payload != null) {
-            if (isValidApiKey(payload.apiKey())) {
-                return ok(mode, "api-key-admin", "API_KEY");
-            }
-            if (!mode.isKeycloak() && isValidBasic(payload.username(), payload.password())) {
-                return ok(mode, adminProperties.getUsername(), "BASIC");
-            }
+        // 2. Username / password credential payload provided (in SELF_MANAGED mode)
+        if (payload != null && !mode.isKeycloak() && isValidBasic(payload.username(), payload.password())) {
+            return ok(mode, adminProperties.getUsername(), "BASIC");
         }
 
         log.warn("Authentication attempt failed: authMode={}", mode);
@@ -148,15 +140,6 @@ public class AuthController {
 
     private static boolean isAuthenticated(Authentication auth) {
         return auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
-    }
-
-    /** Constant-time comparison to prevent timing-based API key enumeration. */
-    private boolean isValidApiKey(String provided) {
-        if (provided == null || provided.isBlank()) return false;
-        return MessageDigest.isEqual(
-            provided.trim().getBytes(),
-            adminProperties.getApiKey().getBytes()
-        );
     }
 
     private boolean isValidBasic(String username, String password) {

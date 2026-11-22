@@ -22,7 +22,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Tag(name = "Certificate Check", description = "Direct certificate status lookup in the responder DB")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class CertCheckController {
 
     private final CertificateStatusService statusService;

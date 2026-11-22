@@ -214,7 +214,7 @@ function MainLayout() {
                     {user?.username ?? '—'}
                   </Text>
                   <Text fz="10px" c="dimmed">
-                    {user?.authMode ?? (user?.apiKey ? 'API-KEY' : 'Basic')}
+                    {user?.authMode ?? 'Basic'}
                   </Text>
                 </Box>
               </Group>

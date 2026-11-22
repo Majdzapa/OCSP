@@ -28,7 +28,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Tag(name = "Inbox & Reconciliation", description = "Endpoints for inspecting RabbitMQ inbox events and verifying internal inbox-to-status table parity")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class InboxAdminController {
 
     private final InboxEventRepository inboxRepository;

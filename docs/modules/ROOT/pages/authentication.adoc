@@ -23,19 +23,19 @@ security:
 
 | *Primary Auth Flow*
 | OpenID Connect SSO redirect to `http://localhost:3002/login`
-| Username/password or API Key form login on `http://localhost:3002/login`
+| Username/password form login on `http://localhost:3002/login`
 
 | *Token Type*
 | Signed RS256 JWT Bearer Token (`Authorization: Bearer ...`)
-| Basic Auth (`Authorization: Basic ...`) or `X-API-KEY`
+| Basic Auth (`Authorization: Basic ...`)
 
 | *Role Mapping*
 | `KeycloakJwtAuthenticationConverter` maps realm roles & groups to `ROLE_ADMIN`
 | Built-in `ROLE_ADMIN`
 
 | *Break-Glass Fallback*
-| Supported (`X-API-KEY` and HTTP Basic Auth remain active)
-| Supported (`X-API-KEY`)
+| Supported (HTTP Basic Auth username & password remain active)
+| Built-in username & password
 |===
 
 == Keycloak OIDC Configuration (`keycloak/realm-export.json`)

@@ -1,5 +1,5 @@
 import axios from 'axios';
-// API client for ocsp-responder (protected with X-API-KEY, Basic Auth, or Keycloak Bearer token)
+// API client for ocsp-responder (protected with Basic Auth or Keycloak Bearer token)
 export const api = axios.create({
     baseURL: '/api/v1/admin',
     headers: {
@@ -9,13 +9,9 @@ export const api = axios.create({
 // Dynamically attach credentials from localStorage
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('ocsp_bearer_token');
-    const apiKey = localStorage.getItem('ocsp_api_key');
     const basicAuth = localStorage.getItem('ocsp_basic_auth');
     if (token) {
         config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    else if (apiKey) {
-        config.headers['X-API-KEY'] = apiKey;
     }
     else if (basicAuth) {
         config.headers['Authorization'] = basicAuth;
@@ -26,7 +22,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((response) => response, (error) => {
     if (error.response?.status === 401) {
         localStorage.removeItem('ocsp_auth_user');
-        localStorage.removeItem('ocsp_api_key');
         localStorage.removeItem('ocsp_basic_auth');
         localStorage.removeItem('ocsp_bearer_token');
         window.dispatchEvent(new CustomEvent('ocsp:unauthorized'));
@@ -56,13 +51,10 @@ export const loginWithBearerToken = async (token) => {
 };
 export const getAuthMe = async () => {
     const token = localStorage.getItem('ocsp_bearer_token');
-    const apiKey = localStorage.getItem('ocsp_api_key');
     const basicAuth = localStorage.getItem('ocsp_basic_auth');
     const headers = {};
     if (token)
         headers['Authorization'] = `Bearer ${token}`;
-    else if (apiKey)
-        headers['X-API-KEY'] = apiKey;
     else if (basicAuth)
         headers['Authorization'] = basicAuth;
     const res = await authApi.get('/me', { headers });

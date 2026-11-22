@@ -62,7 +62,7 @@ In v5.0, **zero configuration defaults are hardcoded in Java code**. Every setti
 
 | `AdminProperties`
 | `admin`
-| `username`, `password`, `api-key`
+| `username`, `password`
 |===
 
 === `ocsp-client` (`com.company.incert.ocsp.client.config`)

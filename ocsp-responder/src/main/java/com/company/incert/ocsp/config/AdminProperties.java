@@ -12,5 +12,4 @@ public class AdminProperties {
 
     private String username;
     private String password;
-    private String apiKey;
 }

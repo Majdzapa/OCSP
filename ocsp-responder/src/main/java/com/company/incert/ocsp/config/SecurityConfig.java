@@ -18,7 +18,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -28,8 +27,8 @@ import java.util.List;
 /**
  * Security configuration supporting dual authentication modes:
  * <ul>
- *   <li><b>SELF_MANAGED</b> (default): HTTP Basic Auth (admin / changeme) and API Key (X-API-KEY).</li>
- *   <li><b>KEYCLOCK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
+ *   <li><b>SELF_MANAGED</b>: Username and password authentication (HTTP Basic Auth).</li>
+ *   <li><b>KEYCLOAK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
  * </ul>
  * Configured via {@code security.auth-mode} (see {@link AppSecurityProperties}).
  */
@@ -88,7 +87,6 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
-            .addFilterBefore(new ApiKeyAuthFilter(adminProperties.getApiKey()), UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 // Allow CORS pre-flight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -104,12 +102,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/config", "/api/v1/auth/me").permitAll()
                 // Login endpoint is public so credentials can be submitted
                 .requestMatchers("/api/v1/auth/login").permitAll()
-                // All admin & management endpoints require ROLE_ADMIN (includes TLS toggle)
+                // All admin & management endpoints require ROLE_ADMIN
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             );
 
-        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass admin fallback in KEYCLOCK)
+        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass admin fallback in KEYCLOAK)
         http.httpBasic(Customizer.withDefaults());
 
         if (mode.isKeycloak()) {

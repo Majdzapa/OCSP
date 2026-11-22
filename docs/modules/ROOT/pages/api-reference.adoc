@@ -22,11 +22,11 @@ Evaluates a Base64-encoded `OCSPRequest` supplied in the URL path per RFC 6960 Â
 
 * `GET /api/v1/auth/config`: Returns active `authMode` (`KEYCLOAK` or `SELF_MANAGED`), `isKeycloak`, `tlsEnabled`, and Keycloak coordinates (`authServerUrl`, `realm`, `clientId`).
 * `GET /api/v1/auth/me`: Returns authenticated principal and roles (`401` if unauthenticated).
-* `POST /api/v1/auth/login`: Validates `username`/`password` or `apiKey` in `SELF_MANAGED` or break-glass mode.
+* `POST /api/v1/auth/login`: Validates `username` and `password` in `SELF_MANAGED` mode (or confirms an active Keycloak Bearer token session).
 
 == Admin Signing Certificate & Validity Endpoints (`:8080/api/v1/admin/signing-certificates`)
 
-All `/api/v1/admin/**` endpoints require `ROLE_ADMIN` (Keycloak Bearer JWT, Basic Auth, or `X-API-KEY`).
+All `/api/v1/admin/**` endpoints require `ROLE_ADMIN` (Keycloak Bearer JWT or HTTP Basic username & password).
 
 * `GET /api/v1/admin/signing-certificates`: Lists all signing certificates.
 * `GET /api/v1/admin/signing-certificates/active`: Returns the primary active signing certificate.

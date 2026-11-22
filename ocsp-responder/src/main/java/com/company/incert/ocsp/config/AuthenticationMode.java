@@ -3,8 +3,8 @@ package com.company.incert.ocsp.config;
 /**
  * Authentication mode for the OCSP Responder subsystem:
  * <ul>
- *   <li>{@link #SELF_MANAGED}: Built-in administration authentication via HTTP Basic Auth
- *       and static API keys (X-API-KEY). No external identity provider required.</li>
+ *   <li>{@link #SELF_MANAGED}: Built-in administration authentication via username and password
+ *       (HTTP Basic Auth). No external identity provider required.</li>
  *   <li>{@link #KEYCLOAK}: Keycloak OAuth2 / OpenID Connect Resource Server. Validates
  *       Bearer JWT tokens issued by a Keycloak realm and extracts roles.</li>
  *   <li>{@link #KEYCLOCK}: Deprecated alias for {@link #KEYCLOAK} — kept for backward

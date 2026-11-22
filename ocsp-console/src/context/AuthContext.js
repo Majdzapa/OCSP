@@ -6,14 +6,12 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(() => {
         const savedUser = localStorage.getItem('ocsp_auth_user');
         const hasToken = localStorage.getItem('ocsp_bearer_token');
-        const hasKey = localStorage.getItem('ocsp_api_key');
         const hasBasic = localStorage.getItem('ocsp_basic_auth');
-        if (savedUser && (hasToken || hasKey || hasBasic)) {
+        if (savedUser && (hasToken || hasBasic)) {
             return {
                 authenticated: true,
                 username: savedUser,
                 token: hasToken || undefined,
-                apiKey: hasKey || undefined,
                 basicAuth: hasBasic || undefined,
             };
         }
@@ -22,7 +20,6 @@ export const AuthProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
     const logout = () => {
         localStorage.removeItem('ocsp_auth_user');
-        localStorage.removeItem('ocsp_api_key');
         localStorage.removeItem('ocsp_basic_auth');
         localStorage.removeItem('ocsp_bearer_token');
         setUser(null);
@@ -43,9 +40,8 @@ export const AuthProvider = ({ children }) => {
         const initAuth = async () => {
             await refreshAuthConfig();
             const hasToken = localStorage.getItem('ocsp_bearer_token');
-            const hasKey = localStorage.getItem('ocsp_api_key');
             const hasBasic = localStorage.getItem('ocsp_basic_auth');
-            if (!hasToken && !hasKey && !hasBasic) {
+            if (!hasToken && !hasBasic) {
                 setIsLoading(false);
                 return;
             }
@@ -58,7 +54,6 @@ export const AuthProvider = ({ children }) => {
                         roles: info.roles,
                         authMode: info.authMode,
                         token: hasToken || undefined,
-                        apiKey: hasKey || undefined,
                         basicAuth: hasBasic || undefined,
                     });
                 }

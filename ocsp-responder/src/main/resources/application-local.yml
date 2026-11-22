@@ -49,7 +49,6 @@ keycloak:
 admin:
   username: admin
   password: changeme
-  api-key: incert-admin-secret-key
 
 ocsp:
   rabbitmq:

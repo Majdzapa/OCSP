@@ -28,7 +28,7 @@ import java.util.Map;
 @RequestMapping("/api/v1/admin/signing-certificates")
 @Tag(name = "Signing Certificates", description = "Management of OCSP response signing certificates and key rotation")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.API_KEY_SCHEME)
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class SigningCertificateController {
 
     private final SigningCertificateService certificateService;

@@ -32,7 +32,6 @@ class AuthControllerTest {
         AdminProperties admin = new AdminProperties();
         admin.setUsername("admin");
         admin.setPassword("changeme");
-        admin.setApiKey("incert-admin-secret-key");
 
         KeycloakProperties keycloak = new KeycloakProperties();
         keycloak.setAuthServerUrl("http://localhost:8081");
@@ -49,18 +48,14 @@ class AuthControllerTest {
         assertThat(response.getBody()).containsEntry("authMode", "SELF_MANAGED");
         assertThat(response.getBody()).containsEntry("isKeycloak", false);
         assertThat(response.getBody()).containsEntry("tlsEnabled", true);
-        // No secrets in response
-        assertThat(response.getBody()).doesNotContainKey("apiKey");
         assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
     void getConfig_legacyKeyclockAlias_resolvesToKeycloakMode() {
-        // "KEYCLOCK" (legacy typo) must be normalised to the canonical KEYCLOAK enum.
         var keycloakController = newController("KEYCLOCK");
         ResponseEntity<Map<String, Object>> response = keycloakController.getConfig();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        // AuthenticationMode.fromString("KEYCLOCK") returns KEYCLOAK (canonical name)
         assertThat(response.getBody()).containsEntry("authMode", "KEYCLOAK");
         assertThat(response.getBody()).containsEntry("isKeycloak", true);
         @SuppressWarnings("unchecked")
@@ -87,8 +82,6 @@ class AuthControllerTest {
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "admin");
         assertThat(response.getBody()).containsEntry("authMode", "SELF_MANAGED");
-        // Must not leak secrets
-        assertThat(response.getBody()).doesNotContainKey("apiKey");
         assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
@@ -100,47 +93,23 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "admin");
-        // No raw secrets in response
-        assertThat(response.getBody()).doesNotContainKey("apiKey");
         assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
     void login_withValidCredentials_returns200() {
-        var payload = new AuthController.LoginPayload("admin", "changeme", null);
+        var payload = new AuthController.LoginPayload("admin", "changeme");
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("username", "admin");
         assertThat(response.getBody()).containsEntry("authType", "BASIC");
-        // No raw secrets
-        assertThat(response.getBody()).doesNotContainKey("apiKey");
         assertThat(response.getBody()).doesNotContainKey("basicAuth");
     }
 
     @Test
-    void login_withValidApiKey_returns200() {
-        var payload = new AuthController.LoginPayload(null, null, "incert-admin-secret-key");
-        ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("authenticated", true);
-        assertThat(response.getBody()).containsEntry("username", "api-key-admin");
-        assertThat(response.getBody()).containsEntry("authType", "API_KEY");
-        // No raw secrets
-        assertThat(response.getBody()).doesNotContainKey("apiKey");
-    }
-
-    @Test
     void login_withInvalidCredentials_returns401() {
-        var payload = new AuthController.LoginPayload("admin", "wrongpassword", null);
-        ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(response.getBody()).containsEntry("authenticated", false);
-    }
-
-    @Test
-    void login_withInvalidApiKey_returns401() {
-        var payload = new AuthController.LoginPayload(null, null, "wrong-key");
+        var payload = new AuthController.LoginPayload("admin", "wrongpassword");
         ResponseEntity<Map<String, Object>> response = controller.login(null, payload);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody()).containsEntry("authenticated", false);

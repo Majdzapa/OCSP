@@ -41,7 +41,7 @@ Welcome to the official documentation for the **Incert OCSP Subsystem v5.0**. Th
 | *OCSP Admin Console (`ocsp-console`)*
 | `3002`
 | http://localhost:3002
-| React 18 + Mantine v7 SPA (`.js`) — Keycloak SSO / Basic / API Key
+| React 18 + Mantine v7 SPA (`.js`) — Keycloak SSO / Username & Password
 
 | *OCSP Responder & Admin API (`ocsp-responder`)*
 | `8080`
