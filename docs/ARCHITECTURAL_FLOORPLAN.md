@@ -11,7 +11,7 @@ flowchart TB
     subgraph ZONE_EXTERNAL["Zone 1: External Relying Parties & Operators"]
         RP["Relying Parties\n(Browsers, TLS Gateways, mTLS Services)"]
         TESTER["OCSP Client Tester\n(http://localhost:8082)"]
-        OCSP_ADMIN["OCSP Security Admin\n(http://localhost:3000)"]
+        OCSP_ADMIN["OCSP Security Admin\n(http://localhost:3002)"]
         KMS_ADMIN["PKI / CA Operator\n(http://localhost:3001)"]
     end
 
@@ -235,7 +235,7 @@ flowchart TD
 
 | Zone | Component | Port / Queue | Key Classes / Files |
 |---|---|---|---|
-| **Zone 2 (UI)** | `ocsp-console` | `:3000` | `SigningCertificatesPage.tsx`, `SigningCertValidityPage.tsx`, `InboxAuditPage.tsx`, `CertCheckerPage.tsx` |
+| **Zone 2 (UI)** | `ocsp-console` | `:3002` | `SigningCertificatesPage.js`, `SigningCertValidityPage.js`, `InboxAuditPage.js`, `CertCheckerPage.js` |
 | **Zone 2 (UI)** | `kms-console` | `:3001` | `CertificateAuthoritiesPage.tsx`, `KmsCertificatesPage.tsx`, `OutboxMonitorPage.tsx` |
 | **Zone 3 (IAM)** | `ocsp-keycloak` | `:8081` | Realm `incert` (`/ocsp-administrators`, `/ocsp-operators`, `/ocsp-auditors`) |
 | **Zone 4 (KMS)** | `kms-simulator` | `:8090` / `:3308` | `CertificateAuthorityService`, `RevocationService`, `OutboxRelayService`, `KmsReconciliationService` |

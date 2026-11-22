@@ -179,8 +179,17 @@ The OCSP Responder and Admin Console support activating and deactivating TLS for
   - `GET /api/v1/auth/tls`: Returns current status (`ACTIVE` vs `DEACTIVATED`).
   - `POST /api/v1/auth/tls`: Updates status dynamically at runtime (`{"enabled": true/false}`).
 - **UI Integration**:
-  - `LoginPage.tsx`: Header badge displaying `TLS: Active` / `TLS: Deactivated`, interactive toggle button, and dedicated `mTLS Cert` tab.
+  - `LoginPage.js`: Header badge displaying `TLS: Active` / `TLS: Deactivated`, interactive toggle button, and dedicated `mTLS Cert` tab.
   - `login.html`: Embedded HTML fallback login with real-time TLS status badge and certificate login.
+
+---
+
+## Clean Configuration (`@ConfigurationProperties`), Centralized Jobs & Use Cases
+
+- **Zero Hardcoded Configuration in Java**: All configuration properties live in `application.yml`, `application-dev.yml` (`dev` profile), and `application-local.yml` (`local` profile), bound into typed `@ConfigurationProperties` classes under `com.company.incert.ocsp.config` (`ScheduledJobsProperties`, `OcspRabbitMqProperties`, `RabbitMqTlsProperties`, `HsmProperties`, `AdminProperties`, `KeycloakProperties`, `AppSecurityProperties`, `OcspResponderProperties`) and `com.company.incert.ocsp.client.config.OcspClientProperties`.
+- **Centralized Scheduled Jobs (`ScheduledJobsConfig`)**: All `@Scheduled` job triggers in `ocsp-responder` are collected in `com.company.incert.ocsp.config.ScheduledJobsConfig` and configured via `ScheduledJobsProperties` (`ocsp.jobs.*`).
+- **Reusable `usecase` Package (`com.company.incert.ocsp.usecase`)**: Encapsulates shared domain actions (`FindSigningCertificateUseCase` and `CanonicalizeSerialHexUseCase`).
+- **Plain JavaScript (`.js`) Admin Console**: `ocsp-console` uses clean `.js` React 18 + Mantine v7 modules (`jsconfig.json`) served on port `3002`.
 
 ---
 

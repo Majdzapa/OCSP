@@ -1,82 +1,56 @@
-= RabbitMQ Messaging & Strict Mutual TLS (mTLS)
+= RabbitMQ Strict mTLS & Zero-REST Reconciliation
 :toc:
 
-The asynchronous synchronization pipeline connects the KMS Simulator outbox with the OCSP Responder inbox using RabbitMQ AMQP over strict mutual TLS.
+All communication between `kms-simulator` and `ocsp-responder` takes place asynchronously over **RabbitMQ AMQPS (port `5671`)** with strict mutual TLS (`verify_peer`, `fail_if_no_peer_cert = true`). There is **zero HTTP/REST coupling** between the two systems.
 
-== Mutual TLS (mTLS) Architecture
+== 4-Queue RabbitMQ Topology
 
-All inter-service messaging between KMS, RabbitMQ, and Responder operates over TLS with mandatory peer verification:
+All queues bind to the durable direct exchange `incert.certificate.status` (configured via `OcspRabbitMqProperties` / `ocsp.rabbitmq.*` in `application.yml` and `application-dev.yml`):
 
-[source]
-----
-  ┌──────────────────┐               ┌──────────────────┐               ┌──────────────────┐
-  │  KMS Simulator   │               │     RabbitMQ     │               │  OCSP Responder  │
-  │ (AMQPS Publisher)│               │  (Strict Broker) │               │ (AMQPS Consumer) │
-  └────────┬─────────┘               └────────┬─────────┘               └────────┬─────────┘
-           │                                  │                                  │
-           │  Port 5671: mTLS Handshake       │                                  │
-           ├─────────────────────────────────►│                                  │
-           │  Present Client Cert & CA Verify │                                  │
-           │◄─────────────────────────────────┤                                  │
-           │  Encrypted AMQPS Channel         │                                  │
-           ├═════════════════════════════════►│                                  │
-           │                                  │  Port 5671: mTLS Handshake       │
-           │                                  │◄─────────────────────────────────┤
-           │                                  │  Present Client Cert & CA Verify │
-           │                                  ├─────────────────────────────────►│
-           │                                  │  Encrypted AMQPS Channel         │
-           │                                  │◄═════════════════════════════════┤
-----
+[cols="2,2,2,3", options="header"]
+|===
+| Queue Name | Routing Key | Producer -> Consumer | Purpose
 
-=== Broker Configuration (`rabbitmq/rabbitmq.conf`)
+| `ocsp.certificate.status`
+| `incert.certificate.status.v1`
+| KMS `OutboxRelayJob` -> OCSP `CertificateStatusListener`
+| Delivers `CertificateStatusEvent` messages (`GOOD`, `REVOKED`) with `message_id = outbox.event_id`.
 
-[source,ini]
-----
-listeners.tcp.default = 5672
-listeners.ssl.default = 5671
+| `ocsp.certificate.status.dlq`
+| `ocsp.certificate.status.dlq` (on DLX `incert.certificate.status.dlx`)
+| RabbitMQ Broker -> DLQ
+| Captures rejected poison messages (`default-requeue-rejected: false`) after retry exhaustion.
 
-ssl_options.cacertfile = /etc/rabbitmq/certs/ca.pem
-ssl_options.certfile   = /etc/rabbitmq/certs/server-cert.pem
-ssl_options.keyfile    = /etc/rabbitmq/certs/server-key.pem
+| `ocsp.reconciliation.manifest`
+| `incert.reconciliation.manifest.v1`
+| KMS `KmsReconciliationService` -> OCSP `OutboxReconciliationService`
+| Broadcasts `OutboxManifestEvent` every 3 seconds (and on demand) containing outbox counts, event IDs, and certificate digests.
 
-# Strict Mutual TLS enforcement
-ssl_options.verify     = verify_peer
-ssl_options.fail_if_no_peer_cert = true
-----
+| `kms.reconciliation.request`
+| `incert.reconciliation.request.v1`
+| OCSP `OutboxReconciliationService` -> KMS `KmsReconciliationService`
+| Sends `ReconciliationCommandMessage` (`REQUEST_MANIFEST` or `REPLAY_EVENTS` with missing/failed event IDs and serials).
+|===
 
-* `listeners.ssl.default = 5671`: Dedicated TLS listener.
-* `verify_peer`: Requires the connecting client to present an X.509 certificate signed by the Incert RabbitMQ CA.
-* `fail_if_no_peer_cert = true`: Hard requirement; connections without a valid certificate fail during the TLS handshake.
+== Failure Tracking with `AmqpHeaders.MESSAGE_ID` & `DELIVERY_TAG`
 
-== PKI Material & Keystores
+When `CertificateStatusListener` receives a message on `ocsp.certificate.status`:
 
-The script `certs/gen-rabbitmq-certs.sh` provisions the dedicated RabbitMQ PKI:
-* `ca.pem` & `ca-key.pem`: Dedicated Root CA.
-* `server-cert.pem`: Broker certificate with Subject Alternative Names (`DNS:localhost`, `DNS:rabbitmq`, `IP:127.0.0.1`).
-* `client-cert.pem` & `client-key.pem`: Client identity (`CN=rabbitmq-client,O=Incert Certificate Authority`).
-* `client-keystore.p12` & `client-truststore.p12`: PKCS#12 bundles loaded by the Spring Boot client connection factories.
+1. It extracts `@Header(AmqpHeaders.MESSAGE_ID) String messageId` (which KMS sets to the `outbox_event.event_id` UUID) and `@Header(AmqpHeaders.DELIVERY_TAG) Long deliveryTag`.
+2. If JSON parsing or processing fails, `InboxFailureRecorder.recordFailure(...)` runs in an independent transaction (`@Transactional(propagation = Propagation.REQUIRES_NEW)`) so the `FAILED` record in `ocsp.inbox_event` (storing `event_id`, `delivery_tag`, and `error_message`) commits even when the listener throws `AmqpRejectAndDontRequeueException`.
+3. Because `event_id` matches the KMS Outbox UUID, the Inbox Audit page (`http://localhost:3002/inbox`) and `OutboxReconciliationService` can request an exact replay of that failed event over RabbitMQ.
 
-== Configurable TLS Activation Toggle
+== Configurable RabbitMQ TLS (`RabbitMqTlsProperties`)
 
-RabbitMQ TLS can be enabled or disabled via application configuration:
+Configured under `rabbitmq.tls.*` in `application.yml` and `application-dev.yml`:
 
 [source,yaml]
 ----
 rabbitmq:
   tls:
-    enabled: ${RABBITMQ_TLS_ENABLED:true} # true = 5671 mTLS, false = 5672 plaintext
+    enabled: ${RABBITMQ_TLS_ENABLED:${security.tls.enabled:true}}
+    tls-port: ${RABBITMQ_TLS_PORT:5671}
+    plaintext-port: ${RABBITMQ_PLAINTEXT_PORT:5672}
 ----
 
-When `rabbitmq.tls.enabled` is `false`:
-* The `ConnectionFactoryCustomizer` bean dynamically switches the connection port from `5671` to `5672`.
-* SSL options are disabled in the AMQP connection factory.
-* Connection automatically falls back to standard plaintext port `5672` without requiring container configuration changes.
-
-== Dead Letter Queue (DLQ) Routing
-
-When poison messages or unparseable payloads arrive:
-1. `default-requeue-rejected = false` prevents endless retry loops.
-2. The broker routes rejected messages to Dead Letter Exchange `incert.dlx`.
-3. Dead letter queue `ocsp.certificate.status.dlq` collects failed payloads for operator inspection.
-4. The consumer logs the error and continues processing subsequent events without service disruption.
-
+When `rabbitmq.tls.enabled` is `false`, `RabbitMqConfig.rabbitMqTlsPortCustomizer()` switches the connection port from `tls-port` (`5671`) to `plaintext-port` (`5672`).

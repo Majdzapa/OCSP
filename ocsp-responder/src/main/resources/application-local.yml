@@ -1,5 +1,5 @@
 # =============================================================================
-# Local Development Profile (run ocsp-responder directly on macOS host)
+# Local Development Profile (run ocsp-responder directly on macOS/Linux/Windows host)
 # Activate with: --spring.profiles.active=local
 #   or: mvn -f ocsp-responder/pom.xml spring-boot:run -Dspring-boot.run.profiles=local
 # =============================================================================
@@ -28,13 +28,52 @@ spring:
 rabbitmq:
   tls:
     enabled: true
+    tls-port: 5671
+    plaintext-port: 5672
 
 security:
   auth-mode: KEYCLOAK
+  tls:
+    enabled: true
+  cors:
+    allowed-origins: http://localhost:3002,http://localhost:3000,http://localhost:5173
 
 keycloak:
   auth-server-url: http://localhost:8081
   public-url: http://localhost:8081
+  realm: incert
+  client-id: ocsp-console
+  jwk-set-uri: http://localhost:8081/realms/incert/protocol/openid-connect/certs
+  issuer-uri: http://localhost:8081/realms/incert
+
+admin:
+  username: admin
+  password: changeme
+  api-key: incert-admin-secret-key
+
+ocsp:
+  rabbitmq:
+    exchange: incert.certificate.status
+    queue: ocsp.certificate.status
+    routing-key: incert.certificate.status.v1
+    dead-letter-exchange: incert.certificate.status.dlx
+    dead-letter-queue: ocsp.certificate.status.dlq
+    reconciliation-manifest-queue: ocsp.reconciliation.manifest
+    reconciliation-manifest-routing-key: incert.reconciliation.manifest.v1
+    reconciliation-request-queue: kms.reconciliation.request
+    reconciliation-request-routing-key: incert.reconciliation.request.v1
+  responder:
+    next-update-window: PT24H
+    max-request-bytes: 10240
+    max-cert-ids: 10
+    max-nonce-octets: 32
+  client:
+    default-responder-url: http://localhost:8080/ocsp
+  jobs:
+    signing-cert-validity:
+      enabled: true
+      cron: "0 0 0 * * *"
+      alert-threshold-days: 3
 
 hsm:
   enabled: true
@@ -43,8 +82,8 @@ hsm:
   slot-index: 0
   pin: "1234"
   key-label: ocsp-signing-key
+  config-path: ""
 
 logging:
   level:
     com.company.incert.ocsp: DEBUG
-

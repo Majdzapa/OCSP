@@ -1,70 +1,65 @@
 = Authentication Modes & Keycloak SSO
 :toc:
 
-The OCSP Responder and Admin Console support dual authentication architectures, configurable via application properties without modifying code.
+The OCSP Responder and Admin Console (`http://localhost:3002`) support dual authentication modes bound via `AppSecurityProperties` (`security.auth-mode`), `AdminProperties` (`admin.*`), and `KeycloakProperties` (`keycloak.*`).
 
 == Configurable Authentication Mode
 
-In `ocsp-responder/src/main/resources/application.yml`:
+In `ocsp-responder/src/main/resources/application.yml` and `application-dev.yml`:
 
 [source,yaml]
 ----
 security:
-  auth-mode: ${AUTH_MODE:KEYCLOCK} # Options: KEYCLOCK or SELF_MANAGED
+  auth-mode: ${AUTH_MODE:KEYCLOAK} # KEYCLOAK or SELF_MANAGED
 ----
 
-[cols="1,2,2"]
+[cols="1,2,2", options="header"]
 |===
-| Feature | `KEYCLOCK` Mode | `SELF_MANAGED` Mode
+| Dimension | `KEYCLOAK` Mode | `SELF_MANAGED` Mode
 
 | *Identity Provider*
-| Centralized Keycloak IAM Server (port `8081`)
-| In-memory BCrypt Spring Security credentials
+| Centralized Keycloak IAM Server (`http://localhost:8081`)
+| In-memory BCrypt Spring Security user (`AdminProperties`)
 
 | *Primary Auth Flow*
-| OpenID Connect Authorization Code / Implicit SSO
-| Standard username & password form login
+| OpenID Connect SSO redirect to `http://localhost:3002/login`
+| Username/password or API Key form login on `http://localhost:3002/login`
 
 | *Token Type*
-| Signed RS256 JWT Bearer Tokens
-| Basic Auth header (`Authorization: Basic ...`)
+| Signed RS256 JWT Bearer Token (`Authorization: Bearer ...`)
+| Basic Auth (`Authorization: Basic ...`) or `X-API-KEY`
 
-| *Role Management*
-| Realm & Group roles mapped to `ROLE_ADMIN`
-| Spring Security `ROLE_ADMIN` authority
+| *Role Mapping*
+| `KeycloakJwtAuthenticationConverter` maps realm roles & groups to `ROLE_ADMIN`
+| Built-in `ROLE_ADMIN`
 
 | *Break-Glass Fallback*
-| Supported (`X-API-KEY` & emergency basic auth)
+| Supported (`X-API-KEY` and HTTP Basic Auth remain active)
 | Supported (`X-API-KEY`)
 |===
 
-== Keycloak OIDC Configuration
+== Keycloak OIDC Configuration (`keycloak/realm-export.json`)
 
-The Keycloak container (`ocsp-keycloak`) runs on port `8081` with automatic realm initialization via `keycloak/realm-export.json`:
+The Keycloak container (`ocsp-keycloak`) runs on port `8081` and imports `keycloak/realm-export.json`:
 
 * **Realm**: `incert`
 * **Client ID**: `ocsp-console`
-* **Client Type**: Public client with redirect URI `http://localhost:3000/*` and Web Origins `+`
-* **Groups**: `admins` (with role `ROLE_ADMIN`)
-* **Default Admin User**:
-  - Username: `admin`
-  - Password: `changeme`
-  - Group: `admins`
+* **Allowed Redirect URIs**:
+  - `http://localhost:3002/*`
+  - `http://127.0.0.1:3002/*`
+  - `http://localhost:3000/*`
+  - `http://127.0.0.1:3000/*`
+* **Web Origins**: `*`
+* **Default Users**:
+  - `admin` / `changeme` (group `ocsp-administrators` -> `ROLE_ADMIN`)
+  - `operator` / `operator123` (group `ocsp-operators` -> `ROLE_ADMIN`, `ROLE_OPERATOR`)
+  - `auditor` / `auditor123` (group `ocsp-auditors` -> `ROLE_AUDITOR`)
 
-=== Single Sign-On (SSO) Flow
+=== Single Sign-On (SSO) Flow on Port `3002`
 
-1. User visits `http://localhost:3000/login`.
-2. The UI queries `GET /api/v1/auth/config` to detect `authMode: "KEYCLOCK"`.
-3. The UI presents the **Keycloak SSO** button.
-4. Clicking redirects to Keycloak:
-   `http://localhost:8081/realms/incert/protocol/openid-connect/auth?client_id=ocsp-console&redirect_uri=http://localhost:3000/login&response_type=token&scope=openid`
-5. The user authenticates against Keycloak.
-6. Keycloak redirects back to `/login#access_token=...`.
-7. The console captures the token, sets localStorage credentials, and redirects to `/dashboard`.
-
-== API Authentication Endpoints
-
-* `GET /api/v1/auth/config`: Returns active `authMode`, `isKeycloak`, `tlsEnabled`, and Keycloak URLs.
-* `GET /api/v1/auth/me`: Verifies active session token or basic auth and returns authorities.
-* `POST /api/v1/auth/login`: Unified login endpoint supporting credentials, Bearer JWT, API Key, and client certificates.
-
+1. Operator opens `http://localhost:3002/login`.
+2. `ocsp-console` queries `GET /api/v1/auth/config` and receives `authMode: "KEYCLOAK"`.
+3. Clicking **Sign in with Keycloak SSO** redirects the browser to:
+   `http://localhost:8081/realms/incert/protocol/openid-connect/auth?client_id=ocsp-console&redirect_uri=http%3A%2F%2Flocalhost%3A3002%2Flogin&response_type=token&scope=openid%20profile%20email`
+4. After authenticating (`admin` / `changeme`), Keycloak redirects back to `http://localhost:3002/login#access_token=...`.
+5. `AuthContext.js` extracts the JWT access token, verifies it via `GET /api/v1/auth/me`, and navigates to `/dashboard`.

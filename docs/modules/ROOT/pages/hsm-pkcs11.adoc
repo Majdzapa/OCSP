@@ -1,61 +1,42 @@
-= SoftHSM2 PKCS#11 Hardware Security Module Integration
+= SoftHSM2 PKCS#11 On-Demand HSM Signing
 :toc:
 
-The OCSP responder signs all cryptographic responses using private keys managed exclusively inside a containerized Hardware Security Module (SoftHSM2).
+The OCSP Responder performs all cryptographic response signing inside a SoftHSM2 PKCS#11 token (`ocsp-signing`). Private keys are generated with `CKA_EXTRACTABLE = FALSE` and never leave the HSM boundary.
 
-== Zero Private Key Exposure
+== Zero Pre-Seeded Keys at Startup
 
-Under strict PKI standards (such as WebTrust, eIDAS, and ETSI EN 319 411-1), OCSP signing private keys must never reside in plaintext on standard application filesystems or in application memory dumps.
-
-[IMPORTANT]
-.Security Verification Guarantee
-====
-The container filesystem for `ocsp-responder` contains zero private key files (`*.key`, `*.pem`, `*.p12`). Automated end-to-end tests explicitly scan `/app` to assert that zero private key material exists on disk.
-====
-
-== PKCS#11 Provider Architecture
-
-Java integrates with the HSM via the SunPKCS11 cryptographic security provider:
-
-[source,java]
-----
-// SigningConfig.java
-String configContent = String.format(
-    "--name = SoftHSM-%s\n" +
-    "library = %s\n" +
-    "slotListIndex = %d\n",
-    token, library, slotIndex
-);
-SunPKCS11 provider = new SunPKCS11(new ByteArrayInputStream(configContent.getBytes()));
-Security.addProvider(provider);
-KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
-keyStore.load(null, pin.toCharArray());
-----
-
-== Dedicated HSM Container (`ocsp-hsm`)
-
-In Docker Compose, the HSM runs as a distinct service:
-* **Service**: `hsm`
-* **Volume**: `softhsm-data:/var/lib/softhsm/tokens`
-* **Initialization Script**: `init-softhsm.sh` initializes the token `ocsp-signing`, sets the User PIN and SO PIN, and generates the RSA-3072 signing key pair with CKA_EXTRACTABLE=FALSE.
-* **Shared Socket / Token Volume**: Mounted into `ocsp-responder` in read-only or scoped mode.
-
-== Key Generation & Attributes
-
-Signing keys are generated using `pkcs11-tool`:
+In v5.0, `hsm/init-hsm.sh` initializes only an **empty** SoftHSM2 token (`ocsp-signing`) if one does not already exist:
 
 [source,bash]
 ----
-pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
-  --login --pin changeme \
-  --keypairgen --key-type rsa:3072 \
-  --label ocsp-signing-key \
-  --usage-sign \
-  --extractable false
+softhsm2-util --init-token --free \
+  --label "${HSM_TOKEN_LABEL}" \
+  --so-pin "${HSM_SO_PIN}" \
+  --pin "${HSM_PIN}"
 ----
 
-* **Algorithm**: RSA with 3072-bit modulus
-* **Signature Algorithm**: `SHA256withRSA`
-* **Usages**: Digital Signature only (`CKA_SIGN = TRUE`)
-* **Non-Extractable**: `CKA_EXTRACTABLE = FALSE`, preventing key extraction via PKCS#11 API.
+* **No keypair or self-signed certificate is generated on startup.**
+* When `ocsp-responder` boots against an unprovisioned HSM token, `Pkcs11OcspSigner` starts in an unconfigured state and logs:
+  `No signing key in HSM token 'ocsp-signing'. Generate a CSR, have it signed by your CA, then import and activate the certificate. OCSP requests answer tryLater until then.`
+* Any RFC 6960 request received before a signing certificate is activated receives a compliant `OCSPRespBuilder.TRY_LATER (3)` response.
 
+== On-Demand HSM Keypair & PKCS#10 CSR Workflow
+
+Operators provision signing keys and certificates through the Admin Console (`http://localhost:3002/signing-certificates`) or REST API:
+
+1. **Generate HSM Keypair & CSR** (`POST /api/v1/admin/signing-certificates/csr`):
+   * Supports `RSA` (`2048`, `3072`, `4096`) and `EC` (`256` / `secp256r1`, `384` / `secp384r1`).
+   * If `reuseExistingKey` is `false` (or the key label does not exist yet), `Pkcs11OcspSigner` generates a new non-extractable keypair directly inside the SoftHSM2 token under the requested `keyLabel` along with a minimal self-signed bootstrap certificate object so SunPKCS11 exposes the private key entry.
+   * Builds and signs a PKCS#10 Certificate Signing Request (`-----BEGIN CERTIFICATE REQUEST-----`) inside the HSM.
+2. **Sign CSR in KMS Simulator** (`http://localhost:3001/certificates`):
+   * In KMS, select the target Root or Subordinate CA, paste the CSR PEM, and select profile **`OCSP_SIGNING`** (which adds `basicConstraints = CA:FALSE` and `extendedKeyUsage = id-kp-OCSPSigning` OID `1.3.6.1.5.5.7.3.9`).
+3. **Import & Public Key Verification** (`POST /api/v1/admin/signing-certificates`):
+   * `Pkcs11OcspSigner.importCertificateToToken(keyLabel, holder)` compares the uploaded X.509 certificate's `SubjectPublicKeyInfo` bytes against the HSM keypair's public key before binding the certificate to the PKCS#11 entry.
+   * If the certificate was signed for a different keypair, import fails immediately with a clear `IllegalArgumentException`.
+4. **Post-Commit Activation** (`PUT /api/v1/admin/signing-certificates/\{id\}/activate`):
+   * Marks the certificate active in `ocsp.signing_certificates` and publishes `SigningConfigurationChangedEvent`.
+   * `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` updates the in-memory `Pkcs11OcspSigner` table only after the database transaction commits.
+
+== Multi-CA Signer Selection (`selectSigner(CertificateID)`)
+
+Multiple signing certificates (one per issuing CA) can be active simultaneously. When an OCSP request arrives, `Pkcs11OcspSigner.selectSigner(CertificateID requestCertId)` selects the active, non-expired signing certificate whose `subjectNameHash` / `publicKeyHash` or `issuerNameHash` matches the requested `CertID`, ensuring multi-CA RFC 6960 §4.2.2.2 compliance.

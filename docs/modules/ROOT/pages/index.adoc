@@ -1,98 +1,103 @@
-= Incert OCSP Subsystem 2.0
-:description: High-performance, RFC 6960-compliant Online Certificate Status Protocol (OCSP) Responder
-:keywords: ocsp, pki, rfc6960, cryptography, hsm, pkcs11, rabbitmq, mtls, keycloak
+= Incert OCSP Subsystem v5.0
+:description: High-performance, Zero-Static-Data RFC 6960 Online Certificate Status Protocol (OCSP) Responder with SoftHSM2 PKCS#11, RabbitMQ mTLS, and Multi-CA Signing
+:keywords: ocsp, pki, rfc6960, rfc8954, cryptography, hsm, pkcs11, rabbitmq, mtls, keycloak, outbox, inbox
 
-Welcome to the official documentation for the **Incert OCSP Subsystem**. This solution provides an enterprise-grade, high-throughput RFC 6960-compliant Online Certificate Status Protocol (OCSP) responder designed for zero-trust public key infrastructures (PKI).
+Welcome to the official documentation for the **Incert OCSP Subsystem v5.0**. This system implements an enterprise-grade, zero-static-data **RFC 6960** and **RFC 8954** Online Certificate Status Protocol (OCSP) responder with hardware-backed **SoftHSM2 PKCS#11** signing, **RabbitMQ strict mutual TLS (mTLS)** event synchronization, **pure RabbitMQ Outbox ↔ Inbox reconciliation**, and a **Daily Signing Certificate Validity & 3-Day Alert Monitor**.
 
-== Highlights & Capabilities
+== Highlights & v5.0 Capabilities
 
-[cols="1,3"]
+[cols="1,3", options="header"]
 |===
-| Feature | Description
+| Capability | v5.0 Implementation Details
 
-| *RFC 6960 Conformance*
-| Full compliance with RFC 6960 standard, supporting both HTTP POST (binary DER) and HTTP GET (base64url) queries, with mandatory cryptographically secure Nonce echoing.
+| *Zero Static Data PKI Architecture*
+| No pre-seeded CA certificates, end-entity certificates, HSM private keys, or signing certificates exist at startup. Before an operator provisions an HSM keypair, exports a PKCS#10 CSR, signs it in KMS (`OCSP_SIGNING`), and activates it, the responder safely returns RFC 6960 `tryLater (3)`.
 
-| *Hardware Security Module (HSM)*
-| Signing private keys are managed exclusively inside a SoftHSM2 PKCS#11 hardware container. Keys are marked non-extractable, ensuring zero private key material ever touches the responder application filesystem or memory.
+| *Strict RFC 6960 `CertID` Matching*
+| Every OCSP query (`POST /ocsp` and `GET /ocsp/\{base64url\}`) verifies the full RFC 6960 `CertID` tuple `(issuer_name_hash, issuer_key_hash, serial_number)` without any serial-only fallback. Supplying a different Issuer CA PEM produces distinct `issuerNameHash` / `issuerKeyHash` values and deterministically returns `UNKNOWN`.
 
-| *Strict Mutual TLS (mTLS)*
-| All inter-service messaging between KMS Simulator, RabbitMQ, and the OCSP Responder communicates over mutual TLS (port `5671`) with strict CA peer certificate verification (`fail_if_no_peer_cert = true`).
+| *On-Demand SoftHSM2 PKCS#11 Keygen & Multi-CA Signing*
+| Non-extractable (`CKA_EXTRACTABLE = FALSE`) RSA (`2048`/`3072`/`4096`) and EC (`P-256`/`P-384`) keypairs are generated on demand inside SoftHSM2 when creating a CSR. Multiple signing certificates (one per issuing CA) can be active simultaneously and are reloaded post-commit via `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`.
 
-| *Dynamic Signing Certificate Rotation*
-| Instant, zero-downtime signing certificate rotation. The administrator can enroll certificates via PEM or API and switch active keys in-memory on the PKCS#11 signer without container restarts.
+| *Pure RabbitMQ 3s Outbox ↔ Inbox Audit & Self-Healing*
+| Zero REST coupling between KMS and OCSP. KMS broadcasts an `OutboxManifestEvent` over RabbitMQ every 3 seconds. `OutboxReconciliationService` compares outbox event IDs and certificate digests against `ocsp.inbox_event` and `ocsp.revocation_status`, tracks failed deliveries via `AmqpHeaders.MESSAGE_ID` and `AmqpHeaders.DELIVERY_TAG`, and triggers `REPLAY_EVENTS` over RabbitMQ (synthesizing missing outbox events if needed).
 
-| *Dual-Mode Authentication*
-| Supports both `KEYCLOCK` (OAuth2 / OpenID Connect SSO redirect, pre-configured realm, groups, and JWT Bearer tokens) and `SELF_MANAGED` (BCrypt credentials and admin `X-API-KEY`).
+| *Centralized Scheduled Jobs & Daily Validity Monitor*
+| All `@Scheduled` triggers in the responder live in `com.company.incert.ocsp.config.ScheduledJobsConfig` and bind from `ScheduledJobsProperties` (`ocsp.jobs.*`). The daily midnight job (`0 0 0 * * *`) checks all signing certificates, raises a 3-day expiry alert (`EXPIRING_SOON` / `EXPIRED`), and powers one-click HSM renewal CSRs on `/signing-validity`.
 
-| *Configurable TLS Toggles*
-| Runtime and property-driven activation/deactivation toggles for both RabbitMQ messaging TLS and OCSP login TLS.
+| *Zero Hardcoded Config & Clean Use Cases*
+| 100% of configuration values live in `application.yml`, `application-dev.yml`, and `application-local.yml`, bound into typed `@ConfigurationProperties` classes under `config`. Reusable domain actions live in `com.company.incert.ocsp.usecase` (`FindSigningCertificateUseCase`, `CanonicalizeSerialHexUseCase`).
 
-| *Modern Web Console*
-| Full-featured React 18 / Mantine v7 single-page application (`ocsp-console`) with live metrics, audit trail, certificate revocation actions, and signing key management.
+| *Plain JavaScript (`.js`) React 18 Admin Console*
+| `ocsp-console` (served on port `3002`) is built with React 18, Mantine v7, and Vite using clean `.js` modules (`jsconfig.json`) with no TypeScript compilation step.
 |===
 
 == Service & Port Index
 
-[cols="2,1,2,2"]
+[cols="2,1,2,2", options="header"]
 |===
-| Application / Component | Port | Endpoint URL | Authentication
+| Application / Component | Host Port | Endpoint URL | Purpose & Auth
 
-| *OCSP Responder API*
+| *OCSP Admin Console (`ocsp-console`)*
+| `3002`
+| http://localhost:3002
+| React 18 + Mantine v7 SPA (`.js`) — Keycloak SSO / Basic / API Key
+
+| *OCSP Responder & Admin API (`ocsp-responder`)*
 | `8080`
-| http://localhost:8080/ocsp
-| Public (RFC 6960)
+| http://localhost:8080/ocsp +
+http://localhost:8080/swagger-ui.html
+| Public RFC 6960 OCSP endpoint (`/ocsp`) & Protected Admin API (`/api/v1/admin/**`)
 
-| *Admin Console UI*
-| `3000`
-| http://localhost:3000
-| Keycloak SSO / Basic / API Key
-
-| *KMS Simulator UI & API*
-| `8090`
-| http://localhost:8090/kms
-| Internal / Simulator
-
-| *OCSP Client Web Test UI*
+| *Standalone OCSP Client & Verifier (`ocsp-client`)*
 | `8082`
 | http://localhost:8082
-| Public Test Harness
+| RFC 6960 / RFC 8954 test harness with Issuer CA PEM & Target Cert PEM verification
 
-| *Keycloak IAM Server*
+| *KMS Simulator Console (`kms-console`)*
+| `3001`
+| http://localhost:3001
+| CA Creation (`/cas`), CSR Issuance (`/certificates`), and Outbox Monitor (`/outbox`)
+
+| *KMS Simulator Backend (`kms-simulator`)*
+| `8090`
+| http://localhost:8090/swagger-ui.html
+| Root/Sub CA Engine, Certificate Issuance/Revocation, and Transactional Outbox
+
+| *Keycloak IAM Server (`ocsp-keycloak`)*
 | `8081`
 | http://localhost:8081
-| Keycloak Admin (`admin`/`admin`)
+| OAuth2 / OIDC Provider (`incert` realm, `ocsp-console` client, redirect `http://localhost:3002/*`)
 
-| *RabbitMQ AMQPS (mTLS)*
-| `5671`
-| `localhost:5671`
-| Client Certificate (mTLS)
+| *RabbitMQ Broker (`ocsp-rabbitmq`)*
+| `5671` / `5672` / `15672`
+| `amqps://localhost:5671` +
+http://localhost:15672
+| Strict mTLS AMQPS (`5671`), Plaintext fallback (`5672`), Management UI (`15672`)
 
-| *RabbitMQ AMQP (Plaintext)*
-| `5672`
-| `localhost:5672`
-| Plaintext Fallback (`guest`/`guest`)
-
-| *RabbitMQ Management Web UI*
-| `15672`
-| http://localhost:15672
-| `guest` / `guest`
-
-| *MariaDB Database*
+| *OCSP MariaDB (`ocsp-mariadb`)*
 | `3307`
-| `localhost:3307`
-| `ocsp_app` / `changeme`
+| `jdbc:mariadb://localhost:3307/ocsp`
+| Stores `revocation_status`, `inbox_event`, and `signing_certificates`
+
+| *KMS MariaDB (`kms-mariadb`)*
+| `3308`
+| `jdbc:mariadb://localhost:3308/kms`
+| Stores `certificate_authority`, `certificate`, and `outbox_event`
 |===
 
 == Navigating This Documentation
 
-* xref:architecture.adoc[System Design & Data Flow]: Complete architectural overview, transactional outbox pattern, and decoupled design.
-* xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 HSM Signing]: Dedicated PKCS#11 security architecture and SunPKCS11 integration.
-* xref:messaging-rabbitmq.adoc[RabbitMQ Messaging & Strict mTLS]: Event-driven certificate updates and mutual TLS configuration.
-* xref:signing-certificate-rotation.adoc[Dynamic Signing Certificate Rotation]: In-memory rotation and single-active certificate registry.
-* xref:authentication.adoc[Authentication Modes & Keycloak SSO]: Keycloak OIDC integration and self-managed security.
-* xref:tls-management.adoc[TLS Security & Activation Toggle]: Activating and deactivating TLS for RabbitMQ and OCSP login.
-* xref:api-reference.adoc[API Reference]: REST and RFC 6960 endpoints.
-* xref:verification-testing.adoc[End-to-End Verification Suite]: Automated test suites (`a` through `n`).
-* xref:adrs.adoc[Architecture Decision Records (ADRs)]: Full index of design decisions.
-
+* xref:blueprint-sequence-diagrams.adoc[System Blueprint & Sequence Diagrams]: End-to-end Mermaid floorplans and sequence diagrams for all v5.0 workflows.
+* xref:architecture.adoc[System Design, Clean Config & Use Cases]: Package structure, `@ConfigurationProperties`, `ScheduledJobsConfig`, and `usecase` components.
+* xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 On-Demand HSM Signing]: Zero-preseed token initialization, on-demand key generation, CSR creation, and public-key binding.
+* xref:messaging-rabbitmq.adoc[RabbitMQ mTLS & Zero-REST Reconciliation]: 4-queue topology, mTLS certificates, `InboxFailureRecorder`, and manifest/replay messaging.
+* xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]: Detailed breakdown of all scheduled jobs and RabbitMQ-only self-healing reconciliation.
+* xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]: Post-commit multi-CA signer synchronization, daily validity cron, 3-day alert threshold, and 1-click renewal CSR.
+* xref:authentication.adoc[Authentication Modes & Keycloak SSO]: `KEYCLOAK` and `SELF_MANAGED` modes on port `3002`.
+* xref:tls-management.adoc[TLS Security Configuration]: Transport and login TLS settings (`AppSecurityProperties` & `RabbitMqTlsProperties`).
+* xref:configuration-properties.adoc[Configuration Properties & Profiles]: Complete YAML and `@ConfigurationProperties` reference (`application.yml`, `application-dev.yml`, `application-local.yml`).
+* xref:deployment-docker.adoc[Docker Deployment & Compose]: Container orchestration and healthchecks.
+* xref:api-reference.adoc[REST & RFC 6960 API Reference]: Complete endpoint specification.
+* xref:verification-testing.adoc[Verification & Test Suites]: Unit and E2E verification scenarios.
+* xref:adrs.adoc[Architecture Decision Records (ADRs)]: Historical and v5.0 design decisions.

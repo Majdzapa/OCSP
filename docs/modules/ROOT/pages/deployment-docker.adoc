@@ -1,84 +1,94 @@
 = Docker Deployment & Compose
 :toc:
 
-The entire Incert OCSP Subsystem is containerized using Docker and Docker Compose, offering single-command deployment with production-ready orchestration and healthchecks.
+The Incert OCSP Subsystem is containerized with Docker Compose (`docker-compose.yml`), providing single-command orchestration and healthcheck gating across all 7 OCSP containers (plus the companion `kms-simulator` stack).
 
 == Quickstart
 
-To build and start all 8 subsystem containers in detached mode:
+To build and deploy all services in detached mode:
 
 [source,bash]
 ----
-docker compose up --build -d
+docker compose up -d --build
 ----
 
-To inspect the status and healthchecks of all running containers:
+To verify that all containers are running and `healthy`:
 
 [source,bash]
 ----
 docker compose ps
 ----
 
-== Subsystem Containers
+[IMPORTANT]
+.Updating Keycloak Realm Configuration (`keycloak/realm-export.json`)
+====
+Keycloak runs with `start-dev --import-realm`, which only imports `realm-export.json` when the container's H2 storage is initialized. Whenever `keycloak/realm-export.json` is modified, recreate the Keycloak container so the updated realm is imported:
+[source,bash]
+----
+docker compose up -d --force-recreate keycloak
+----
+====
 
-[cols="2,1,3"]
+== Deployed Containers (`OCSP` Stack)
+
+[cols="2,2,1,3", options="header"]
 |===
-| Service | Container Name | Role
+| Service | Container Name | Host Port(s) | Role
 
 | `mariadb`
 | `ocsp-mariadb`
-| Relational database for both `ocsp` and `kms` schemas.
+| `3307` (`-> 3306`)
+| MariaDB 10.11 storing `revocation_status`, `inbox_event`, and `signing_certificates`.
 
 | `rabbitmq`
 | `ocsp-rabbitmq`
-| Message broker running strict mTLS on 5671 and plaintext on 5672.
-
-| `keycloak`
-| `ocsp-keycloak`
-| IAM Identity Provider pre-seeded with realm `incert`.
+| `5671`, `5672`, `15672`
+| RabbitMQ 3.13 broker with strict mTLS on `5671`, plaintext on `5672`, and Management UI on `15672`.
 
 | `hsm`
 | `ocsp-hsm`
-| Dedicated Hardware Security Module with SoftHSM2 token store.
+| Internal volume
+| Dedicated SoftHSM2 PKCS#11 container initializing the empty `ocsp-signing` token.
 
-| `kms-simulator`
-| `ocsp-kms`
-| Certificate authority simulator with transactional outbox.
+| `keycloak`
+| `ocsp-keycloak`
+| `8081`
+| Keycloak 24.0 IAM server importing the `incert` realm (`http://localhost:3002/*` redirect URIs).
 
 | `ocsp-responder`
 | `ocsp-responder`
-| Core RFC 6960 responder, PKCS#11 signer, and Spring Security.
+| `8080`
+| Spring Boot RFC 6960 responder, SoftHSM2 PKCS#11 multi-CA signer, RabbitMQ listener, and Admin API.
 
 | `ocsp-client`
 | `ocsp-client`
-| Standalone OCSP query verification harness and web UI.
+| `8082`
+| Standalone RFC 6960 / RFC 8954 client and web test harness with Issuer CA PEM verification.
 
 | `ocsp-console`
 | `ocsp-console`
-| React 18 administrative single page application served via Nginx.
+| `3002` (`-> 80`)
+| Plain JavaScript (`.js`) React 18 + Mantine v7 Admin Console served via Nginx.
 |===
 
-== Service Dependency Graph
+== Companion KMS Simulator Containers (`kms-simulator` Stack)
 
-Containers are started with strict `service_healthy` conditions:
+[cols="2,2,1,3", options="header"]
+|===
+| Service | Container Name | Host Port(s) | Role
 
-[source]
-----
-mariadb (healthy) ──┐
-                    ├──► ocsp-responder (healthy) ──► ocsp-console
-hsm (healthy)     ──┤
-                    │
-rabbitmq (healthy)──┤
-                    │
-keycloak (healthy)──┘
-----
+| `kms-mariadb`
+| `kms-mariadb`
+| `3308` (`-> 3306`)
+| MariaDB 10.11 storing `certificate_authority`, `certificate`, and `outbox_event`.
 
-== Clean Teardown
+| `kms-simulator`
+| `kms-simulator`
+| `8090`
+| CA creation engine, CSR certificate issuance (`OCSP_SIGNING`, `SERVER_TLS`, `CLIENT_TLS`), revocation, 2s Outbox relay, and 3s Outbox manifest / replay service.
 
-To shut down and wipe volumes:
-
-[source,bash]
-----
-docker compose down -v
-----
-
+| `kms-console`
+| `kms-console`
+| `3001` (`-> 80`)
+| React 18 KMS Operator UI (`/cas`, `/certificates`, `/outbox`).
+|===

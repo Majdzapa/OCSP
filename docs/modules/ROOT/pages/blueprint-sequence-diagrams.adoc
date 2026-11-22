@@ -1,359 +1,155 @@
-= System Blueprint & Architectural Sequence Workflows
+= System Blueprint & Architectural Sequence Workflows (v5.0)
 :toc:
 
-This document provides the authoritative system blueprint, RFC 6960 verification guarantees, and complete sequence diagrams for technical clients, security auditors, and integration partners.
+This document provides the v5.0 system blueprint, RFC 6960 verification guarantees, and end-to-end sequence diagrams for the Incert OCSP Subsystem.
 
 == Executive Architecture Blueprint
-
-The Incert OCSP Subsystem isolates cryptographic signing, real-time revocation checking, and event-driven certificate ingestion across dedicated architectural tiers:
 
 [source,mermaid]
 ----
 flowchart TB
-    subgraph LayerRelyingParties["🌐 Relying Parties & Consumers"]
-        Browser["Web Browsers & Mobile OS\n(Chrome, Safari, iOS, Android)"]
-        EdgeProxy["Reverse Proxies & API Gateways\n(Nginx, Envoy, Traefik, HAProxy)"]
-        MtlsServices["Internal Microservices\n(mTLS Certificate Validation)"]
-        OcspClientApp["Standalone OCSP Verifier\n(:8082 UI & CLI)"]
+    subgraph LayerRelyingParties["🌐 Relying Parties & Operator Consoles"]
+        OcspConsole["OCSP Admin Console (:3002)\nPlain JS React 18 + Mantine v7\n• Dashboard & Revocation Feed\n• Signing Certificates & HSM CSR\n• Daily Validity & 3-Day Alerts\n• Outbox ↔ Inbox Audit & Replay\n• Certificate Checker (with CA PEM)"]
+        OcspClientApp["Standalone OCSP Verifier (:8082)\n• Serial / Certificate PEM + Issuer CA PEM\n• RFC 6960 & RFC 8954 Nonce Verifier"]
+        KmsConsole["KMS Simulator Console (:3001)\n• Root & Sub CA Management (/cas)\n• CSR Issuance & Revocation (/certificates)\n• Transactional Outbox Monitor (/outbox)"]
     end
 
-    subgraph LayerConsole["🖥️ Enterprise Management & Presentation Layer (Port 3000)"]
+    subgraph LayerSecurity["🔐 Identity & Access Control"]
+        Keycloak["Keycloak IAM Server (:8081)\n• Realm: incert | Client: ocsp-console\n• Redirect URI: http://localhost:3002/*"]
+    end
+
+    subgraph LayerCore["⚙️ OCSP Responder Engine (:8080)"]
         direction TB
-        NginxGateway["Nginx Gateway & Reverse Proxy\n(Port 3000)"]
-        ConsoleSPA["Mantine React Single Page App\n• Dashboard & Live Telemetry\n• Signing Certificate Management\n• Keycloak OIDC / Self-Managed Auth\n• System TLS Toggles"]
-        AntoraDocs["Antora Technical Docs Site\n(/docs/ocsp/2.0/)"]
-        ConsoleSPA --> NginxGateway
-        AntoraDocs --> NginxGateway
-    end
+        ConfigProps["config/*Properties & ScheduledJobsConfig\n(Zero Hardcoded Config, application-dev.yml)"]
+        UseCases["usecase/*\n• FindSigningCertificateUseCase\n• CanonicalizeSerialHexUseCase"]
+        OcspEndpoint["OcspResponderController (/ocsp)\n& OcspResponderService"]
+        StatusService["CertificateStatusService\nStrict 3-Tuple CertID Lookup\n(issuerNameHash, issuerKeyHash, serial)"]
+        CertRotator["SigningCertificateService\n& SigningCertificateValidityService\n(AFTER_COMMIT Reload & Daily Cron)"]
+        Reconciler["OutboxReconciliationService\n(3s Manifest Diff & RabbitMQ Replay)"]
+        Pkcs11Engine["Pkcs11OcspSigner\n(Multi-CA CertID Signer Selection)"]
 
-    subgraph LayerSecurity["🔐 Enterprise Identity & Access Control"]
-        Keycloak["Keycloak IAM Server (:8081)\n• OIDC Discovery & JWKS\n• PKCE Authorization Code Flow\n• 'ocsp-admin' Role Mapping"]
-    end
-
-    subgraph LayerCore["⚙️ High-Throughput OCSP Responder Engine (Port 8080)"]
-        direction TB
-        subgraph IngressSecurity["Security & Access Gate"]
-            AuthEngine["Auth Gate & Filters\n(JWT Bearer / X-API-KEY / Basic)"]
-            TlsEnforcer["Dynamic TLS Toggle Filter"]
-        end
-
-        subgraph ProtocolCore["RFC 6960 Validation Engine"]
-            OcspEndpoint["RFC 6960 REST Controller\n• POST /ocsp (application/ocsp-request)\n• GET /ocsp/\{base64url\}"]
-            DerParser["ASN.1 DER Parser & Validator\n(BouncyCastle OCSP API)"]
-            CacheHeaderManager["RFC 5019 Cache Engine\n(ETag, max-age, NextUpdate)"]
-        end
-
-        subgraph BusinessServices["Domain Services (SOLID Compliant)"]
-            StatusService["CertificateStatusService\n(Lookup & Monotonic Sequence Guard)"]
-            CertRotator["SigningCertificateService\n(Dynamic Rotation & Slot Mapping)"]
-        end
-
-        subgraph HardwareSigner["PKCS#11 Hardware Security Layer"]
-            SignerAdapter["OcspSigner Interface\n(Dependency Inversion)"]
-            Pkcs11Engine["Pkcs11OcspSigner Adapter\n(SunPKCS11 Provider)"]
-        end
-
-        subgraph EventIngestion["Event-Driven Ingestion Engine"]
-            RabbitConsumer["CertificateStatusListener\n(Spring AMQP Container)"]
-            InboxHandler["Idempotent Inbox Processor\n(Deduplication & Poison Pill Reject)"]
-        end
-
-        OcspEndpoint --> DerParser --> StatusService
-        StatusService --> SignerAdapter
-        SignerAdapter --> Pkcs11Engine
-        RabbitConsumer --> InboxHandler --> StatusService
-        CertRotator --> SignerAdapter
+        OcspEndpoint --> StatusService --> Pkcs11Engine
+        CertRotator --> UseCases
+        StatusService --> UseCases
+        Reconciler --> UseCases
+        ConfigProps --> ScheduledJobsConfig --> CertRotator
     end
 
     subgraph LayerHsm["🔒 Cryptographic Hardware Tier"]
-        SoftHSM["SoftHSM2 / Physical HSM Appliance\n(FIPS 140-2 Level 3 Token Store)\n• RSA-3072 / ECC P-384 Private Keys\n• Non-Extractable (CKA_EXTRACTABLE=FALSE)"]
-        Pkcs11Engine -.->|libsofthsm2.so / SunPKCS11| SoftHSM
+        SoftHSM["SoftHSM2 PKCS#11 Token (ocsp-signing)\n• Zero Pre-Seeded Keys\n• On-Demand RSA / ECDSA Keygen\n• CKA_EXTRACTABLE = FALSE"]
+        Pkcs11Engine -.->|SunPKCS11| SoftHSM
     end
 
-    subgraph LayerBroker["📨 Message Broker Tier (Port 5671)"]
-        RabbitMQ["RabbitMQ Message Broker Cluster\n• Strict mTLS Verification (Port 5671)\n• Direct Exchange: incert.certificate.status\n• Durable Queue: ocsp.certificate.status\n• Dead-Letter Queue: ocsp.certificate.status.dlq"]
+    subgraph LayerBroker["📨 RabbitMQ Strict mTLS Broker (:5671)"]
+        RabbitMQ["Exchange: incert.certificate.status\n• ocsp.certificate.status\n• ocsp.certificate.status.dlq\n• ocsp.reconciliation.manifest\n• kms.reconciliation.request"]
     end
 
-    subgraph LayerCA["🏛️ Certificate Authority & KMS Infrastructure"]
-        KMS["KMS / CA Simulator (:8090)\n• Certificate Authority Engine\n• Transactional Outbox Relay\n• Automated Revocation Trigger"]
+    subgraph LayerCA["🏛️ KMS / CA Simulator (:8090)"]
+        KMS["KMS Simulator (:8090)\n• CertificateAuthorityService\n• KmsCertificateService\n• OutboxRelayJob (2s)\n• KmsReconciliationService (3s)"]
     end
 
-    subgraph LayerStorage["🗄️ Relational Persistence Tier (MariaDB :3307)"]
-        MariaDB[("MariaDB InnoDB Cluster\n• ocsp.revocation_status (Indexed)\n• ocsp.ocsp_signing_certificates\n• ocsp.consumed_events (Idempotency)\n• kms.certificates & kms.outbox")]
+    subgraph LayerStorage["🗄️ MariaDB Persistence Tier"]
+        OcspDB[("OCSP MariaDB (:3307)\n• revocation_status\n• inbox_event\n• signing_certificates")]
+        KmsDB[("KMS MariaDB (:3308)\n• certificate_authority\n• certificate\n• outbox_event")]
     end
 
-    Browser -->|RFC 6960 GET/POST| NginxGateway
-    EdgeProxy -->|RFC 6960 GET/POST| NginxGateway
-    MtlsServices -->|RFC 6960 GET/POST| NginxGateway
-    OcspClientApp -->|RFC 6960 GET/POST| NginxGateway
-
-    NginxGateway -->|Reverse Proxy /ocsp| OcspEndpoint
-    NginxGateway -->|Reverse Proxy /api/v1/auth| AuthEngine
-    ConsoleSPA -.->|OIDC Login Redirect| Keycloak
-    AuthEngine -.->|Token Verification / JWKS| Keycloak
-
-    KMS -->|Transactional Outbox| MariaDB
-    KMS -->|Strict mTLS Publishing| RabbitMQ
-    RabbitMQ -->|Strict mTLS Ingestion| RabbitConsumer
-
-    StatusService -->|Indexed Serial Lookup| MariaDB
-    CertRotator -->|Active Cert CRUD| MariaDB
-    InboxHandler -->|Atomic Event Upsert| MariaDB
+    OcspConsole -->|REST & /ocsp| OcspEndpoint
+    OcspConsole -.->|OIDC SSO| Keycloak
+    OcspClientApp -->|POST/GET /ocsp| OcspEndpoint
+    KmsConsole -->|REST| KMS
+    KMS --> KmsDB
+    KMS <-->|AMQPS :5671 mTLS| RabbitMQ
+    RabbitMQ <-->|AMQPS :5671 mTLS| Reconciler
+    StatusService --> OcspDB
+    CertRotator --> OcspDB
 ----
 
-== RFC 6960 Protocol Compliance Guarantees
-
-[cols="2,3,4", options="header"]
-|===
-| Protocol Dimension | RFC 6960 / RFC 5019 Standard | Incert Subsystem Implementation
-
-| *Transport Wire Formats*
-| ASN.1 DER over HTTP POST and Base64URL over HTTP GET.
-| Supports `POST /ocsp` (`Content-Type: application/ocsp-request`) and `GET /ocsp/\{base64url\}` with RFC-compliant validation.
-
-| *Issuer Identification*
-| IssuerNameHash and IssuerKeyHash.
-| Computes SHA-1/SHA-256 digests against known CA certificates. Mismatches return status `UNKNOWN`.
-
-| *Status Categorization*
-| `GOOD`, `REVOKED`, `UNKNOWN`.
-| Maps directly to database state. `REVOKED` includes UTC ISO timestamp and CRLReason code.
-
-| *Anti-Replay / Nonce*
-| Section 4.4.1 Nonce Extension.
-| If present in the request, extracts and includes identical nonce in response. If absent, applies RFC 5019 `nextUpdate` window.
-
-| *Temporal Freshness*
-| `thisUpdate` and `nextUpdate`.
-| Evaluates `thisUpdate = now()`, `nextUpdate = now() + 24h` (configurable via `OCSP_NEXT_UPDATE_WINDOW`).
-
-| *Hardware Signature*
-| Delegated OCSP Responder Signature.
-| Signed using SHA256withRSA inside SoftHSM2/physical HSM via SunPKCS11. Key usage `id-kp-OCSPSigning` enforced.
-|===
-
-== Sequence Diagram 1: Synchronous RFC 6960 Validation Flow
-
-[source,mermaid]
-----
-sequenceDiagram
-    autonumber
-    actor Client as Relying Party (Browser / TLS Client)
-    participant Nginx as Nginx Proxy (:3000)
-    participant OcspCtrl as OcspResponderController
-    participant Parser as OcspResponderService (ASN.1 DER Engine)
-    participant DB as MariaDB (revocation_status)
-    participant Signer as Pkcs11OcspSigner
-    participant HSM as SoftHSM2 (PKCS#11 Token)
-
-    Client->>Nginx: POST /ocsp (Content-Type: application/ocsp-request)
-    Note over Client,Nginx: Contains ASN.1 DER OCSPRequest with SerialNumber & Optional Nonce
-    Nginx->>OcspCtrl: Forward binary payload
-    OcspCtrl->>Parser: processOcspRequest(requestBytes)
-    
-    Parser->>Parser: Parse ASN.1 DER with BouncyCastle
-    Parser->>Parser: Extract CertID (IssuerNameHash, IssuerKeyHash, SerialNumber)
-    Parser->>Parser: Extract Nonce Extension (if present)
-
-    Parser->>DB: SELECT * FROM revocation_status WHERE serial_number = ? AND issuer_name_hash = ?
-    alt Certificate Found and Revoked
-        DB-->>Parser: Record(status=REVOKED, revocation_time=T, reason=KEY_COMPROMISE)
-        Parser->>Parser: Build RevokedStatus(revocationDate, CRLReason)
-    else Certificate Found and Active
-        DB-->>Parser: Record(status=GOOD)
-        Parser->>Parser: Build GoodStatus()
-    else Certificate Not Found
-        DB-->>Parser: null
-        Parser->>Parser: Build UnknownStatus()
-    end
-
-    Parser->>Parser: Calculate thisUpdate = now(), nextUpdate = now() + 24h
-    opt Nonce Present in Request
-        Parser->>Parser: Add Nonce extension to response matching request
-    end
-
-    Parser->>Signer: signResponse(basicResponseBuilder)
-    Signer->>HSM: C_SignInit(CKM_SHA256_RSA_PKCS, KeySlot)
-    Signer->>HSM: C_Sign(derDigest)
-    Note over Signer,HSM: Private key never leaves HSM boundary (CKA_EXTRACTABLE=FALSE)
-    HSM-->>Signer: Raw Cryptographic Signature
-    Signer-->>Parser: Signed OCSPResp Object
-
-    Parser-->>OcspCtrl: Encoded OCSPResp (application/ocsp-response DER)
-    OcspCtrl-->>Nginx: HTTP 200 OK + Cache-Control: max-age=86400, ETag
-    Nginx-->>Client: Binary OCSP Response DER
-    Client->>Client: Verify signature using Responder Certificate & validate TLS handshake
-----
-
-== Sequence Diagram 2: Asynchronous Revocation Ingestion (Outbox & Strict mTLS)
-
-[source,mermaid]
-----
-sequenceDiagram
-    autonumber
-    actor SecAdmin as PKI Security Operator
-    participant KMS as KMS / CA Simulator (:8090)
-    participant KMS_DB as MariaDB (kms schema)
-    participant OutboxRelay as KMS Outbox Poller
-    participant Rabbit as RabbitMQ Broker (Port 5671 strict mTLS)
-    participant Consumer as CertificateStatusListener (:8080)
-    participant OCSP_DB as MariaDB (ocsp schema)
-
-    SecAdmin->>KMS: POST /kms/certificates/\{serial\}/revoke (reason: KEY_COMPROMISE)
-    activate KMS
-    rect rgb(240, 248, 255)
-        Note over KMS,KMS_DB: Atomic ACID Transaction
-        KMS->>KMS_DB: UPDATE certificates SET status = 'REVOKED' WHERE serial = ?
-        KMS->>KMS_DB: INSERT INTO outbox_event (id, event_type, payload, status='PENDING')
-    end
-    KMS-->>SecAdmin: HTTP 200 OK (Revocation Acknowledged)
-    deactivate KMS
-
-    loop Background Outbox Relay (Every 1000ms)
-        OutboxRelay->>KMS_DB: SELECT * FROM outbox_event WHERE status = 'PENDING'
-        KMS_DB-->>OutboxRelay: List of pending revocation events
-        OutboxRelay->>Rabbit: Publish over AMQPS (Port 5671 mTLS, Exchange: incert.certificate.status)
-        Note over OutboxRelay,Rabbit: TLS Handshake verifies Client Certificate & Server Certificate
-        Rabbit-->>OutboxRelay: Basic.Ack
-        OutboxRelay->>KMS_DB: UPDATE outbox_event SET status = 'PUBLISHED'
-    end
-
-    Rabbit->>Consumer: Deliver AMQP Message (CertificateRevokedEvent)
-    activate Consumer
-    Consumer->>OCSP_DB: SELECT event_id FROM consumed_events WHERE event_id = ?
-    alt Already Processed (Duplicate Detection)
-        OCSP_DB-->>Consumer: Record exists
-        Note over Consumer: Ignore duplicate event (Idempotent Guard)
-        Consumer->>Rabbit: Basic.Ack
-    else New Event
-        OCSP_DB-->>Consumer: Record not found
-        rect rgb(245, 255, 245)
-            Note over Consumer,OCSP_DB: Atomic Responder Ingestion Transaction
-            Consumer->>OCSP_DB: UPSERT INTO revocation_status (serial, status='REVOKED', revocation_time, reason)
-            Consumer->>OCSP_DB: INSERT INTO consumed_events (event_id, processed_at)
-        end
-        Consumer->>Rabbit: Basic.Ack
-    end
-    deactivate Consumer
-----
-
-== Sequence Diagram 3: Zero-Downtime Dynamic Signing Certificate Rotation
+== Sequence Diagram 1: On-Demand HSM CSR, KMS Issuance & Post-Commit Activation
 
 [source,mermaid]
 ----
 sequenceDiagram
     autonumber
     actor Admin as PKI Administrator
-    participant UI as Mantine Web Console (:3000)
-    participant Nginx as Nginx Reverse Proxy
-    participant Ctrl as SigningCertificateController (:8080)
-    participant Service as SigningCertificateService
-    participant DB as MariaDB (ocsp_signing_certificates)
-    participant Signer as Pkcs11OcspSigner
-    participant HSM as SoftHSM2 / Physical HSM
+    participant Console as OCSP Console (:3002)
+    participant Responder as SigningCertificateService (:8080)
+    participant HSM as SoftHSM2 (PKCS#11)
+    participant KMS as KMS Simulator (:3001 / :8090)
+    participant DB as OCSP MariaDB (:3307)
 
-    Admin->>UI: Upload New Responder Certificate (X.509 PEM + Key Alias)
-    UI->>Nginx: POST /api/v1/certificates/signing
-    Nginx->>Ctrl: Forward request with Admin Authorization
-    Ctrl->>Service: addCertificate(dto)
-    
-    Service->>Service: Validate X.509 certificate expiry & KeyUsage (id-kp-OCSPSigning)
-    Service->>DB: INSERT INTO ocsp_signing_certificates (name, pem, key_alias, is_active=false)
-    DB-->>Service: Saved Certificate ID = 42
-    Service-->>Ctrl: Certificate DTO (Status: Inactive)
-    Ctrl-->>UI: HTTP 201 Created
+    Note over Responder,HSM: Before activation, POST /ocsp returns TRY_LATER (3)
+    Admin->>Console: Request New HSM Keypair & CSR (keyLabel, subjectDn, RSA-3072 / EC-P256)
+    Console->>Responder: POST /api/v1/admin/signing-certificates/csr
+    Responder->>HSM: Generate non-extractable keypair (CKA_EXTRACTABLE=FALSE) & sign PKCS#10 CSR
+    HSM-->>Responder: CSR PEM (-----BEGIN CERTIFICATE REQUEST-----)
+    Responder-->>Console: GenerateCsrResponse (csrPem, publicKeyAlgorithm, keySize)
 
-    Admin->>UI: Click "Activate Certificate" for ID = 42
-    UI->>Nginx: POST /api/v1/certificates/signing/42/activate
-    Nginx->>Ctrl: Forward Activation Request
-    Ctrl->>Service: activateCertificate(42)
+    Admin->>KMS: Issue Certificate from CSR with profile OCSP_SIGNING (id-kp-OCSPSigning)
+    KMS-->>Admin: Signed X.509 OCSP Signing Certificate PEM
 
-    rect rgb(255, 250, 240)
-        Note over Service,DB: Atomic Database State Transition
-        Service->>DB: UPDATE ocsp_signing_certificates SET is_active = false WHERE is_active = true
-        Service->>DB: UPDATE ocsp_signing_certificates SET is_active = true WHERE id = 42
+    Admin->>Console: Upload Signed PEM & Activate
+    Console->>Responder: POST /api/v1/admin/signing-certificates
+    Responder->>HSM: Verify cert PublicKey matches HSM keyLabel & import to PKCS#11 token
+    Responder->>DB: INSERT INTO signing_certificates (active=true) & COMMIT
+    Responder->>Responder: @TransactionalEventListener(AFTER_COMMIT) -> syncAllSignersWithHsm()
+    Responder-->>Console: HTTP 201 Created (Signer Active)
+----
+
+== Sequence Diagram 2: Strict RFC 6960 `CertID` Verification (`GOOD` vs `UNKNOWN`)
+
+[source,mermaid]
+----
+sequenceDiagram
+    autonumber
+    actor Verifier as Operator (:3002/cert-checker or :8082)
+    participant ClientSvc as OcspClientService (:8082)
+    participant Responder as OcspResponderService (:8080)
+    participant StatusSvc as CertificateStatusService
+    participant DB as OCSP MariaDB (revocation_status)
+    participant HSM as Pkcs11OcspSigner / SoftHSM2
+
+    Verifier->>ClientSvc: POST /api/v1/client/check { serialNumberHex, caPem, useNonce: true }
+    ClientSvc->>ClientSvc: Compute CertID(SHA-1(caSubject), SHA-1(caPublicKey), serial) + 8B Nonce
+    ClientSvc->>Responder: POST /ocsp (DER OCSPRequest)
+    Responder->>StatusSvc: findByCertId(issuerNameHash, issuerKeyHash, serialBytes)
+    StatusSvc->>DB: SELECT * FROM revocation_status WHERE issuer_name_hash=? AND issuer_key_hash=? AND serial_number=?
+    alt Matching Issuer CA PEM & Active Serial
+        DB-->>StatusSvc: Row(status=GOOD)
+        StatusSvc-->>Responder: Optional.of(GOOD)
+    else Wrong Issuer CA PEM (Hashes Do Not Match Issuing CA)
+        DB-->>StatusSvc: Empty (No Serial-Only Fallback)
+        StatusSvc-->>Responder: Optional.empty() -> UnknownStatus
+    end
+    Responder->>HSM: selectSigner(CertID) & Sign BasicOCSPResp (echoing 8B Nonce)
+    HSM-->>Responder: Signed OCSPResp DER
+    Responder-->>ClientSvc: HTTP 200 OK (application/ocsp-response)
+    ClientSvc-->>Verifier: Detailed Diagnostic Report (Cert Status, Signature Valid, Nonce Match)
+----
+
+== Sequence Diagram 3: Pure RabbitMQ 3s Manifest Audit & Self-Healing Replay
+
+[source,mermaid]
+----
+sequenceDiagram
+    autonumber
+    participant KMS as KMSReconciliationService (:8090)
+    participant KMS_DB as KMS MariaDB (:3308)
+    participant Broker as RabbitMQ (:5671 mTLS)
+    participant OCSP_Rec as OutboxReconciliationService (:8080)
+    participant OCSP_DB as OCSP MariaDB (:3307)
+
+    loop Every 3000ms
+        KMS->>KMS_DB: Read all certificates & outbox_event rows
+        KMS->>Broker: Publish OutboxManifestEvent (ocsp.reconciliation.manifest)
+        Broker->>OCSP_Rec: Deliver OutboxManifestEvent (cached in latestManifestRef)
     end
 
-    Service->>Signer: reloadActiveCertificate()
-    Signer->>DB: SELECT * FROM ocsp_signing_certificates WHERE is_active = true
-    DB-->>Signer: Return Certificate (ID: 42, Key Alias: "ocsp-slot-2026")
-    Signer->>HSM: Verify Slot & Key Alias Access (CKA_LABEL="ocsp-slot-2026")
-    HSM-->>Signer: Key Validated & Session Ready
-    Signer->>Signer: Atomically swap in-memory reference to new X509CertificateHolder & PrivateKey
-    
-    Signer-->>Service: Rotation Completed Successfully
-    Service-->>Ctrl: Success DTO
-    Ctrl-->>UI: HTTP 200 OK (New Certificate is Active)
-    Note over Admin,HSM: Subsequent OCSP requests are immediately signed with the new certificate!
+    Note over OCSP_Rec,OCSP_DB: Operator clicks "Replay Missing / Failed via RabbitMQ" on :3002/inbox
+    OCSP_Rec->>OCSP_DB: Diff manifest against inbox_event & revocation_status
+    OCSP_Rec->>Broker: Publish ReconciliationCommandMessage(REPLAY_EVENTS, eventIds, serials)
+    Broker->>KMS: Deliver to kms.reconciliation.request
+    KMS->>KMS_DB: Reset sent=false on matching outbox_event rows
+    KMS->>KMS_DB: Synthesize fresh OutboxEvent for any requested serial missing from outbox_event
+    KMS->>Broker: Immediate OutboxRelayJob flush -> ocsp.certificate.status
+    Broker->>OCSP_DB: CertificateStatusConsumerService updates revocation_status & marks inbox PROCESSED
 ----
-
-== Sequence Diagram 4: Enterprise Identity Federation & Dynamic TLS Toggles
-
-[source,mermaid]
-----
-sequenceDiagram
-    autonumber
-    actor User as Operator / Administrator
-    participant Browser as Web Browser
-    participant Console as Mantine Console (:3000)
-    participant AuthCtrl as AuthController (:8080)
-    participant AdminCtrl as AdminDashboardController (:8080)
-    participant Keycloak as Keycloak OIDC Server (:8081)
-
-    Note over User,Console: Scenario A: Keycloak OIDC Mode (KEYCLOCK)
-    User->>Console: Access Management Console
-    Console->>AuthCtrl: GET /api/v1/auth/config
-    AuthCtrl-->>Console: { authMode: "KEYCLOCK", tlsEnabled: true, ocspLoginTlsEnabled: true }
-    
-    Console->>Browser: Redirect to Keycloak Login
-    Browser->>Keycloak: GET /realms/incert-realm/protocol/openid-connect/auth
-    Keycloak-->>Browser: Present Keycloak Multi-Factor Login Page
-    User->>Keycloak: Authenticate (Username, Password, OTP)
-    Keycloak-->>Browser: Redirect with Authorization Code
-    Browser->>Console: Return Auth Code
-    Console->>Keycloak: POST /protocol/openid-connect/token (Exchange Code + PKCE)
-    Keycloak-->>Console: Access Token (JWT) + ID Token (Roles: ["ocsp-admin"])
-    Console->>Console: Store JWT & Display Authorized Admin Dashboard
-
-    Note over User,Console: Scenario B: Dynamic TLS Toggle Modification
-    User->>Console: Navigate to Security Settings -> Toggle "Login TLS" = False
-    Console->>AdminCtrl: POST /api/v1/admin/tls/ocsp-login/toggle
-    AdminCtrl->>AdminCtrl: Set ocspLoginTlsEnabled = false
-    AdminCtrl-->>Console: { status: "SUCCESS", ocspLoginTlsEnabled: false }
-    Console-->>User: Notification: "OCSP Login TLS dynamic toggle deactivated"
-----
-
-== Sequence Diagram 5: Standalone Cryptographic Verifier Flow
-
-[source,mermaid]
-----
-sequenceDiagram
-    autonumber
-    actor Auditor as Security Auditor / Tester
-    participant ClientUI as OCSP Verifier UI (:8082)
-    participant ClientSvc as OcspClientService (:8082)
-    participant Responder as OCSP Responder (:8080)
-    participant RootCA as Trusted Root CA Certificate
-
-    Auditor->>ClientUI: Submit Verification Form (Target Certificate PEM + Issuer CA PEM)
-    ClientUI->>ClientSvc: POST /api/v1/client/check { targetCert, issuerCert, useNonce: true }
-    
-    ClientSvc->>ClientSvc: Generate Cryptographically Secure 16-byte Nonce
-    ClientSvc->>ClientSvc: Build ASN.1 OCSPReq with CertID & Nonce Extension
-    
-    ClientSvc->>Responder: POST /ocsp (DER payload)
-    Responder-->>ClientSvc: HTTP 200 OK + OCSPResp (DER payload)
-
-    ClientSvc->>ClientSvc: 1. Validate OCSP Response Status == SUCCESSFUL (0)
-    ClientSvc->>ClientSvc: 2. Parse BasicOCSPResp & Extract Responder Certificate
-    ClientSvc->>RootCA: 3. Verify Responder Cert was signed by Trusted Issuer CA (or is CA itself)
-    ClientSvc->>ClientSvc: 4. Check ExtendedKeyUsage contains id-kp-OCSPSigning (OID 1.3.6.1.5.5.7.3.9)
-    ClientSvc->>ClientSvc: 5. Verify Cryptographic Signature on BasicOCSPResp with Responder Public Key
-    ClientSvc->>ClientSvc: 6. Match Response Nonce against Sent Nonce (Anti-Replay Verification)
-    ClientSvc->>ClientSvc: 7. Validate Time Window: thisUpdate <= now() <= nextUpdate
-    ClientSvc->>ClientSvc: 8. Extract Target Certificate Status: GOOD / REVOKED / UNKNOWN
-
-    ClientSvc-->>ClientUI: VerificationResultDTO { verified: true, signatureValid: true, nonceValid: true, status: "GOOD" }
-    ClientUI-->>Auditor: Render Green Badge "Cryptographically Valid & Authorized by CA"
-----
-

@@ -204,7 +204,7 @@ flowchart TD
 **Files**:
 - [KmsReconciliationService.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/service/KmsReconciliationService.java)
 - [OutboxReconciliationService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/OutboxReconciliationService.java)
-- [InboxAuditPage.tsx](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/InboxAuditPage.tsx)
+- [InboxAuditPage.js](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/InboxAuditPage.js)
 
 ### Visual Execution Graph
 
@@ -259,7 +259,7 @@ flowchart TD
 2. **In-Memory Manifest Cache (`Listener L2`)**:
    - `OutboxReconciliationService.onOutboxManifest()` in `ocsp-responder` consumes the manifest from RabbitMQ and stores it in `latestManifestRef`.
 3. **3-Second Live UI Polling & Zero-REST Diff (`Job J3`)**:
-   - `InboxAuditPage.tsx` runs a 3-second `setInterval` calling `GET /api/v1/admin/reconciliation/verify` (and `GET /api/v1/admin/inbox`).
+   - `InboxAuditPage.js` runs a 3-second `setInterval` calling `GET /api/v1/admin/reconciliation/verify` (and `GET /api/v1/admin/inbox`).
    - `OutboxReconciliationService.verifyReconciliation()` compares the cached KMS manifest against `ocsp.inbox_event` and `ocsp.revocation_status` locally (zero HTTP calls to KMS):
      - **`missingInInboxEventIds`**: Event IDs present in `kms.outbox_event` that never arrived in `ocsp.inbox_event`.
      - **`failedInInboxEventIds`**: Event IDs in `ocsp.inbox_event` with `processing_status = FAILED`.
@@ -275,10 +275,12 @@ flowchart TD
 ## 5. Job J4 & Hook H3 (`ocsp-responder`): Daily Signing Certificate Validity Job, 3-Day Alerting & Post-Commit HSM Sync
 
 **Files**:
+- [ScheduledJobsConfig.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/config/ScheduledJobsConfig.java)
+- [ScheduledJobsProperties.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/config/ScheduledJobsProperties.java)
 - [SigningCertificateValidityService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/SigningCertificateValidityService.java)
 - [SigningCertificateService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/SigningCertificateService.java)
 - [Pkcs11OcspSigner.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/signing/Pkcs11OcspSigner.java)
-- [SigningCertValidityPage.tsx](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/SigningCertValidityPage.tsx)
+- [SigningCertValidityPage.js](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/SigningCertValidityPage.js)
 
 ### Visual Execution Graph
 
@@ -295,7 +297,7 @@ flowchart TD
     ST_SOON["⚠️ Status: EXPIRING_SOON\nLogs WARN [SIGNING-CERT-ALERT] [EXPIRING_SOON]\nAdds ValidityAlertDto(severity='EXPIRING_SOON')"]
     ST_OK["✅ Status: HEALTHY\n(> 3 Days Remaining)"]
 
-    UI_SCREEN["🖥️ Console Screen: /signing-validity\n(SigningCertValidityPage.tsx)\nDisplays Red Critical 3-Day Expiry Alert Banner"]
+    UI_SCREEN["🖥️ Console Screen: /signing-validity\n(SigningCertValidityPage.js)\nDisplays Red Critical 3-Day Expiry Alert Banner"]
     RENEW_API["⚙️ POST /api/v1/admin/signing-certificates/{id}/renew-request\ncreateRenewalRequest(id, reuseExistingKey, newKeyLabel)"]
     HSM_CSR[["🔐 SoftHSM2 PKCS#11 Token (ocsp-signing)\nReuses existing HSM PrivateKey (or generates new keypair)\nand signs PKCS#10 Renewal CSR"]]
     IMPORT_API["⚙️ POST /api/v1/admin/signing-certificates\nVerifies Cert PublicKey == HSM Key & Saves to DB"]
@@ -315,7 +317,7 @@ flowchart TD
 
 ### How It Works Step-by-Step
 1. **Daily Scheduled Execution (`Job J4`)**:
-   - `SigningCertificateValidityService.runDailyValidityCheck()` runs automatically every day at **00:00 UTC** (`@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron:0 0 0 * * *}")`), once on application startup (`ApplicationReadyEvent`), and on demand via `POST /api/v1/admin/signing-certificates/validity/check`.
+   - `ScheduledJobsConfig.runDailySigningCertificateValidityJob()` triggers `SigningCertificateValidityService.runDailyValidityCheck()` automatically every day at **00:00 UTC** (`@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")`, configured in `ScheduledJobsProperties`), once on application startup (`ApplicationReadyEvent`), and on demand via `POST /api/v1/admin/signing-certificates/validity/check`.
 2. **3-Day Expiry Evaluation & Alert Generation**:
    - Reads all rows from `ocsp.signing_certificates`.
    - For each certificate, calculates `Duration.between(now, cert.getNotAfter())`:
@@ -323,7 +325,7 @@ flowchart TD
      - **`EXPIRING_SOON`** (`!expired && remaining <= 3 days`): Increments `expiringWithinThresholdCount`, adds a `ValidityAlertDto` with `severity = "EXPIRING_SOON"`, and logs `[SIGNING-CERT-ALERT] [EXPIRING_SOON]`.
      - **`HEALTHY`** (`remaining > 3 days`): Increments `healthyCount`.
 3. **One-Click HSM Renewal CSR (`createRenewalRequest`)**:
-   - From the `/signing-validity` screen (`SigningCertValidityPage.tsx`), clicking **Request to Renew** calls `POST /api/v1/admin/signing-certificates/{id}/renew-request`.
+   - From the `/signing-validity` screen (`SigningCertValidityPage.js`), clicking **Request to Renew** calls `POST /api/v1/admin/signing-certificates/{id}/renew-request`.
    - `SigningCertificateValidityService.createRenewalRequest` looks up the certificate's `subjectDn`, `keyLabel`, and key type (`RSA` or `EC`), and calls `Pkcs11OcspSigner.generateCsr(...)` inside SoftHSM2 (reusing the existing HSM keypair by default, or generating a new keypair if `reuseExistingKey = false`).
 4. **Post-Commit HSM Signer Synchronization (`Hook H3`)**:
    - When the renewed certificate PEM (signed by the KMS CA) is imported and activated (`POST /api/v1/admin/signing-certificates`), `SigningCertificateService` saves the row in `ocsp.signing_certificates` and publishes `SigningConfigurationChangedEvent`.

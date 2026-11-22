@@ -1,0 +1,82 @@
+= Scheduled Jobs & Self-Healing RabbitMQ Reconciliation
+:toc:
+
+This guide details the background scheduled jobs and event-driven reconciliation loops across `ocsp-responder` and `kms-simulator`.
+
+== Centralized Scheduled Jobs in `ocsp-responder`
+
+All `@Scheduled` job triggers in `ocsp-responder` are collected in a single configuration class under package `config`:
+
+* **`com.company.incert.ocsp.config.ScheduledJobsConfig`**: Annotated with `@Configuration` and `@EnableScheduling`. Contains `@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")` and delegates to `SigningCertificateValidityService.runDailyValidityCheck()`.
+* **`com.company.incert.ocsp.config.ScheduledJobsProperties`**: Typed `@ConfigurationProperties(prefix = "ocsp.jobs")` class binding job flags, cron expressions, and thresholds from `application.yml` / `application-dev.yml` with zero hardcoded values in Java code.
+
+[source,yaml]
+----
+ocsp:
+  jobs:
+    signing-cert-validity:
+      enabled: ${OCSP_JOB_SIGNING_CERT_VALIDITY_ENABLED:true}
+      cron: "${OCSP_JOB_SIGNING_CERT_VALIDITY_CRON:0 0 0 * * *}"
+      alert-threshold-days: ${OCSP_JOB_SIGNING_CERT_ALERT_THRESHOLD_DAYS:3}
+----
+
+== Catalog of All Scheduled Jobs & Event Listeners
+
+[cols="1,2,2,3", options="header"]
+|===
+| ID | Job / Listener | Schedule / Queue | Exact Behavior
+
+| *J1*
+| KMS Outbox Relay Job +
+`OutboxRelayJob.relayPendingEvents()`
+| `@Scheduled(fixedDelay = 2000)` +
+(Every 2 seconds in `kms-simulator`)
+| Queries `SELECT * FROM outbox_event WHERE sent = false ORDER BY id ASC LIMIT 100`, publishes each payload to exchange `incert.certificate.status` with `props.setMessageId(ev.getEventId())`, and marks `sent = true`.
+
+| *J2*
+| KMS Outbox Manifest Broadcast Job +
+`KmsReconciliationService.broadcastManifest()`
+| `@Scheduled(fixedDelayString = "${kms.reconciliation.manifest-delay-ms:3000}")` +
+(Every 3 seconds in `kms-simulator`)
+| Reads all rows in `kms.certificate` and `kms.outbox_event`, builds an `OutboxManifestEvent` snapshot (`totalCertificates`, `totalOutboxEvents`, `sentOutboxEvents`, `pendingOutboxEvents`, `outboxEventIds`, and per-certificate digests), and publishes it to `ocsp.reconciliation.manifest`.
+
+| *J3*
+| OCSP Daily Signing Certificate Validity Job +
+`ScheduledJobsConfig.runDailySigningCertificateValidityJob()`
+| `@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")` +
+(Daily at `00:00:00` + startup + on demand)
+| Invokes `SigningCertificateValidityService.runDailyValidityCheck()`, inspects every row in `ocsp.signing_certificates`, classifies each as `HEALTHY`, `EXPIRING_SOON` (`<= alert-threshold-days`), or `EXPIRED`, and logs `[SIGNING-CERT-ALERT]` warnings.
+
+| *L1*
+| OCSP Certificate Status Listener +
+`CertificateStatusListener.onCertificateStatusChanged()`
+| `@RabbitListener(queues = "${ocsp.rabbitmq.queue}")`
+| Consumes `CertificateStatusEvent`, deduplicates via `ocsp.inbox_event`, applies monotonic `sequence` updates to `ocsp.revocation_status`, or records `FAILED` deliveries via `InboxFailureRecorder` (`REQUIRES_NEW`).
+
+| *L2*
+| OCSP Outbox Manifest Listener +
+`OutboxReconciliationService.onOutboxManifest()`
+| `@RabbitListener(queues = "${ocsp.rabbitmq.reconciliation-manifest-queue}")`
+| Atomically caches the latest `OutboxManifestEvent` from KMS in `latestManifestRef` for zero-REST-call reconciliation.
+
+| *L3*
+| KMS Reconciliation Command Listener +
+`KmsReconciliationService.onReconciliationCommand()`
+| `@RabbitListener(queues = "${kms.rabbitmq.reconciliation-request-queue}")`
+| Handles `REQUEST_MANIFEST` and `REPLAY_EVENTS`: resets `sent = false` on matching `outbox_event` rows, **synthesizes a fresh `OutboxEvent` from `kms.certificate` if a requested serial has no existing outbox row**, and triggers immediate relay + manifest broadcast.
+|===
+
+== Self-Healing Outbox ↔ Inbox Replay Flow
+
+When an operator opens **Outbox ↔ Inbox Audit** (`http://localhost:3002/inbox`) or calls `POST /api/v1/admin/reconciliation/replay`:
+
+1. `OutboxReconciliationService.verifyReconciliation()` diffs the latest `OutboxManifestEvent` against `ocsp.inbox_event` and `ocsp.revocation_status` (using `CanonicalizeSerialHexUseCase.toCanonicalSerialHex(...)`).
+2. It collects:
+   * `missingInInboxEventIds` (outbox UUIDs never received by OCSP Inbox),
+   * `failedInInboxEventIds` (inbox rows with `processing_status = 'FAILED'`),
+   * `missingSerials` (certificates present in KMS but missing from `ocsp.revocation_status`),
+   * `statusMismatches` (certificates where status or `sequence` differs).
+3. `triggerReplayViaRabbitMq()` publishes `ReconciliationCommandMessage("REPLAY_EVENTS", ...)` to `kms.reconciliation.request`.
+4. `KmsReconciliationService.handleReplay(...)` resets existing outbox rows (`sent = false`), synthesizes new `OutboxEvent` rows for any serial missing from `kms.outbox_event`, immediately flushes them via `outboxRelayJob.relayPendingEvents()`, and broadcasts an updated manifest.
+5. `CertificateStatusConsumerService` re-processes the replayed events, transitions previously `FAILED` inbox rows to `PROCESSED`, and restores 100% parity (`synchronized: true`).
+

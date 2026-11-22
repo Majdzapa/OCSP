@@ -1,7 +1,7 @@
 site:
-  title: Incert OCSP Subsystem Documentation
+  title: Incert OCSP Subsystem v5.0 Documentation
   start_page: ocsp::index.adoc
-  url: http://localhost:8080/docs
+  url: http://localhost:3002/docs
 content:
   sources:
     - url: .
@@ -20,4 +20,3 @@ asciidoc:
     source-highlighter: highlight.js
     sectanchors: true
     sectlinks: true
-

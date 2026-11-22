@@ -1,70 +1,87 @@
-= System Architecture & Data Flow
+= System Architecture, Clean Configuration & Use Cases
 :toc:
 
-The Incert OCSP Subsystem is designed as a decoupled, event-driven monolith combining high-throughput direct query handling with robust asynchronous synchronization.
+The Incert OCSP Subsystem v5.0 separates CA lifecycle operations (`kms-simulator`) from high-throughput RFC 6960 status answering (`ocsp-responder`) and cryptographic client verification (`ocsp-client`). All inter-service state synchronization happens asynchronously over RabbitMQ mTLS without any REST call between OCSP and KMS.
 
-== High-Level Architecture
-
-The architecture decouples the certificate authority / Key Management Service (KMS) lifecycle from relying party OCSP verification:
+== High-Level Architectural Floorplan
 
 [source]
 ----
-                   ┌─────────────────────────────────────────┐
-                   │             Relying Parties             │
-                   │     (Browsers, CLI, OpenSSL, curl)      │
-                   └──────────────────┬──────────────────────┘
-                                      │ RFC 6960 (POST / GET)
-                                      ▼
-                   ┌─────────────────────────────────────────┐
-                   │             OCSP Responder              │
-                   │               (Port 8080)               │
-                   │  ┌───────────────────────────────────┐  │
-                   │  │   Direct DB Certificate Lookup    │  │
-                   │  └─────────────────┬─────────────────┘  │
-                   │                    │                    │
-                   │  ┌─────────────────▼─────────────────┐  │
-                   │  │   PKCS#11 Delegated OCSP Signer   │  │
-                   │  └─────────────────┬─────────────────┘  │
-                   └────────────────────┼────────────────────┘
-                                        │ SunPKCS11
-                                        ▼
-                   ┌─────────────────────────────────────────┐
-                   │         Dedicated HSM Container         │
-                   │            (SoftHSM2 Token)             │
-                   │     [ RSA-3072 Non-Extractable Key ]    │
-                   └─────────────────────────────────────────┘
-                                        ▲
-                                        │ AMQPS (Strict mTLS 5671)
-                                        │
-┌────────────────────────┐      ┌───────┴────────┐      ┌────────────────────────┐
-│     KMS Simulator      ├─────►│    RabbitMQ    ├─────►│  Responder Consumer    │
-│  (Transactional Outbox)│      │  (Port 5671)   │      │  (Idempotent Inbox)    │
-└────────────────────────┘      └────────────────┘      └────────────────────────┘
+  ┌───────────────────────────────────────────────────────────────────────────────────┐
+  │                       RELYING PARTIES & OPERATOR CONSOLES                         │
+  │   • OCSP Admin Console (:3002, plain JS)     • Standalone OCSP Verifier (:8082)   │
+  │   • KMS Admin Console (:3001)                • OpenSSL / Browsers / TLS Clients   │
+  └───────────────────┬───────────────────────────────────────────┬───────────────────┘
+                      │ RFC 6960 (/ocsp) & Admin REST             │ KMS REST (:8090)
+                      ▼                                           ▼
+  ┌─────────────────────────────────────────┐ ┌───────────────────────────────────────┐
+  │        ocsp-responder (:8080)           │ │         kms-simulator (:8090)         │
+  │  • config/*Properties (Zero Hardcoding) │ │  • CertificateAuthorityService        │
+  │  • config/ScheduledJobsConfig           │ │    (Root & Sub CA, RSA / ECDSA)       │
+  │  • usecase/FindSigningCertificateUseCase│ │  • KmsCertificateService              │
+  │  • usecase/CanonicalizeSerialHexUseCase │ │    (CSR Issuance & Revocation)        │
+  │  • CertificateStatusService             │ │  • OutboxRelayJob (every 2s)          │
+  │    (Strict RFC 6960 CertID 3-tuple)     │ │  • KmsReconciliationService           │
+  │  • OutboxReconciliationService          │ │    (3s Manifest & Replay Synthesis)   │
+  │  • SigningCertificateValidityService    │ └───────────────────┬───────────────────┘
+  └─────────┬─────────────────────┬─────────┘                     │
+            │ SunPKCS11           │ AMQPS (:5671 Strict mTLS)     │ AMQPS (:5671)
+            ▼                     ▼                               ▼
+  ┌───────────────────┐ ┌─────────────────────────────────────────────────────────────┐
+  │  SoftHSM2 Token   │ │       RabbitMQ Broker (Exchange: incert.certificate.status) │
+  │   (ocsp-signing)  │ │  • ocsp.certificate.status      • ocsp.reconciliation.manifest│
+  │  CKA_EXTRACTABLE  │ │  • ocsp.certificate.status.dlq  • kms.reconciliation.request │
+  │      = FALSE      │ └─────────────────────────────────────────────────────────────┘
+  └───────────────────┘
 ----
 
-== Core Architectural Patterns
+== Clean Package Structure (`ocsp-responder`)
 
-=== 1. Interface & Adapter Pattern for Pluggability
-To ensure flexibility without the over-engineering of pure hexagonal architecture:
-* **HSM Signing**: Defined by the `OcspSigner` interface. The `Pkcs11OcspSigner` implementation communicates with SoftHSM2 or physical HSM appliances (e.g. Thales Luna, Utimaco, AWS CloudHSM). To migrate to another HSM, only the adapter is changed.
-* **Messaging**: Defined by `CertificateStatusEventPublisher` and `CertificateStatusConsumer`. The RabbitMQ implementation can be switched to Kafka, AWS SQS, or Azure Service Bus by providing a new adapter bean.
+[cols="1,3", options="header"]
+|===
+| Package | Responsibility
 
-=== 2. Transactional Outbox Pattern
-The KMS Simulator records certificate status changes and outbox events in a single database transaction:
-1. `kms_certificates` record is created or updated (`GOOD`, `REVOKED`).
-2. An event is written to `kms_outbox` with status `PENDING`.
-3. A background relay polls `PENDING` outbox records and publishes them to RabbitMQ over mutual TLS.
-4. On acknowledgment, outbox state is updated to `PUBLISHED`.
+| `com.company.incert.ocsp.config`
+| Typed `@ConfigurationProperties` classes (`AdminProperties`, `AppSecurityProperties`, `HsmProperties`, `KeycloakProperties`, `OcspRabbitMqProperties`, `OcspResponderProperties`, `RabbitMqTlsProperties`, `ScheduledJobsProperties`), centralized `@Scheduled` job runner (`ScheduledJobsConfig`), and infrastructure beans (`RabbitMqConfig`, `SecurityConfig`, `SigningConfig`, `OpenApiConfig`). **Zero hardcoded configuration defaults exist in Java code.**
 
-=== 3. Idempotent Inbox Consumer & Deduplication
-The OCSP Responder processes status update events via an inbox table:
-* Each event is identified by an idempotent `eventId`.
-* Duplicate messages are identified, logged, and marked `DUPLICATE` without corrupting certificate status.
-* Poison messages that fail deserialization or processing are automatically rejected (`requeue = false`) and routed to the Dead Letter Queue (`ocsp.certificate.status.dlq`).
+| `com.company.incert.ocsp.usecase`
+| Reusable domain actions shared across multiple services:
+`FindSigningCertificateUseCase` (uniform lookup & error handling across activation, deactivation, deletion, and CSR renewal) and `CanonicalizeSerialHexUseCase` (hex sanitization and minimal two's-complement DER serial byte canonicalization).
 
-=== 4. Direct In-Memory & Read-Optimized DB Lookups
-Unlike distributed microservice querying:
-* The OCSP Responder reads local database state (`ocsp.certificate_status`) with indexed serial numbers.
-* High cache locality ensures sub-millisecond query evaluation.
-* The PKCS#11 signer retains in-memory session pools to the HSM slot, eliminating connection latency.
+| `com.company.incert.ocsp.service`
+| Core domain logic: `OcspResponderService` (RFC 6960 ASN.1 DER request/response engine), `CertificateStatusService` (strict 3-tuple `CertID` lookup and monotonic sequence guard), `SigningCertificateService` (HSM CSR generation, public-key match verification, post-commit activation), `SigningCertificateValidityService` (daily validity check, 3-day alert report, 1-click renewal CSR), and `OutboxReconciliationService` (RabbitMQ manifest diffing and self-healing replay).
 
+| `com.company.incert.ocsp.signing`
+| `OcspSigner` interface, `Pkcs11OcspSigner` (SoftHSM2 PKCS#11 multi-CA signer with on-demand keypair generation and `CertID`-aware signer selection), and `SoftwareKeyOcspSigner` (non-prod fallback when `hsm.enabled=false`).
+
+| `com.company.incert.ocsp.messaging`
+| `CertificateStatusListener`, `CertificateStatusConsumerService` (idempotent inbox consumer), `InboxFailureRecorder` (`Propagation.REQUIRES_NEW` failure persistence with `AmqpHeaders.MESSAGE_ID` and `AmqpHeaders.DELIVERY_TAG`), `OutboxManifestEvent`, and `ReconciliationCommandMessage`.
+
+| `com.company.incert.ocsp.controller`
+| `OcspResponderController` (`/ocsp`), `AuthController`, `AdminDashboardController`, `SigningCertificateController`, `InboxAdminController`, `CertCheckController`, and `RevocationFeedController`.
+|===
+
+== Strict RFC 6960 `CertID` Matching (No Serial-Only Fallback)
+
+In RFC 6960 §4.1.1, a certificate is uniquely identified by its `CertID`:
+
+[source]
+----
+CertID ::= SEQUENCE {
+    hashAlgorithm       AlgorithmIdentifier,
+    issuerNameHash      OCTET STRING, -- Hash of issuer's DN
+    issuerKeyHash       OCTET STRING, -- Hash of issuer's public key
+    serialNumber        CertificateSerialNumber
+}
+----
+
+`CertificateStatusService.findByCertId(byte[] issuerNameHash, byte[] issuerKeyHash, byte[] serialNumber)` queries:
+
+[source,java]
+----
+repository.findByIssuerNameHashAndIssuerKeyHashAndSerialNumber(
+        issuerNameHash, issuerKeyHash, canonicalSerial);
+----
+
+* If all 3 fields match a row in `ocsp.revocation_status`, the responder returns `GOOD` or `REVOKED` signed by the matching CA's delegated OCSP signing certificate.
+* If the caller provides an Issuer CA PEM that did **not** issue the target certificate (so `issuerNameHash` or `issuerKeyHash` differs), the 3-tuple query returns `Optional.empty()` and the OCSP responder returns **`UNKNOWN`** — even if a certificate with the same serial number exists under another CA.

@@ -1,80 +1,55 @@
-= REST & OCSP API Reference
+= REST & RFC 6960 API Reference
 :toc:
 
-This reference covers the primary public and administrative endpoints exposed by the OCSP Responder subsystem.
+This reference documents all public RFC 6960 endpoints, authentication endpoints, administrative endpoints (`ocsp-responder` on `:8080`), and verification endpoints (`ocsp-client` on `:8082`).
 
-== Public RFC 6960 OCSP Endpoints
+== Public RFC 6960 OCSP Endpoints (`:8080`)
 
-These endpoints are strictly unauthenticated, enabling relying party clients worldwide to verify certificate validity.
+=== `POST /ocsp`
+Evaluates a binary ASN.1 DER-encoded `OCSPRequest` (`Content-Type: application/ocsp-request`) and returns a signed `OCSPResponse` (`Content-Type: application/ocsp-response`).
 
-=== POST /ocsp
-Evaluates binary DER-encoded OCSP request.
-* **Content-Type**: `application/ocsp-request`
-* **Response Type**: `application/ocsp-response`
-* **Status**: 200 OK
+* Returns `TRY_LATER (3)` when no active signing certificate is configured.
+* Performs strict 3-tuple `CertID` lookup `(issuer_name_hash, issuer_key_hash, serial_number)`:
+  - Matching CA & active serial -> `GOOD`
+  - Matching CA & revoked serial -> `REVOKED` (with revocation timestamp & reason code)
+  - Mismatched Issuer CA PEM or unknown serial -> `UNKNOWN`
+* Echoes the request's RFC 8954 Nonce extension (`1..32` octets) when present.
 
-=== GET /ocsp/\{base64url\}
-Evaluates base64url-encoded OCSP request path.
-* **Response Type**: `application/ocsp-response`
-* **Status**: 200 OK
+=== `GET /ocsp/\{base64url\}`
+Evaluates a Base64-encoded `OCSPRequest` supplied in the URL path per RFC 6960 §A.1.1.
 
-== Admin Authentication Endpoints
+== Authentication Endpoints (`:8080/api/v1/auth`)
 
-=== GET /api/v1/auth/config
-Returns active authentication configuration and TLS status.
-* **Authentication**: None (public config endpoint)
-* **Response**:
-+
-[source,json]
-----
-{
-  "authMode": "KEYCLOCK",
-  "isKeycloak": true,
-  "tlsEnabled": true,
-  "keycloak": {
-    "authServerUrl": "http://localhost:8081",
-    "realm": "incert",
-    "clientId": "ocsp-console"
-  }
-}
-----
+* `GET /api/v1/auth/config`: Returns active `authMode` (`KEYCLOAK` or `SELF_MANAGED`), `isKeycloak`, `tlsEnabled`, and Keycloak coordinates (`authServerUrl`, `realm`, `clientId`).
+* `GET /api/v1/auth/me`: Returns authenticated principal and roles (`401` if unauthenticated).
+* `POST /api/v1/auth/login`: Validates `username`/`password` or `apiKey` in `SELF_MANAGED` or break-glass mode.
 
-=== POST /api/v1/auth/login
-Authenticates credentials or certificates.
-* **Supported Payloads**:
-  - Username & password: `{"username": "admin", "password": "changeme"}`
-  - API Key: `{"apiKey": "incert-admin-secret-key"}`
-  - Bearer JWT: `{"token": "eyJhbGciOiJSUzI1NiIsIn..."}`
-  - Client Certificate: `{"clientCert": "CN=admin,O=Incert"}`
-* **Response**:
-+
-[source,json]
-----
-{
-  "authenticated": true,
-  "username": "admin",
-  "roles": ["ROLE_ADMIN"],
-  "authMode": "KEYCLOCK",
-  "tlsEnabled": true,
-  "apiKey": "incert-admin-secret-key"
-}
-----
+== Admin Signing Certificate & Validity Endpoints (`:8080/api/v1/admin/signing-certificates`)
 
-=== GET & POST /api/v1/auth/tls
-Queries or updates TLS status for login.
-* **POST Body**: `{"enabled": false}`
-* **Response**: `{"tlsEnabled": false, "status": "DEACTIVATED"}`
+All `/api/v1/admin/**` endpoints require `ROLE_ADMIN` (Keycloak Bearer JWT, Basic Auth, or `X-API-KEY`).
 
-== Admin Signing Certificate Endpoints
+* `GET /api/v1/admin/signing-certificates`: Lists all signing certificates.
+* `GET /api/v1/admin/signing-certificates/active`: Returns the primary active signing certificate.
+* `GET /api/v1/admin/signing-certificates/hsm`: Returns SoftHSM2 token metadata and key labels.
+* `POST /api/v1/admin/signing-certificates/csr`: Generates an on-demand HSM keypair (`RSA` or `EC`) and returns a PKCS#10 CSR PEM.
+* `POST /api/v1/admin/signing-certificates`: Verifies public-key match with the HSM key, imports the signed certificate to the PKCS#11 token, and registers it in MariaDB.
+* `PUT /api/v1/admin/signing-certificates/\{id\}/activate`: Activates a signing certificate and syncs `Pkcs11OcspSigner` post-commit.
+* `PUT /api/v1/admin/signing-certificates/\{id\}/deactivate`: Deactivates a signing certificate.
+* `DELETE /api/v1/admin/signing-certificates/\{id\}`: Deletes an inactive signing certificate.
+* `GET /api/v1/admin/signing-certificates/validity`: Returns the daily validity check report, `alertThresholdDays` (`3`), `cron` (`0 0 0 * * *`), per-certificate countdowns, and active alerts (`EXPIRING_SOON`, `EXPIRED`).
+* `POST /api/v1/admin/signing-certificates/validity/check`: Runs an immediate validity check across all signing certificates.
+* `POST /api/v1/admin/signing-certificates/\{id\}/renew-request`: Generates a PKCS#10 renewal CSR in SoftHSM2 for an expiring signing certificate.
 
-All endpoints require `ROLE_ADMIN` (Bearer JWT, Basic Auth, or `X-API-KEY`).
+== Admin Inbox, Reconciliation & Dashboard Endpoints (`:8080/api/v1/admin`)
 
-* `GET /api/v1/admin/signing-certificates`: List all certificates.
-* `GET /api/v1/admin/signing-certificates/active`: Retrieve active certificate.
-* `POST /api/v1/admin/signing-certificates`: Enroll a certificate from PEM.
-* `PUT /api/v1/admin/signing-certificates/\{id\}/activate`: Activate certificate with id.
+* `GET /api/v1/admin/dashboard/stats`: Live certificate counts (`GOOD`, `REVOKED`), signing cert expiry days, Micrometer latency/RPS, and RabbitMQ TLS status.
+* `GET /api/v1/admin/revocations`: Paginated revocation feed.
+* `GET /api/v1/admin/cert-check/\{serialHex\}`: Direct database status check by serial hex.
+* `GET /api/v1/admin/inbox`: Lists all `ocsp.inbox_event` records (including `deliveryTag`, `processingStatus`, `errorMessage`) plus summary counts (`processed`, `duplicate`, `failed`).
+* `GET /api/v1/admin/reconciliation/verify`: Compares the latest RabbitMQ `OutboxManifestEvent` from KMS against `ocsp.inbox_event` and `ocsp.revocation_status` with zero REST calls.
+* `POST /api/v1/admin/reconciliation/replay`: Publishes a `REPLAY_EVENTS` command over RabbitMQ (`kms.reconciliation.request`) so KMS replays missing/failed events and synthesizes missing outbox rows.
 
-== Operational & Dashboard Endpoints
+== Standalone OCSP Client Endpoints (`:8082/api/v1/client`)
 
-* `GET /api/v1/admin/dashboard/stats`: Returns live certificate counts, signing latency, and broker status.
-* `GET /api/v1/admin/reconciliation/verify`: Compares KMS source of truth with responder database and reports parity status.
+* `POST /api/v1/client/check`: Accepts `serialNumberHex` or `certificatePem`, optional **`caPem` (Issuer CA Certificate PEM)**, `responderUrl`, `httpMethod` (`POST` / `GET`), and `useNonce` (`true` / `false`). Computes the RFC 6960 `CertID` from the supplied `caPem`, queries `/ocsp`, and verifies the responder's signature, `id-kp-OCSPSigning` EKU, nonce echo, and freshness window.
+* `GET /api/v1/client/info`: Returns client version, `defaultResponderUrl`, and RFC compliance list.

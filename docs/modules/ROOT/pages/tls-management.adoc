@@ -1,85 +1,32 @@
-= TLS Security & Activation Toggle
+= TLS Security Configuration
 :toc:
 
-The OCSP responder provides fine-grained control over Transport Layer Security (TLS) for both messaging channels and administrative login sessions.
+Transport Layer Security (TLS) settings for both the RabbitMQ messaging channel and OCSP login metadata are externalized into `application.yml` / `application-dev.yml` and bound via `AppSecurityProperties` and `RabbitMqTlsProperties`.
 
-== TLS Capabilities Matrix
-
-[cols="1,2,2"]
-|===
-| Dimension | Active (`true`) | Deactivated (`false`)
-
-| *RabbitMQ Channel*
-| Strict mTLS on port `5671` with peer certificate validation (`verify_peer`).
-| Standard plaintext AMQP on port `5672`.
-
-| *OCSP Login API*
-| Accepts mTLS Client Certificate authentication (`POST /api/v1/auth/login` with `clientCert`).
-| Rejects client cert login with `400 Bad Request`. Standard credentials remain active.
-
-| *UI Badge Indicator*
-| `TLS: Active` (Green / Teal badge).
-| `TLS: Deactivated` (Gray badge).
-|===
-
-== OCSP Login TLS Configuration
-
-In `ocsp-responder/src/main/resources/application.yml`:
+== TLS Configuration Properties
 
 [source,yaml]
 ----
 security:
   tls:
     enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}}
+
+rabbitmq:
+  tls:
+    enabled: ${RABBITMQ_TLS_ENABLED:${security.tls.enabled:true}}
+    tls-port: ${RABBITMQ_TLS_PORT:5671}
+    plaintext-port: ${RABBITMQ_PLAINTEXT_PORT:5672}
 ----
 
-=== Runtime Toggle API
+[cols="1,2,2", options="header"]
+|===
+| Dimension | Enabled (`true`) | Disabled (`false`)
 
-Administrators can inspect and change TLS activation status at runtime without stopping or redeploying containers:
+| *RabbitMQ Connection (`RabbitMqTlsProperties`)*
+| Strict mutual TLS (AMQPS) on `tls-port` (`5671`) using PKCS#12 client keystore & truststore (`verify_peer`).
+| `RabbitMqConfig.rabbitMqTlsPortCustomizer()` switches connection factory port from `5671` to `plaintext-port` (`5672`).
 
-* **Query Status**:
-+
-[source,bash]
-----
-curl -s http://localhost:8080/api/v1/auth/tls
-# Output: {"tlsEnabled": true, "status": "ACTIVE"}
-----
-
-* **Deactivate TLS**:
-+
-[source,bash]
-----
-curl -s -X POST http://localhost:8080/api/v1/auth/tls \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
-# Output: {"tlsEnabled": false, "status": "DEACTIVATED", "message": "OCSP login TLS status updated to DEACTIVATED"}
-----
-
-* **Reactivate TLS**:
-+
-[source,bash]
-----
-curl -s -X POST http://localhost:8080/api/v1/auth/tls \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true}'
-----
-
-== Client Certificate Login Enforcement
-
-When TLS is active:
-* Authenticating with `clientCert: "CN=admin,O=Incert"` grants immediate `ROLE_ADMIN` access with `authType: "TLS_CLIENT_CERT"`.
-
-When TLS is deactivated:
-* Any attempt to authenticate via client certificate is rejected:
-+
-[source,json]
-----
-{
-  "authenticated": false,
-  "authMode": "KEYCLOCK",
-  "tlsEnabled": false,
-  "message": "TLS authentication is currently deactivated in application configuration"
-}
-----
-* The HTTP response status code is `400 Bad Request`.
-
+| *Auth & Dashboard Metadata (`AppSecurityProperties`)*
+| `GET /api/v1/auth/config` and `GET /api/v1/admin/dashboard/stats` report `tlsEnabled: true`, `ocspLoginTlsEnabled: true`, and `messagingBroker: "RabbitMQ (AMQPS / Strict mTLS)"`.
+| Reports `tlsEnabled: false` and `messagingBroker: "RabbitMQ (Plaintext)"`.
+|===

@@ -1,6 +1,6 @@
-# Running `ocsp-responder` Locally (macOS, Windows & Linux)
+# Running `ocsp-responder` & `ocsp-client` Locally (macOS, Windows & Linux)
 
-This guide explains how to run **`ocsp-responder`** directly on your host machine (via Maven or your IDE) using the `local` Spring profile (`application-local.yml`), while running the backing infrastructure (`mariadb`, `rabbitmq`, `keycloak`) in Docker.
+This guide explains how to run **`ocsp-responder`** and **`ocsp-client`** directly on your host machine (via Maven or your IDE) using the `local` or `dev` Spring profiles (`application-local.yml` / `application-dev.yml`), while running the backing infrastructure (`mariadb`, `rabbitmq`, `keycloak`) in Docker.
 
 ---
 
@@ -13,7 +13,19 @@ This guide explains how to run **`ocsp-responder`** directly on your host machin
 
 ---
 
-## 2. Start Backing Services in Docker
+## 2. Configuration Profiles Overview
+
+All configuration in v5.0 is externalized into YAML files and bound via typed `@ConfigurationProperties` classes in `com.company.incert.ocsp.config` (and `com.company.incert.ocsp.client.config`) with **zero hardcoded defaults in Java code**:
+
+| Profile | Configuration Files | Description |
+| :--- | :--- | :--- |
+| **`dev`** *(Default)* | `ocsp-responder/src/main/resources/application-dev.yml`<br>`ocsp-client/src/main/resources/application-dev.yml` | Default profile (`spring.profiles.active: ${SPRING_PROFILES_ACTIVE:dev}`) used in Docker Compose and standard development. |
+| **`local`** | `ocsp-responder/src/main/resources/application-local.yml` | Host-native profile for running `ocsp-responder` directly on macOS/Linux/Windows against Dockerized MariaDB (`:3307`), RabbitMQ (`:5671`), and Keycloak (`:8081`). |
+| **`prod`** | `ocsp-responder/src/main/resources/application.yml`<br>`ocsp-client/src/main/resources/application.yml` | Environment-variable-driven production profile. |
+
+---
+
+## 3. Start Backing Services in Docker
 
 From the root of the `OCSP` repository, start MariaDB, RabbitMQ, and Keycloak:
 
@@ -30,14 +42,15 @@ docker compose up -d mariadb rabbitmq keycloak
 Exposed local endpoints used by `application-local.yml`:
 - **MariaDB**: `jdbc:mariadb://localhost:3307/ocsp` (`ocsp_app` / `changeme`, Flyway `root` / `rootpassword`)
 - **RabbitMQ (mTLS)**: `localhost:5671` (`ocsp_amqp` / `changeme`, `verify-hostname=false`)
-- **Keycloak**: `http://localhost:8081`
+- **Keycloak**: `http://localhost:8081` (Realm `incert`, Client `ocsp-console`, Redirect URI `http://localhost:3002/*`)
 
 ---
 
-## 3. OS-Specific SoftHSM2 Setup
+## 4. OS-Specific SoftHSM2 Setup
 
 > [!IMPORTANT]
-> You do **not** need to pre-create `ocsp-signing-key` in SoftHSM2. Once the token `ocsp-signing` exists, `Pkcs11OcspSigner` automatically generates an RSA 3072 keypair inside the HSM on first startup.
+> **Zero Pre-Seeded Keys Architecture (v5.0):**
+> You only initialize an **empty** SoftHSM2 token (`ocsp-signing`). No keypair or self-signed certificate is pre-created on startup. Until you generate an HSM keypair & PKCS#10 CSR, sign it in KMS (`OCSP_SIGNING`), and activate it, the responder safely answers OCSP queries with RFC 6960 `tryLater (3)`.
 
 ### Option A: macOS (Apple Silicon / Intel)
 
@@ -45,13 +58,13 @@ Exposed local endpoints used by `application-local.yml`:
    ```bash
    brew install softhsm
    ```
-2. **Initialize the `ocsp-signing` token**:
+2. **Initialize the empty `ocsp-signing` token**:
    ```bash
    mkdir -p /opt/homebrew/var/lib/softhsm/tokens
    softhsm2-util --init-token --free --label ocsp-signing --so-pin 12345678 --pin 1234
    ```
 3. **`application-local.yml` (Default for macOS)**:
-   The repository already includes the macOS Apple Silicon library at `ocsp-responder/src/main/resources/hsm/libsofthsm2.so`, configured in [application-local.yml](ocsp-responder/src/main/resources/application-local.yml):
+   The repository includes the macOS Apple Silicon library at `ocsp-responder/src/main/resources/hsm/libsofthsm2.so`, configured in [application-local.yml](ocsp-responder/src/main/resources/application-local.yml):
    ```yaml
    hsm:
      enabled: true
@@ -60,54 +73,22 @@ Exposed local endpoints used by `application-local.yml`:
      slot-index: 0
      pin: "1234"
      key-label: ocsp-signing-key
+     config-path: ""
    ```
-   *(On Intel Macs, set `HSM_PKCS11_LIBRARY=/usr/local/lib/softhsm/libsofthsm2.so` or update `hsm.pkcs11-library`.)*
 
 ---
 
 ### Option B: Windows 10 / 11 (x64)
 
-1. **Install SoftHSM2 for Windows**:
-   - Download and install the Windows SoftHSM2 build (for example from [Disig SoftHSM2-for-Windows](https://github.com/disig/SoftHSM2-for-Windows/releases) or Chocolatey/MSYS2).
-   - Default installation path is typically:
-     - `C:\SoftHSM2\lib\softhsm2-x64.dll`
-     - `C:\SoftHSM2\etc\softhsm2.conf`
-     - `C:\SoftHSM2\bin\softhsm2-util.exe`
-
-2. **Verify `softhsm2.conf` and Token Directory** (PowerShell):
-   ```powershell
-   New-Item -ItemType Directory -Force -Path "C:\SoftHSM2\var\lib\softhsm\tokens"
-   $env:SOFTHSM2_CONF = "C:\SoftHSM2\etc\softhsm2.conf"
-   ```
-   Ensure `C:\SoftHSM2\etc\softhsm2.conf` contains:
-   ```ini
-   directories.tokendir = C:\SoftHSM2\var\lib\softhsm\tokens
-   objectstore.backend = file
-   log.level = INFO
-   ```
-
-3. **Initialize the `ocsp-signing` token** (PowerShell):
+1. **Install SoftHSM2 for Windows** (e.g. `C:\SoftHSM2\lib\softhsm2-x64.dll`).
+2. **Initialize the empty `ocsp-signing` token** (PowerShell):
    ```powershell
    & "C:\SoftHSM2\bin\softhsm2-util.exe" --init-token --free --label ocsp-signing --so-pin 12345678 --pin 1234
    ```
-
-4. **Point `hsm.pkcs11-library` to the Windows DLL**:
-   Either override via environment variable in PowerShell / IDE Run Configuration (recommended so you don't modify tracked files):
+3. **Run with the Windows DLL path**:
    ```powershell
-   $env:HSM_PKCS11_LIBRARY = "C:/SoftHSM2/lib/softhsm2-x64.dll"
-   $env:SOFTHSM2_CONF = "C:\SoftHSM2\etc\softhsm2.conf"
+   mvn -f ocsp-responder\pom.xml spring-boot:run "-Dspring-boot.run.profiles=local" "-Dspring-boot.run.arguments=--hsm.pkcs11-library=C:/SoftHSM2/lib/softhsm2-x64.dll"
    ```
-   Or place `softhsm2-x64.dll` in `ocsp-responder/src/main/resources/hsm/` and update `hsm.pkcs11-library` in `application-local.yml` (or pass `--hsm.pkcs11-library=C:/SoftHSM2/lib/softhsm2-x64.dll`):
-   ```yaml
-   hsm:
-     enabled: true
-     pkcs11-library: C:/SoftHSM2/lib/softhsm2-x64.dll
-     token-label: ocsp-signing
-     slot-index: 0
-     pin: "1234"
-     key-label: ocsp-signing-key
-   ```
-   *(Use forward slashes `/` or escaped backslashes `\\` in YAML / SunPKCS11 paths on Windows.)*
 
 ---
 
@@ -117,7 +98,7 @@ Exposed local endpoints used by `application-local.yml`:
    ```bash
    sudo apt-get update && sudo apt-get install -y softhsm2
    ```
-2. **Initialize the `ocsp-signing` token**:
+2. **Initialize the empty `ocsp-signing` token**:
    ```bash
    softhsm2-util --init-token --free --label ocsp-signing --so-pin 12345678 --pin 1234
    ```
@@ -129,49 +110,26 @@ Exposed local endpoints used by `application-local.yml`:
 
 ---
 
-## 4. Running `ocsp-responder` Locally
-
-### Via Maven CLI
-- **macOS / Linux**:
-  ```bash
-  mvn -f ocsp-responder/pom.xml spring-boot:run -Dspring-boot.run.profiles=local
-  ```
-- **Windows (PowerShell)**:
-  ```powershell
-  mvn -f ocsp-responder\pom.xml spring-boot:run "-Dspring-boot.run.profiles=local" "-Dspring-boot.run.arguments=--hsm.pkcs11-library=C:/SoftHSM2/lib/softhsm2-x64.dll"
-  ```
-
-### Via IDE (IntelliJ IDEA / VS Code)
-1. Main class: `com.company.incert.ocsp.OcspResponderApplication`
-2. Active profile: `local`
-3. Environment variables (Windows only):
-   - `SOFTHSM2_CONF=C:\SoftHSM2\etc\softhsm2.conf`
-   - `HSM_PKCS11_LIBRARY=C:/SoftHSM2/lib/softhsm2-x64.dll`
-
----
-
-## 5. Verify Local Startup
+## 5. Provisioning Your First HSM Signing Certificate
 
 1. Check health:
    ```bash
    curl -s http://localhost:8080/actuator/health
    ```
    Expected: `{"groups":["liveness","readiness"],"status":"UP"}`.
-
-2. **First-time CSR & CA Certificate Import**:
-   On first boot against an empty HSM token, `Pkcs11OcspSigner` generates a new RSA 3072 keypair (`ocsp-signing-key`) with a temporary self-signed certificate. To sign responses trusted by your CA:
-   - Open `http://localhost:3000/signing-cert` (or call `POST /api/v1/admin/signing-certificates/csr` with `reuseExistingKey=true`),
-   - Download the `.csr` file, have your CA sign it with `OCSPSigning` EKU,
-   - Import the signed certificate in the UI.
+2. Open the **OCSP Admin Console** at `http://localhost:3002/signing-certificates` (or call `POST /api/v1/admin/signing-certificates/csr`):
+   - Generate a new SoftHSM2 keypair (`RSA 3072` or `EC P-256`) and download/copy the PKCS#10 CSR PEM.
+   - Open **KMS Simulator Console** (`http://localhost:3001/certificates`), paste the CSR, select your issuing CA and profile **`OCSP_SIGNING`**, and issue the certificate.
+   - Import and activate the signed certificate PEM in `http://localhost:3002/signing-certificates`.
 
 ---
 
-## 6. Troubleshooting
+## 6. Running the Plain JavaScript (`.js`) Admin Console Locally
 
-| Issue | Cause | Fix |
-|---|---|---|
-| `Port 8080 was already in use` | Docker `ocsp-responder` is still running | Run `docker compose stop ocsp-responder` |
-| `CKR_TOKEN_NOT_PRESENT` / slot 0 uninitialized | SoftHSM2 token `ocsp-signing` was not initialized | Run `softhsm2-util --init-token --free --label ocsp-signing --so-pin 12345678 --pin 1234` |
-| `Response Verify Failure` (`rsa_ossl_public_decrypt`) | `signing_certificates` in MariaDB still holds the Docker HSM container's certificate while running against a different local SoftHSM2 keypair | Generate a CSR (`reuseExistingKey=true`) and import + activate the new certificate in the UI, or reset DB (`docker compose down -v mariadb`) |
-| `dlopen` / `UnsatisfiedLinkError` on Windows | `libsofthsm2.so` is a macOS binary | Override `hsm.pkcs11-library` to `C:/SoftHSM2/lib/softhsm2-x64.dll` |
+`ocsp-console` uses plain JavaScript (`.js` with `jsconfig.json`) and Vite:
 
+```bash
+cd ocsp-console
+yarn install
+yarn dev
+```

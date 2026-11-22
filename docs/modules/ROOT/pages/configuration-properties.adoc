@@ -1,0 +1,87 @@
+= Configuration Properties, Profiles & Use Cases
+:toc:
+
+In v5.0, **zero configuration defaults are hardcoded in Java code**. Every setting is externalized into YAML configuration files (`application.yml`, `application-dev.yml`, `application-local.yml`) and bound into typed `@ConfigurationProperties` classes discovered via `@ConfigurationPropertiesScan`.
+
+== Spring Profiles Overview
+
+[cols="1,2,3", options="header"]
+|===
+| Profile | Files | When to Use
+
+| `dev` *(Default)*
+| `ocsp-responder/src/main/resources/application-dev.yml` +
+`ocsp-client/src/main/resources/application-dev.yml`
+| Default active profile (`spring.profiles.active: ${SPRING_PROFILES_ACTIVE:dev}`). Used by Docker Compose and standard development deployments.
+
+| `local`
+| `ocsp-responder/src/main/resources/application-local.yml`
+| Used when running `ocsp-responder` directly on a macOS/Linux/Windows host (`-Dspring-boot.run.profiles=local`) against Dockerized MariaDB (`:3307`), RabbitMQ (`:5671`), and Keycloak (`:8081`).
+
+| `prod`
+| `ocsp-responder/src/main/resources/application.yml` +
+`ocsp-client/src/main/resources/application.yml`
+| Production deployment driven by environment variables (`SPRING_PROFILES_ACTIVE=prod`).
+|===
+
+== `@ConfigurationProperties` Classes Reference
+
+=== `ocsp-responder` (`com.company.incert.ocsp.config`)
+
+[cols="2,2,3", options="header"]
+|===
+| Java Class | YAML Prefix | Bound Properties
+
+| `ScheduledJobsProperties`
+| `ocsp.jobs`
+| `signing-cert-validity.enabled`, `signing-cert-validity.cron`, `signing-cert-validity.alert-threshold-days`
+
+| `OcspRabbitMqProperties`
+| `ocsp.rabbitmq`
+| `exchange`, `queue`, `routing-key`, `dead-letter-exchange`, `dead-letter-queue`, `reconciliation-manifest-queue`, `reconciliation-manifest-routing-key`, `reconciliation-request-queue`, `reconciliation-request-routing-key`
+
+| `RabbitMqTlsProperties`
+| `rabbitmq.tls`
+| `enabled`, `tls-port`, `plaintext-port`
+
+| `OcspResponderProperties`
+| `ocsp.responder`
+| `next-update-window`, `max-request-bytes`, `max-cert-ids`, `max-nonce-octets`
+
+| `HsmProperties`
+| `hsm`
+| `enabled`, `pkcs11-library`, `token-label`, `slot-index`, `pin`, `key-label`, `config-path`
+
+| `AppSecurityProperties`
+| `security`
+| `auth-mode` (`KEYCLOAK` or `SELF_MANAGED`), `tls.enabled`, `cors.allowed-origins`
+
+| `KeycloakProperties`
+| `keycloak`
+| `auth-server-url`, `public-url`, `realm`, `client-id`, `jwk-set-uri`, `issuer-uri`
+
+| `AdminProperties`
+| `admin`
+| `username`, `password`, `api-key`
+|===
+
+=== `ocsp-client` (`com.company.incert.ocsp.client.config`)
+
+[cols="2,2,3", options="header"]
+|===
+| Java Class | YAML Prefix | Bound Properties
+
+| `OcspClientProperties`
+| `ocsp.client`
+| `default-responder-url`, `pki-dir`, `connect-timeout`, `read-timeout`
+|===
+
+== Reusable `usecase` Package (`com.company.incert.ocsp.usecase`)
+
+To eliminate duplicated logic across services, repeatable domain actions are encapsulated in `com.company.incert.ocsp.usecase`:
+
+* **`FindSigningCertificateUseCase`**:
+  Centralizes `repository.findById(id).orElseThrow(...)` across `SigningCertificateService.activate`, `deactivate`, `delete`, and `SigningCertificateValidityService.createRenewalRequest`.
+* **`CanonicalizeSerialHexUseCase`**:
+  Centralizes hex string sanitization and minimal two's-complement DER integer byte conversion (`parseHexBytes`, `toCanonicalSerialBytes`, `toCanonicalSerialHex`) across `CertificateStatusService` and `OutboxReconciliationService`.
+

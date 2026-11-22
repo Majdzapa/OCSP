@@ -1,75 +1,60 @@
-= End-to-End Verification & Testing Suite
+= Verification & Testing Suite
 :toc:
 
-The test harness in `scripts/e2e-test.sh` executes 14 comprehensive test suites validating the end-to-end functionality of the entire subsystem.
+The Incert OCSP Subsystem includes comprehensive JUnit 5 unit test suites in both `ocsp-responder` and `ocsp-client`, as well as end-to-end verification workflows covering the full v5.0 zero-static-data lifecycle.
 
-== Executing the Test Suite
+== Running Unit Tests
 
 [source,bash]
 ----
-./scripts/e2e-test.sh
+mvn -f ocsp-responder/pom.xml test
+mvn -f ocsp-client/pom.xml test
 ----
 
-== Test Suite Catalog
+=== Unit Test Coverage Matrix
 
-[cols="1,2,3"]
+[cols="2,3", options="header"]
 |===
-| Suite | Scope | Success Criteria
+| Test Class | Verified Behavior
 
-| *Test a*
-| GOOD Certificate Verification
-| Queries `ee-01.pem` status with `openssl ocsp`. Expects `good` and verified signature against CA.
+| `CertificateStatusServiceTest`
+| Strict 3-tuple RFC 6960 `CertID` lookup `(issuer_name_hash, issuer_key_hash, serial_number)`, confirming that querying an existing serial with a different CA's hashes returns `Optional.empty()` (`UNKNOWN`), plus monotonic `sequence` guard and canonical serial hex parsing via `CanonicalizeSerialHexUseCase`.
 
-| *Test b*
-| Revocation Propagation & Latency
-| Revokes `ee-02.pem` via KMS. Measures end-to-end propagation latency until OCSP reflects `revoked`.
+| `OcspResponderServiceTest`
+| RFC 6960 `TRY_LATER (3)` when unprovisioned, `GOOD`/`REVOKED`/`UNKNOWN` DER responses, RFC 8954 Nonce echoing, and request size / CertID count / nonce length limits bound via `OcspResponderProperties`.
 
-| *Test c*
-| Certificate Hold & Un-Revocation
-| Tests `CERTIFICATE_HOLD` and transitions status back to `GOOD`.
+| `SigningCertificateServiceTest`
+| On-demand CSR generation, public-key match validation, multi-CA activation/deactivation via `FindSigningCertificateUseCase`, and post-commit `@TransactionalEventListener(AFTER_COMMIT)` signer synchronization.
 
-| *Test d*
-| Unknown Serial Number
-| Queries non-existent certificate serial. Expects `unknown` status.
+| `SigningCertificateValidityServiceTest`
+| Daily validity evaluation bound via `ScheduledJobsProperties`, 3-day expiry alert detection (`HEALTHY`, `EXPIRING_SOON`, `EXPIRED`), and one-click HSM renewal CSR generation (`createRenewalRequest`).
 
-| *Test e*
-| Transport Methods & Nonce Echo
-| Asserts both HTTP POST (binary DER) and HTTP GET (base64url) work with mandatory Nonce echo.
+| `OutboxReconciliationServiceTest`
+| RabbitMQ `OutboxManifestEvent` consumption, diffing against `ocsp.inbox_event` and `ocsp.revocation_status`, and publishing `REPLAY_EVENTS` `ReconciliationCommandMessage` over RabbitMQ.
 
-| *Test f*
-| PKCS#11 Signing & Key Security
-| Verifies SoftHSM2 signing and confirms zero private key material exists on container disk.
+| `CertificateStatusConsumerServiceTest`
+| Idempotent inbox deduplication (`PROCESSED` vs `DUPLICATE`) and poison-pill failure recording with `AmqpHeaders.MESSAGE_ID` and `AmqpHeaders.DELIVERY_TAG` via `InboxFailureRecorder`.
 
-| *Test g*
-| Container Restart & Recovery
-| Restarts `ocsp-rabbitmq` and `ocsp-responder`. Asserts zero event loss and queue recovery.
+| `AuthControllerTest` & `AdminDashboardControllerTest`
+| `KEYCLOAK` and `SELF_MANAGED` authentication modes bound via `AppSecurityProperties`, `AdminProperties`, `KeycloakProperties`, and `RabbitMqTlsProperties`.
 
-| *Test h*
-| Poison Pill & DLQ Routing
-| Injects malformed JSON to RabbitMQ. Confirms routing to `ocsp.certificate.status.dlq` without consumer crash.
-
-| *Test i*
-| Admin API Authentication
-| Asserts 401 Unauthorized without auth, 200 OK with `X-API-KEY`, and 200 OK with Basic Auth.
-
-| *Test j*
-| Standalone OCSP Client
-| Validates standalone client web interface and both nonce-free and nonce-enabled checks.
-
-| *Test k*
-| KMS Simulator Web UI
-| Asserts KMS Simulator web portal returns HTTP 200.
-
-| *Test l*
-| Parity Reconciliation
-| Executes status update in KMS and verifies responder inbox table and parity reconciliation.
-
-| *Test m*
-| RabbitMQ Strict mTLS Enforcement
-| 5 sub-tests: plaintext port availability, rejection without client cert, rejection with untrusted cert, successful handshake with trusted cert, and live connection verification.
-
-| *Test n*
-| OCSP Login TLS Activation / Deactivation
-| 5 sub-tests: default TLS active, cert login success, runtime TLS deactivation, cert login rejection (400), and runtime TLS reactivation.
+| `OcspClientServiceTest`
+| Standalone client RFC 6960 request building (with Issuer CA PEM), signature verification, nonce echo validation, and HTTP error handling bound via `OcspClientProperties`.
 |===
 
+== End-to-End Verification Workflow (Zero Static Data)
+
+1. **Unprovisioned Safety Check**: Query `POST http://localhost:8080/ocsp` before activating any signing certificate -> verify `OCSPRespStatus = TRY_LATER (3)`.
+2. **CA Creation in KMS (`http://localhost:3001/cas`)**: Create a Root CA (RSA 3072 or EC P-256) and optionally a Subordinate CA.
+3. **HSM Keypair & CSR -> KMS Issuance -> Activation (`http://localhost:3002/signing-certificates`)**:
+   * Generate a new SoftHSM2 keypair and PKCS#10 CSR.
+   * Issue an `OCSP_SIGNING` certificate in KMS (`http://localhost:3001/certificates`).
+   * Import and activate the signed PEM in OCSP Admin.
+4. **Strict RFC 6960 `CertID` Check (`http://localhost:3002/cert-checker` & `http://localhost:8082`)**:
+   * Verify an issued certificate with its **matching Issuer CA PEM** -> returns `GOOD` with valid signature and 8-byte Nonce echo.
+   * Verify the same serial with a **different CA's PEM** -> returns `UNKNOWN`.
+5. **RabbitMQ Outbox ↔ Inbox Reconciliation & Replay (`http://localhost:3002/inbox`)**:
+   * Confirm 3-second `OutboxManifestEvent` parity (`synchronized: true`).
+   * Trigger **Replay Missing / Failed via RabbitMQ** and verify self-healing recovery (including when an outbox row is missing for an existing certificate serial).
+6. **Daily Validity Check & 1-Click Renewal (`http://localhost:3002/signing-validity`)**:
+   * Run **Check Validity Now** and verify `HEALTHY` / `EXPIRING_SOON` / `EXPIRED` classification and one-click HSM renewal CSR generation.

@@ -1,52 +1,40 @@
-= Dynamic Signing Certificate Rotation
+= Multi-CA Signing Certificates, Daily Validity Job & Renewal
 :toc:
 
-The OCSP Responder supports dynamic runtime rotation of delegated OCSP signing certificates without restarting containers or dropping active connections.
+The OCSP Responder supports multi-CA delegated OCSP signing certificates (`id-kp-OCSPSigning`) backed by SoftHSM2 PKCS#11 private keys, post-commit in-memory synchronization, a daily midnight validity check cron job, 3-day expiry alerting, and one-click HSM renewal CSR generation.
 
-== The Single-Active Certificate Invariant
+== Multi-CA Active Signing Certificates
 
-Under PKI governance rules:
-* Exactly **one** signing certificate may be actively used to sign responses at any given moment.
-* When a new certificate is activated, all other signing certificates must be deactivated atomically.
-* Signing responses must immediately use the newly activated certificate.
+Unlike legacy single-CA responders:
 
-== Architecture & Database Schema
+* **Multiple signing certificates can be active simultaneously** (e.g., one RSA signing certificate issued by `Root CA A` and one ECDSA P-256 signing certificate issued by `Subordinate CA B`).
+* When an RFC 6960 request arrives, `Pkcs11OcspSigner.selectSigner(CertificateID)` inspects the request's `CertID` (`issuerNameHash` and `issuerKeyHash`) and selects the active, non-expired signing certificate issued by that CA.
+* Operators cannot deactivate or delete the last remaining active signing certificate while it is active.
 
-The rotation subsystem uses the `signing_certificates` database table:
+== Post-Commit In-Memory Signer Synchronization
 
-[source,sql]
-----
-CREATE TABLE signing_certificates (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    alias VARCHAR(255) NOT NULL UNIQUE,
-    key_label VARCHAR(255) NOT NULL,
-    subject_dn VARCHAR(500) NOT NULL,
-    issuer_dn VARCHAR(500) NOT NULL,
-    serial_number VARCHAR(100) NOT NULL,
-    not_before TIMESTAMP NOT NULL,
-    not_after TIMESTAMP NOT NULL,
-    signature_algorithm VARCHAR(100) NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT FALSE,
-    certificate_pem LONGTEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    activated_at TIMESTAMP NULL
-);
-----
+When an administrator imports, activates, deactivates, or deletes a signing certificate:
 
-== Zero-Downtime In-Memory Switch
+1. `SigningCertificateService` updates `ocsp.signing_certificates` inside a `@Transactional` boundary (using `FindSigningCertificateUseCase` for lookups) and publishes a `SigningConfigurationChangedEvent`.
+2. `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)` runs `onSigningConfigurationChanged(...)` only **after** the database transaction commits.
+3. It calls `ocspSigner.updateActiveCertificate(...)` and `syncAllSignersWithHsm()`, which reloads all non-expired active certificates into `Pkcs11OcspSigner`.
 
-When an administrator activates a certificate:
+== Daily Signing Certificate Validity Check & 3-Day Alert Monitor
 
-1. `SigningCertificateService.activate(Long id)` executes inside a `@Transactional` block.
-2. It executes `repository.deactivateAll()` ensuring all certificates have `active = false`.
-3. It sets `active = true` and `activatedAt = Instant.now()` on the selected record.
-4. It calls `ocspSigner.updateSigningCertificate(cert, keyLabel)`.
-5. The `Pkcs11OcspSigner` parses the certificate, binds to the corresponding HSM key label, and updates its volatile in-memory signing reference atomically.
-6. Subsequent OCSP requests (`POST /ocsp` or `GET /ocsp/\{base64url\}`) are immediately signed with the new certificate.
+Configured via `ScheduledJobsProperties` (`ocsp.jobs.signing-cert-validity.*`) and triggered by `ScheduledJobsConfig.runDailySigningCertificateValidityJob()`:
+
+* **Schedule**: Default `0 0 0 * * *` (every day at 00:00), plus once on `ApplicationReadyEvent` and on demand via `POST /api/v1/admin/signing-certificates/validity/check`.
+* **Alert Threshold**: Default `3` days (`72` hours).
+* **Classification**:
+  - `HEALTHY`: More than `alert-threshold-days` remaining.
+  - `EXPIRING_SOON`: Not expired, and remaining validity `<= alert-threshold-days` (logs `[SIGNING-CERT-ALERT] [EXPIRING_SOON]`).
+  - `EXPIRED`: `now.isAfter(notAfter)` (logs `[SIGNING-CERT-ALERT] [EXPIRED]`).
+* **One-Click HSM Renewal CSR** (`POST /api/v1/admin/signing-certificates/\{id\}/renew-request`):
+  Generates a fresh PKCS#10 CSR for the expiring certificate (reusing its existing SoftHSM2 keypair by default, or generating a new HSM keypair when `reuseExistingKey=false`).
 
 == REST API Reference
 
-[cols="1,2,3"]
+[cols="1,2,3", options="header"]
 |===
 | Method | Path | Description
 
@@ -56,21 +44,46 @@ When an administrator activates a certificate:
 
 | `GET`
 | `/api/v1/admin/signing-certificates/active`
-| Returns the currently active signing certificate.
+| Returns the primary active signing certificate.
+
+| `GET`
+| `/api/v1/admin/signing-certificates/hsm`
+| Returns SoftHSM2 token metadata and all PKCS#11 key labels.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/csr`
+| Generates an HSM keypair (RSA/EC) on demand and returns a PKCS#10 CSR PEM.
 
 | `POST`
 | `/api/v1/admin/signing-certificates`
-| Registers a new signing certificate from PEM string (with optional immediate activation).
+| Verifies public-key match with HSM keypair, imports certificate to token, and saves to DB.
 
 | `PUT`
 | `/api/v1/admin/signing-certificates/\{id\}/activate`
-| Activates the certificate with the given ID and deactivates all others.
+| Activates the certificate and triggers post-commit HSM signer sync.
+
+| `PUT`
+| `/api/v1/admin/signing-certificates/\{id\}/deactivate`
+| Deactivates the certificate (provided at least one active certificate remains).
+
+| `DELETE`
+| `/api/v1/admin/signing-certificates/\{id\}`
+| Deletes an inactive signing certificate.
+
+| `GET`
+| `/api/v1/admin/signing-certificates/validity`
+| Returns the live validity report and active 3-day expiry alerts.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/validity/check`
+| Triggers an immediate validity check across all signing certificates.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/\{id\}/renew-request`
+| Generates a PKCS#10 renewal CSR in SoftHSM2 for the specified signing certificate.
 |===
 
-== Admin Console Interface
+== Admin Console Screens (`http://localhost:3002`)
 
-Administrators can inspect, upload, and rotate signing certificates via the web UI at `http://localhost:3000/signing-cert`:
-* Visual indicator of the current active certificate.
-* Expiry warning badges (days remaining until expiration).
-* Single-click **"Activate This Certificate"** button with confirmation modal.
-* PEM upload form with instant validation.
+* **Signing Certificates (`http://localhost:3002/signing-certificates`)**: Generate HSM keypairs & CSRs, import CA-signed `OCSP_SIGNING` PEMs, and activate/deactivate certificates.
+* **Signing Validity & Alerts (`http://localhost:3002/signing-validity`)**: View the daily cron status, 3-day expiry alert banners, per-certificate countdowns, and one-click **Renew (Generate HSM CSR)** modal.
