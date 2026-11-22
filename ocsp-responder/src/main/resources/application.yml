@@ -8,6 +8,8 @@ security:
 rabbitmq:
   tls:
     enabled: ${RABBITMQ_TLS_ENABLED:${security.tls.enabled:true}}
+    tls-port: ${RABBITMQ_TLS_PORT:5671}
+    plaintext-port: ${RABBITMQ_PLAINTEXT_PORT:5672}
 
 keycloak:
   auth-server-url: ${KEYCLOAK_URL:http://localhost:8081}
@@ -23,7 +25,7 @@ spring:
   application:
     name: ocsp-responder
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:prod}
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
     url: jdbc:mariadb://${MARIADB_HOST:localhost}:${MARIADB_PORT:3307}/${MARIADB_DB:ocsp}
@@ -119,9 +121,12 @@ ocsp:
     reconciliation-request-routing-key: ${OCSP_RABBITMQ_RECONCILIATION_REQUEST_ROUTING_KEY:incert.reconciliation.request.v1}
   responder:
     next-update-window: ${OCSP_NEXT_UPDATE_WINDOW:PT24H}
+    max-request-bytes: ${OCSP_MAX_REQUEST_BYTES:10240}
+    max-cert-ids: ${OCSP_MAX_CERT_IDS:10}
+    max-nonce-octets: ${OCSP_MAX_NONCE_OCTETS:32}
   client:
     default-responder-url: http://${OCSP_RESPONDER_HOST:localhost}:${OCSP_RESPONDER_PORT:8080}/ocsp
-  # All scheduled jobs of the responder (bound by config/ScheduledJobsProperties)
+  # All scheduled jobs of the responder (bound by config/ScheduledJobsProperties & ScheduledJobsConfig)
   jobs:
     signing-cert-validity:
       enabled: ${OCSP_JOB_SIGNING_CERT_VALIDITY_ENABLED:true}

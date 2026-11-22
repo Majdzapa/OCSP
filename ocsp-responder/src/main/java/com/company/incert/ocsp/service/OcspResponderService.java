@@ -34,17 +34,10 @@ import java.util.Optional;
 @Service
 public class OcspResponderService {
 
-    /** Maximum DER request size accepted (protects the parser). */
-    private static final int MAX_REQUEST_BYTES = 10 * 1024;
-    /** Maximum number of CertIDs answered in a single request. */
-    private static final int MAX_CERT_IDS = 10;
-    /** RFC 8954: nonce value length must be 1..32 octets. */
-    private static final int MAX_NONCE_OCTETS = 32;
-
     private final CertificateStatusService statusService;
     private final OcspSigner signer;
     private final MeterRegistry meterRegistry;
-    private final Duration nextUpdateWindow;
+    private final OcspResponderProperties properties;
 
     public OcspResponderService(
             CertificateStatusService statusService,
@@ -54,7 +47,7 @@ public class OcspResponderService {
         this.statusService = statusService;
         this.signer = signer;
         this.meterRegistry = meterRegistry;
-        this.nextUpdateWindow = properties.getNextUpdateWindow();
+        this.properties = properties;
     }
 
     /** Handles a DER-encoded OCSPRequest and always returns a DER-encoded OCSPResponse. */
@@ -87,7 +80,7 @@ public class OcspResponderService {
         if (requests == null || requests.length == 0) {
             throw new MalformedRequestException("Request contains no CertID");
         }
-        if (requests.length > MAX_CERT_IDS) {
+        if (requests.length > properties.getMaxCertIds()) {
             throw new MalformedRequestException("Too many CertIDs: " + requests.length);
         }
 
@@ -96,7 +89,7 @@ public class OcspResponderService {
 
         Instant now = Instant.now();
         Date thisUpdate = Date.from(now);
-        Date nextUpdate = Date.from(now.plus(nextUpdateWindow));
+        Date nextUpdate = Date.from(now.plus(properties.getNextUpdateWindow()));
 
         // Select the signing certificate matching the issuing CA of the request (multi-CA RFC 6960 §4.2.2.2)
         OcspSigner.SigningSelection selection = signer.selectSigner(requests[0].getCertID());
@@ -147,7 +140,7 @@ public class OcspResponderService {
         return org.bouncycastle.cert.ocsp.CertificateStatus.GOOD;
     }
 
-    private static void validateNonce(Extension nonce) {
+    private void validateNonce(Extension nonce) {
         if (nonce == null) {
             return;
         }
@@ -158,13 +151,15 @@ public class OcspResponderService {
         } catch (Exception ignored) {
             // Some clients put raw bytes; accept them as-is.
         }
-        if (value.length < 1 || value.length > MAX_NONCE_OCTETS) {
-            throw new MalformedRequestException("Nonce length must be 1.." + MAX_NONCE_OCTETS + " octets (RFC 8954)");
+        int maxNonceOctets = properties.getMaxNonceOctets();
+        if (value.length < 1 || value.length > maxNonceOctets) {
+            throw new MalformedRequestException("Nonce length must be 1.." + maxNonceOctets + " octets (RFC 8954)");
         }
     }
 
-    private static OCSPReq parseRequest(byte[] der) {
-        if (der == null || der.length == 0 || der.length > MAX_REQUEST_BYTES) {
+    private OCSPReq parseRequest(byte[] der) {
+        int maxRequestBytes = properties.getMaxRequestBytes();
+        if (der == null || der.length == 0 || der.length > maxRequestBytes) {
             throw new MalformedRequestException("Invalid request size: " + (der == null ? 0 : der.length));
         }
         try {

@@ -4,14 +4,13 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Built-in admin credentials ({@code admin.*}). */
+/** Built-in admin credentials ({@code admin.*}), bound from {@code application*.yml}. */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "admin")
 public class AdminProperties {
 
-    private String username = "admin";
-    private String password = "changeme";
-    private String apiKey = "incert-admin-secret-key";
+    private String username;
+    private String password;
+    private String apiKey;
 }
-

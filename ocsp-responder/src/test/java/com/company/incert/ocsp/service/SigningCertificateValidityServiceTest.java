@@ -37,8 +37,12 @@ class SigningCertificateValidityServiceTest {
 
     @BeforeEach
     void setUp() {
+        ScheduledJobsProperties jobsProperties = new ScheduledJobsProperties();
+        jobsProperties.getSigningCertValidity().setEnabled(true);
+        jobsProperties.getSigningCertValidity().setCron("0 0 0 * * *");
+        jobsProperties.getSigningCertValidity().setAlertThresholdDays(3);
         validityService = new SigningCertificateValidityService(repository, signingCertificateService,
-                new FindSigningCertificateUseCase(repository), new ScheduledJobsProperties());
+                new FindSigningCertificateUseCase(repository), jobsProperties);
     }
 
     @Test

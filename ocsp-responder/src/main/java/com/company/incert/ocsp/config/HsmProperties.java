@@ -4,18 +4,17 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** PKCS#11 / SoftHSM2 settings ({@code hsm.*}). */
+/** PKCS#11 / SoftHSM2 settings ({@code hsm.*}), bound from {@code application*.yml}. */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "hsm")
 public class HsmProperties {
 
-    private boolean enabled = true;
-    private String pkcs11Library = "";
-    private String tokenLabel = "ocsp-signing";
-    private int slotIndex = 0;
-    private String pin = "1234";
-    private String keyLabel = "ocsp-signing-key";
-    private String configPath = "";
+    private boolean enabled;
+    private String pkcs11Library;
+    private String tokenLabel;
+    private int slotIndex;
+    private String pin;
+    private String keyLabel;
+    private String configPath;
 }
-

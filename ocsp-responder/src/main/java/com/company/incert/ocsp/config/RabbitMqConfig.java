@@ -39,7 +39,7 @@ public class RabbitMqConfig {
     private final OcspRabbitMqProperties rabbit;
     private final RabbitMqTlsProperties tls;
 
-    @Value("${spring.rabbitmq.port:5671}")
+    @Value("${spring.rabbitmq.port}")
     private int configuredPort;
 
     @Bean
@@ -102,9 +102,9 @@ public class RabbitMqConfig {
     public ConnectionFactoryCustomizer rabbitMqTlsPortCustomizer() {
         return (ConnectionFactory factory) -> {
             log.info("RabbitMQ Config: tlsEnabled={}, configuredPort={}", tls.isEnabled(), configuredPort);
-            if (!tls.isEnabled() && configuredPort == 5671) {
-                log.info("TLS is deactivated; switching RabbitMQ connection port to 5672 (plaintext)");
-                factory.setPort(5672);
+            if (!tls.isEnabled() && configuredPort == tls.getTlsPort()) {
+                log.info("TLS is deactivated; switching RabbitMQ connection port to {} (plaintext)", tls.getPlaintextPort());
+                factory.setPort(tls.getPlaintextPort());
             }
         };
     }

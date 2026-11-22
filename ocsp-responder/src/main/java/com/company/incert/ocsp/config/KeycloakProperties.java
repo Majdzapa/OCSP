@@ -4,17 +4,16 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Keycloak coordinates ({@code keycloak.*}). */
+/** Keycloak coordinates ({@code keycloak.*}), bound from {@code application*.yml}. */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "keycloak")
 public class KeycloakProperties {
 
-    private String authServerUrl = "http://localhost:8081";
-    /** Browser-facing base URL used for the login redirect; falls back to {@link #authServerUrl}. */
+    private String authServerUrl;
     private String publicUrl;
-    private String realm = "incert";
-    private String clientId = "ocsp-console";
+    private String realm;
+    private String clientId;
     private String jwkSetUri;
     private String issuerUri;
 
@@ -28,4 +27,3 @@ public class KeycloakProperties {
                 : authServerUrl + "/realms/" + realm + "/protocol/openid-connect/certs";
     }
 }
-

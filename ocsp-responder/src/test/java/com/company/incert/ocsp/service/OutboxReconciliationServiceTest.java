@@ -46,8 +46,11 @@ class OutboxReconciliationServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        OcspRabbitMqProperties rabbitProperties = new OcspRabbitMqProperties();
+        rabbitProperties.setExchange("incert.certificate.status");
+        rabbitProperties.setReconciliationRequestRoutingKey("incert.reconciliation.request.v1");
         service = new OutboxReconciliationService(inboxRepository, statusService, rabbitTemplate, objectMapper,
-                new OcspRabbitMqProperties());
+                rabbitProperties);
     }
 
     @Test

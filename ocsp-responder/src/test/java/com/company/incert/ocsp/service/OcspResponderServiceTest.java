@@ -219,6 +219,9 @@ class OcspResponderServiceTest {
     private static OcspResponderProperties responderProperties() {
         OcspResponderProperties properties = new OcspResponderProperties();
         properties.setNextUpdateWindow(Duration.ofHours(24));
+        properties.setMaxRequestBytes(10 * 1024);
+        properties.setMaxCertIds(10);
+        properties.setMaxNonceOctets(32);
         return properties;
     }
 }

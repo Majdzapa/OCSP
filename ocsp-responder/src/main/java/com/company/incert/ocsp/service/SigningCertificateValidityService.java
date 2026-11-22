@@ -108,7 +108,7 @@ public class SigningCertificateValidityService {
     }
 
     private SigningCertValidityReportDto buildReport(Instant now, Instant lastCheckedAt) {
-        int threshold = jobsProperties.getSigningCertValidity().effectiveAlertThresholdDays();
+        int threshold = jobsProperties.getSigningCertValidity().getAlertThresholdDays();
         List<SigningCertificate> all = repository.findAll();
 
         List<CertificateValidityItemDto> items = new ArrayList<>(all.size());

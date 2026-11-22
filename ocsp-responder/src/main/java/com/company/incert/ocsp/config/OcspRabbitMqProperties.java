@@ -4,20 +4,19 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** RabbitMQ topology names ({@code ocsp.rabbitmq.*}). */
+/** RabbitMQ topology names ({@code ocsp.rabbitmq.*}), bound from {@code application*.yml}. */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "ocsp.rabbitmq")
 public class OcspRabbitMqProperties {
 
-    private String exchange = "incert.certificate.status";
-    private String queue = "ocsp.certificate.status";
-    private String routingKey = "incert.certificate.status.v1";
-    private String deadLetterExchange = "incert.certificate.status.dlx";
-    private String deadLetterQueue = "ocsp.certificate.status.dlq";
-    private String reconciliationManifestQueue = "ocsp.reconciliation.manifest";
-    private String reconciliationManifestRoutingKey = "incert.reconciliation.manifest.v1";
-    private String reconciliationRequestQueue = "kms.reconciliation.request";
-    private String reconciliationRequestRoutingKey = "incert.reconciliation.request.v1";
+    private String exchange;
+    private String queue;
+    private String routingKey;
+    private String deadLetterExchange;
+    private String deadLetterQueue;
+    private String reconciliationManifestQueue;
+    private String reconciliationManifestRoutingKey;
+    private String reconciliationRequestQueue;
+    private String reconciliationRequestRoutingKey;
 }
-

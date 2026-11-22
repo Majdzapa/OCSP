@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
  * scheduled jobs in the OCSP responder subsystem.
  * <p>
  * Job parameters and cron schedules are bound via {@link ScheduledJobsProperties}
- * ({@code ocsp.jobs.*} in {@code application.yml}).
+ * ({@code ocsp.jobs.*} in {@code application*.yml}).
  */
 @Slf4j
 @Configuration
@@ -24,11 +24,10 @@ public class ScheduledJobsConfig {
     private final SigningCertificateValidityService signingCertificateValidityService;
 
     /**
-     * Daily scheduled job (default: {@code 0 0 0 * * *}) checking all registered signing
-     * certificates and raising alerts for any certificate expiring within the configured
-     * threshold (default 3 days) or already expired.
+     * Daily scheduled job checking all registered signing certificates and raising alerts
+     * for any certificate expiring within the configured threshold or already expired.
      */
-    @Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron:0 0 0 * * *}")
+    @Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")
     public void runDailySigningCertificateValidityJob() {
         if (!jobsProperties.getSigningCertValidity().isEnabled()) {
             log.debug("Daily signing certificate validity job is disabled via configuration");
@@ -37,4 +36,3 @@ public class ScheduledJobsConfig {
         signingCertificateValidityService.runDailyValidityCheck();
     }
 }
-
