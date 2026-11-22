@@ -1,37 +1,30 @@
 package com.company.incert.ocsp.config;
 
 /**
- * Authentication mode for the OCSP Responder subsystem:
+ * Single deployment authentication mode selected by {@code app.auth.mode}:
  * <ul>
- *   <li>{@link #SELF_MANAGED}: Built-in administration authentication via username and password
- *       (HTTP Basic Auth). No external identity provider required.</li>
- *   <li>{@link #KEYCLOAK}: Keycloak OAuth2 / OpenID Connect Resource Server. Validates
- *       Bearer JWT tokens issued by a Keycloak realm and extracts roles.</li>
- *   <li>{@link #KEYCLOCK}: Deprecated alias for {@link #KEYCLOAK} — kept for backward
- *       compatibility with existing configuration files and serialized values.</li>
+ *   <li>{@link #SELF_MANAGEMENT}: App DB owns credentials, identity, and app profile.</li>
+ *   <li>{@link #KEYCLOAK}: Keycloak owns credentials and identity; App DB holds a read-only
+ *       identity replica (keyed by {@code external_id}) plus app-specific profile &amp; permissions.</li>
  * </ul>
  */
 public enum AuthenticationMode {
-    SELF_MANAGED,
-    /** Canonical spelling. */
-    KEYCLOAK,
-    /** @deprecated Use {@link #KEYCLOAK}. Retained for backward compatibility. */
-    @Deprecated
-    KEYCLOCK;
+    SELF_MANAGEMENT,
+    KEYCLOAK;
 
     public boolean isKeycloak() {
-        return this == KEYCLOAK || this == KEYCLOCK;
+        return this == KEYCLOAK;
     }
 
     public static AuthenticationMode fromString(String value) {
         if (value == null || value.isBlank()) {
-            return SELF_MANAGED;
+            return SELF_MANAGEMENT;
         }
         String clean = value.trim().toUpperCase().replace("-", "_");
         if ("KEYCLOCK".equals(clean) || "KEYCLOAK".equals(clean)
                 || "OIDC".equals(clean) || "OAUTH2".equals(clean)) {
             return KEYCLOAK;
         }
-        return SELF_MANAGED;
+        return SELF_MANAGEMENT;
     }
 }

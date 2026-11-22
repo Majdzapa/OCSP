@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.config;
 
+import com.company.incert.ocsp.service.KeycloakSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -22,12 +23,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 /**
- * Security & RBAC configuration supporting dual authentication modes:
+ * Security &amp; RBAC configuration supporting dual authentication modes via {@code app.auth.mode}:
  * <ul>
- *   <li><b>SELF_MANAGED</b>: Username and password authentication backed by {@code users} / {@code roles} tables.</li>
- *   <li><b>KEYCLOAK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
+ *   <li><b>SELF_MANAGEMENT</b>: App DB owns credentials, identity, and app profile.</li>
+ *   <li><b>KEYCLOAK</b>: Keycloak owns credentials and identity; App DB holds a read-only replica.</li>
  * </ul>
- * Roles: {@code ROLE_ADMIN}, {@code ROLE_AGENT}, {@code ROLE_AUDITOR}.
  */
 @Slf4j
 @Configuration
@@ -36,11 +36,13 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private final AppAuthProperties authProperties;
     private final AppSecurityProperties securityProperties;
     private final KeycloakProperties keycloakProperties;
+    private final KeycloakSyncService keycloakSyncService;
 
     public AuthenticationMode getAuthenticationMode() {
-        return securityProperties.authenticationMode();
+        return authProperties.resolvedMode();
     }
 
     @Bean
@@ -69,26 +71,20 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         AuthenticationMode mode = getAuthenticationMode();
-        log.info("Configuring OCSP Responder Security & RBAC with Authentication Mode: {}", mode);
+        log.info("Configuring OCSP Responder Security & RBAC with app.auth.mode={}", mode);
 
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
-                // Allow CORS pre-flight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                // Static web resources & landing page
                 .requestMatchers("/", "/index.html", "/login.html", "/favicon.ico", "/static/**").permitAll()
-                // OpenAPI / Swagger UI endpoints
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                // RFC 6960 OCSP endpoints MUST be public for relying parties
                 .requestMatchers("/ocsp", "/ocsp/**").permitAll()
-                // Healthcheck endpoints
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                // Auth check & configuration endpoints (read-only, no secrets)
-                .requestMatchers("/api/v1/auth/config", "/api/v1/auth/me").permitAll()
-                // Login endpoint is public so credentials can be submitted
-                .requestMatchers("/api/v1/auth/login").permitAll()
+                .requestMatchers("/api/v1/auth/config", "/api/v1/auth/me", "/api/v1/auth/login").permitAll()
+                // Internal Keycloak webhook endpoint (authenticated via X-Webhook-Secret header)
+                .requestMatchers("/api/v1/internal/keycloak/events").permitAll()
 
                 // --- RBAC: Admin-only endpoints ---
                 .requestMatchers("/api/v1/admin/users/**", "/api/v1/admin/roles/**").hasRole("ADMIN")
@@ -108,20 +104,18 @@ public class SecurityConfig {
                 // --- RBAC: Read-only audit & dashboard endpoints (Admin, Agent, Auditor) ---
                 .requestMatchers(HttpMethod.GET, "/api/v1/admin/**").hasAnyRole("ADMIN", "AGENT", "AUDITOR")
 
-                // Catch-all for any other /api/v1/admin/** mutation requires ADMIN
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             );
 
-        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass fallback in KEYCLOAK)
         http.httpBasic(Customizer.withDefaults());
 
         if (mode.isKeycloak()) {
-            log.info("Activating KEYCLOAK OAuth2 Resource Server filter chain");
+            log.info("Activating KEYCLOAK OAuth2 Resource Server filter chain with JIT provisioning");
             http.oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt
                     .decoder(jwtDecoder())
-                    .jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())
+                    .jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter(keycloakSyncService))
                 )
             );
         }

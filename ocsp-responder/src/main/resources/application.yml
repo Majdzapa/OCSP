@@ -1,5 +1,8 @@
+app:
+  auth:
+    mode: ${APP_AUTH_MODE:${AUTH_MODE:KEYCLOAK}} # SELF_MANAGEMENT or KEYCLOAK
+
 security:
-  auth-mode: ${AUTH_MODE:KEYCLOAK} # SELF_MANAGED or KEYCLOAK
   tls:
     enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # Activate or deactivate TLS for OCSP login & transport
   cors:
@@ -20,6 +23,10 @@ keycloak:
   client-id: ${KEYCLOAK_CLIENT_ID:ocsp-console}
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs}
   issuer-uri: ${KEYCLOAK_ISSUER_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}}
+  webhook-secret: ${KEYCLOAK_WEBHOOK_SECRET:incert-keycloak-webhook-secret}
+  service-account:
+    client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:ocsp-user-sync}
+    client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:ocsp-user-sync-secret}
 
 spring:
   application:
@@ -131,6 +138,13 @@ ocsp:
       enabled: ${OCSP_JOB_SIGNING_CERT_VALIDITY_ENABLED:true}
       cron: "${OCSP_JOB_SIGNING_CERT_VALIDITY_CRON:0 0 0 * * *}" # every day at 00:00
       alert-threshold-days: ${OCSP_JOB_SIGNING_CERT_ALERT_THRESHOLD_DAYS:3}
+    keycloak-reconciliation:
+      enabled: ${OCSP_JOB_KEYCLOAK_RECONCILIATION_ENABLED:true}
+      cron: "${OCSP_JOB_KEYCLOAK_RECONCILIATION_CRON:0 0 2 * * *}" # nightly at 02:00
+    identity-outbox-retry:
+      enabled: ${OCSP_JOB_IDENTITY_OUTBOX_RETRY_ENABLED:true}
+      fixed-delay-ms: ${OCSP_JOB_IDENTITY_OUTBOX_RETRY_MS:30000}
+      max-attempts: ${OCSP_JOB_IDENTITY_OUTBOX_MAX_ATTEMPTS:5}
 
 hsm:
   enabled: ${HSM_ENABLED:true}

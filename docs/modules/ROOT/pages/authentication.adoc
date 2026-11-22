@@ -1,65 +1,57 @@
-= Authentication Modes & Keycloak SSO
+= Dual-Mode Authentication (`SELF_MANAGEMENT` | `KEYCLOAK`)
 :toc:
 
-The OCSP Responder and Admin Console (`http://localhost:3002`) support dual authentication modes bound via `AppSecurityProperties` (`security.auth-mode`), `AdminProperties` (`admin.*`), and `KeycloakProperties` (`keycloak.*`).
-
-== Configurable Authentication Mode
-
-In `ocsp-responder/src/main/resources/application.yml` and `application-dev.yml`:
+The OCSP Responder and Admin Console (`http://localhost:3002`) support two mutually exclusive authentication modes configured via `app.auth.mode`:
 
 [source,yaml]
 ----
-security:
-  auth-mode: ${AUTH_MODE:KEYCLOAK} # KEYCLOAK or SELF_MANAGED
+app:
+  auth:
+    mode: ${APP_AUTH_MODE:${AUTH_MODE:KEYCLOAK}} # SELF_MANAGEMENT or KEYCLOAK
 ----
 
-[cols="1,2,2", options="header"]
+== Core Ownership Rule: One Writer Per Data Domain
+
+Exactly one system owns identity per deployment. Two writers are never allowed for the same data:
+
+[cols="2,2,2", options="header"]
 |===
-| Dimension | `KEYCLOAK` Mode | `SELF_MANAGED` Mode
+| Data Domain | `SELF_MANAGEMENT` | `KEYCLOAK`
 
-| *Identity Provider*
-| Centralized Keycloak IAM Server (`http://localhost:8081`)
-| In-memory BCrypt Spring Security user (`AdminProperties`)
+| *Credentials, MFA, Sessions*
+| App DB (`ocsp.users.password_hash`)
+| Keycloak IAM (`ocsp-keycloak`)
 
-| *Primary Auth Flow*
-| OpenID Connect SSO redirect to `http://localhost:3002/login`
-| Username/password form login on `http://localhost:3002/login`
+| *Identity* (`username`, `email`, `full_name`, `enabled`)
+| App DB (`ocsp.users`, `auth_source = LOCAL`)
+| Keycloak (App DB holds a read-only replica keyed by `external_id`, `auth_source = KEYCLOAK`)
 
-| *Token Type*
-| Signed RS256 JWT Bearer Token (`Authorization: Bearer ...`)
-| Basic Auth (`Authorization: Basic ...`)
-
-| *Role Mapping*
-| `KeycloakJwtAuthenticationConverter` maps realm roles & groups to `ROLE_ADMIN`
-| Built-in `ROLE_ADMIN`
-
-| *Break-Glass Fallback*
-| Supported (HTTP Basic Auth username & password remain active)
-| Built-in username & password
+| *App Profile* (`roles`, `tenant_id`, `preferences_json`, `audit`)
+| App DB (`ocsp.users`, `ocsp.user_roles`)
+| App DB (`ocsp.users`, `ocsp.user_roles`)
 |===
+
+== UUID Data Model (`V9__dual_mode_identity.sql`)
+
+* **`users.id` (`CHAR(36)` UUID PK)**: Internal immutable primary key used by all foreign keys (`user_roles.user_id`).
+* **`users.external_id` (`VARCHAR(255)` UNIQUE)**: Keycloak `sub` claim in `KEYCLOAK` mode (`NULL` for pure `LOCAL` users).
+* **`users.auth_source`**: `LOCAL` or `KEYCLOAK`.
+* **`users.password_hash`**: BCrypt hash for `LOCAL` users only; **always `NULL` for `KEYCLOAK` users**.
+* **`users.tenant_id` & `users.preferences_json`**: Application-owned profile columns.
+* **`users.deleted_at`**: Soft-delete timestamp (supports GDPR anonymization).
+* **`identity_outbox`**: Outbox/retry queue for non-transactional Keycloak Admin API operations.
+
+== Strategy Interface (`IdentityService`) & Uniform `InternalPrincipal`
+
+* **`IdentityService`** (`createUser`, `updateUser`, `setEnabled`, `resetPassword`, `deleteUser`) has two implementations selected by `@Conditional`:
+  - `LocalIdentityService` (`app.auth.mode=SELF_MANAGEMENT`): Writes directly to MariaDB and hashes passwords with BCrypt.
+  - `KeycloakIdentityService` (`app.auth.mode=KEYCLOAK`): Calls `KeycloakAdminClient` first using the least-privilege `ocsp-user-sync` service account (`view-users`, `manage-users`), then upserts the DB replica by `external_id` (with `password_hash = null`).
+* **One `InternalPrincipal`**: Both `DatabaseUserDetailsService` (`SELF_MANAGEMENT`) and `KeycloakJwtAuthenticationConverter` (`KEYCLOAK`) produce the exact same `InternalPrincipal` (`userId`, `username`, `email`, `fullName`, `tenantId`, `authSource`, `roles`). Business code never checks `app.auth.mode`.
+* **UI Enforcement**: In `KEYCLOAK` mode, `UserManagementPage.js` hides password fields so operators never submit credentials to the app.
 
 == Keycloak OIDC Configuration (`keycloak/realm-export.json`)
 
-The Keycloak container (`ocsp-keycloak`) runs on port `8081` and imports `keycloak/realm-export.json`:
-
 * **Realm**: `incert`
-* **Client ID**: `ocsp-console`
-* **Allowed Redirect URIs**:
-  - `http://localhost:3002/*`
-  - `http://127.0.0.1:3002/*`
-  - `http://localhost:3000/*`
-  - `http://127.0.0.1:3000/*`
-* **Web Origins**: `*`
-* **Default Users**:
-  - `admin` / `changeme` (group `ocsp-administrators` -> `ROLE_ADMIN`)
-  - `operator` / `operator123` (group `ocsp-operators` -> `ROLE_ADMIN`, `ROLE_OPERATOR`)
-  - `auditor` / `auditor123` (group `ocsp-auditors` -> `ROLE_AUDITOR`)
-
-=== Single Sign-On (SSO) Flow on Port `3002`
-
-1. Operator opens `http://localhost:3002/login`.
-2. `ocsp-console` queries `GET /api/v1/auth/config` and receives `authMode: "KEYCLOAK"`.
-3. Clicking **Sign in with Keycloak SSO** redirects the browser to:
-   `http://localhost:8081/realms/incert/protocol/openid-connect/auth?client_id=ocsp-console&redirect_uri=http%3A%2F%2Flocalhost%3A3002%2Flogin&response_type=token&scope=openid%20profile%20email`
-4. After authenticating (`admin` / `changeme`), Keycloak redirects back to `http://localhost:3002/login#access_token=...`.
-5. `AuthContext.js` extracts the JWT access token, verifies it via `GET /api/v1/auth/me`, and navigates to `/dashboard`.
+* **Console Client**: `ocsp-console` (Public client, redirect URIs `http://localhost:3002/*`, `http://localhost:3000/*`)
+* **Service Account Client**: `ocsp-user-sync` (Confidential client, `serviceAccountsEnabled: true`, least-privilege `realm-management` roles: `view-users`, `manage-users`)
+* **Default Users**: `admin` / `changeme`, `operator` / `changeme`, `auditor` / `changeme`.

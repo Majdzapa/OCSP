@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.config;
 
+import com.company.incert.ocsp.service.IdentityOutboxService;
+import com.company.incert.ocsp.service.KeycloakSyncService;
 import com.company.incert.ocsp.service.SigningCertificateValidityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,8 @@ public class ScheduledJobsConfig {
 
     private final ScheduledJobsProperties jobsProperties;
     private final SigningCertificateValidityService signingCertificateValidityService;
+    private final KeycloakSyncService keycloakSyncService;
+    private final IdentityOutboxService identityOutboxService;
 
     /**
      * Daily scheduled job checking all registered signing certificates and raising alerts
@@ -34,5 +38,32 @@ public class ScheduledJobsConfig {
             return;
         }
         signingCertificateValidityService.runDailyValidityCheck();
+    }
+
+    /**
+     * Nightly reconciliation job (KEYCLOAK mode) syncing users from the Keycloak Admin API
+     * into the local read-only identity replica.
+     */
+    @Scheduled(cron = "${ocsp.jobs.keycloak-reconciliation.cron}")
+    public void runKeycloakUserReconciliationJob() {
+        if (!jobsProperties.getKeycloakReconciliation().isEnabled()) {
+            return;
+        }
+        try {
+            keycloakSyncService.reconcileAllFromKeycloak();
+        } catch (Exception e) {
+            log.warn("Nightly Keycloak user reconciliation failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Periodic retry of failed/pending {@code identity_outbox} operations.
+     */
+    @Scheduled(fixedDelayString = "${ocsp.jobs.identity-outbox-retry.fixed-delay-ms}")
+    public void runIdentityOutboxRetryJob() {
+        if (!jobsProperties.getIdentityOutboxRetry().isEnabled()) {
+            return;
+        }
+        identityOutboxService.retryPending();
     }
 }

@@ -1,32 +1,39 @@
 package com.company.incert.ocsp.config;
 
+import com.company.incert.ocsp.entity.RoleEntity;
+import com.company.incert.ocsp.entity.UserEntity;
+import com.company.incert.ocsp.security.InternalPrincipal;
+import com.company.incert.ocsp.service.KeycloakSyncService;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Extracts and maps roles and groups from Keycloak JWT tokens into Spring Security GrantedAuthorities.
- * Supports:
- * <ul>
- *   <li>{@code realm_access.roles}</li>
- *   <li>{@code resource_access.<client>.roles}</li>
- *   <li>{@code groups} (e.g. /ocsp-administrators -> ROLE_ADMIN, /ocsp-agents -> ROLE_AGENT, /ocsp-auditors -> ROLE_AUDITOR)</li>
- *   <li>Direct {@code roles} claim</li>
- * </ul>
+ * Extracts coarse roles from Keycloak JWT tokens, performs JIT provisioning/refresh
+ * in the local DB replica via {@link KeycloakSyncService} (keyed by {@code sub}),
+ * and produces a uniform {@link InternalPrincipal} containing {@code userId}, {@code roles},
+ * and {@code tenantId}.
  */
 public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    private final KeycloakSyncService syncService;
+
+    public KeycloakJwtAuthenticationConverter() {
+        this.syncService = null;
+    }
+
+    public KeycloakJwtAuthenticationConverter(KeycloakSyncService syncService) {
+        this.syncService = syncService;
+    }
+
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
-        Set<GrantedAuthority> authorities = new HashSet<>();
+        Set<String> tokenRoles = new HashSet<>();
 
         java.util.function.Consumer<String> addRole = r -> {
             if (r == null || r.isBlank()) return;
@@ -34,61 +41,86 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
             if (!normalized.startsWith("ROLE_")) {
                 normalized = "ROLE_" + normalized;
             }
-            authorities.add(new SimpleGrantedAuthority(normalized));
+            tokenRoles.add(normalized);
         };
 
-        // 1. Extract realm_access.roles
         Map<String, Object> realmAccess = jwt.getClaim("realm_access");
         if (realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles) {
-            for (Object role : roles) {
-                addRole.accept(role.toString());
-            }
+            for (Object role : roles) addRole.accept(role.toString());
         }
 
-        // 2. Extract resource_access.<client>.roles
         Map<String, Object> resourceAccess = jwt.getClaim("resource_access");
         if (resourceAccess != null) {
             for (Object clientObj : resourceAccess.values()) {
                 if (clientObj instanceof Map<?, ?> clientMap && clientMap.get("roles") instanceof Collection<?> roles) {
-                    for (Object role : roles) {
-                        addRole.accept(role.toString());
-                    }
+                    for (Object role : roles) addRole.accept(role.toString());
                 }
             }
         }
 
-        // 3. Extract direct roles claim if present
         if (jwt.getClaim("roles") instanceof Collection<?> roles) {
-            for (Object role : roles) {
-                addRole.accept(role.toString());
-            }
+            for (Object role : roles) addRole.accept(role.toString());
         }
 
-        // 4. Extract groups claim
         if (jwt.getClaim("groups") instanceof Collection<?> groups) {
             for (Object grp : groups) {
                 String groupName = grp.toString().toLowerCase().replace("/", "").trim();
-                if (groupName.contains("admin")) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
-                }
-                if (groupName.contains("agent") || groupName.contains("operator")) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_AGENT"));
-                }
-                if (groupName.contains("auditor")) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_AUDITOR"));
-                }
+                if (groupName.contains("admin")) tokenRoles.add("ROLE_ADMIN");
+                if (groupName.contains("agent") || groupName.contains("operator")) tokenRoles.add("ROLE_AGENT");
+                if (groupName.contains("auditor")) tokenRoles.add("ROLE_AUDITOR");
             }
         }
 
-        // 5. Fallback username
         String username = jwt.getClaimAsString("preferred_username");
-        if (username == null) {
-            username = jwt.getSubject();
-        }
+        if (username == null) username = jwt.getSubject();
         if ("admin".equalsIgnoreCase(username)) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+            tokenRoles.add("ROLE_ADMIN");
         }
 
-        return new JwtAuthenticationToken(jwt, authorities, username);
+        String email = jwt.getClaimAsString("email");
+        boolean emailVerified = Boolean.TRUE.equals(jwt.getClaim("email_verified"));
+        String fullName = jwt.getClaimAsString("name");
+
+        InternalPrincipal principal;
+        if (syncService != null && jwt.getSubject() != null) {
+            UserEntity user = syncService.upsertFromTokenClaims(
+                    jwt.getSubject(), username, email, emailVerified, fullName, tokenRoles);
+            Set<String> dbRoles = user.getRoles().stream().map(RoleEntity::getName).collect(Collectors.toSet());
+            Set<String> combinedRoles = new HashSet<>(tokenRoles);
+            combinedRoles.addAll(dbRoles);
+            principal = new InternalPrincipal(
+                    user.getId(),
+                    user.getUsername(),
+                    user.getEmail(),
+                    user.getFullName(),
+                    user.getTenantId(),
+                    user.getAuthSource(),
+                    combinedRoles
+            );
+        } else {
+            principal = new InternalPrincipal(
+                    jwt.getSubject(), username, email, fullName, "default",
+                    com.company.incert.ocsp.entity.AuthSource.KEYCLOAK, tokenRoles);
+        }
+
+        Collection<GrantedAuthority> authorities = principal.roles().stream()
+                .map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toSet());
+
+        return new AbstractAuthenticationToken(authorities) {
+            {
+                setAuthenticated(true);
+            }
+
+            @Override
+            public Object getCredentials() {
+                return jwt;
+            }
+
+            @Override
+            public Object getPrincipal() {
+                return principal;
+            }
+        };
     }
 }

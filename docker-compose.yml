@@ -151,11 +151,14 @@ services:
       RABBITMQ_SSL_TRUSTSTORE_PASSWORD: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:-changeme}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
-      AUTH_MODE: ${AUTH_MODE:-KEYCLOAK}
+      APP_AUTH_MODE: ${APP_AUTH_MODE:-${AUTH_MODE:-KEYCLOAK}}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8081}
       KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-incert}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8081/realms/incert/protocol/openid-connect/certs}
+      KEYCLOAK_SERVICE_CLIENT_ID: ${KEYCLOAK_SERVICE_CLIENT_ID:-ocsp-user-sync}
+      KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET:-ocsp-user-sync-secret}
+      KEYCLOAK_WEBHOOK_SECRET: ${KEYCLOAK_WEBHOOK_SECRET:-incert-keycloak-webhook-secret}
       HSM_ENABLED: "true"
       HSM_PKCS11_LIBRARY: ${HSM_PKCS11_LIBRARY:-/usr/lib/softhsm/libsofthsm2.so}
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}

@@ -95,6 +95,17 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "ocsp-user-sync",
+      "name": "OCSP Identity Sync Service Account",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "ocsp-user-sync-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
     }
   ],
   "users": [
@@ -165,6 +176,17 @@
       "realmRoles": [
         "ROLE_AUDITOR"
       ]
+    },
+    {
+      "username": "service-account-ocsp-user-sync",
+      "enabled": true,
+      "serviceAccountClientId": "ocsp-user-sync",
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "manage-users"
+        ]
+      }
     }
   ]
 }

@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.config;
 
+import com.company.incert.ocsp.entity.AuthSource;
 import com.company.incert.ocsp.entity.RoleEntity;
 import com.company.incert.ocsp.entity.UserEntity;
 import com.company.incert.ocsp.repository.RoleRepository;
@@ -14,11 +15,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Initializes default RBAC roles ({@code ROLE_ADMIN}, {@code ROLE_AGENT}, {@code ROLE_AUDITOR})
- * and seeds the built-in administrator account from {@link AdminProperties} ({@code admin.username}
- * / {@code admin.password}) into the {@code users} table on startup if it does not yet exist.
+ * and seeds the built-in administrator account from {@link AdminProperties} into {@code ocsp.users}
+ * on startup if not yet present.
  */
 @Slf4j
 @Component
@@ -67,15 +69,21 @@ public class AdminUserInitializer {
             existing -> log.debug("Built-in admin user '{}' already exists in users table", normalizedUsername),
             () -> {
                 UserEntity adminUser = UserEntity.builder()
+                        .id(UUID.randomUUID().toString())
+                        .authSource(AuthSource.LOCAL)
                         .username(normalizedUsername)
+                        .email(normalizedUsername + "@incert.local")
+                        .emailVerified(true)
+                        .fullName("Incert Administrator")
                         .passwordHash(passwordEncoder.encode(rawPassword))
                         .enabled(true)
+                        .tenantId("default")
                         .roles(Set.of(adminRole))
                         .build();
                 userRepository.save(adminUser);
-                log.info("Initialized built-in admin user '{}' with role {}", normalizedUsername, ROLE_ADMIN);
+                log.info("Initialized built-in admin user '{}' (uuid={}) with role {}",
+                        normalizedUsername, adminUser.getId(), ROLE_ADMIN);
             }
         );
     }
 }
-

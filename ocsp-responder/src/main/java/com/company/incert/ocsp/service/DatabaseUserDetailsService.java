@@ -1,18 +1,23 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.entity.RoleEntity;
 import com.company.incert.ocsp.entity.UserEntity;
 import com.company.incert.ocsp.repository.UserRepository;
+import com.company.incert.ocsp.security.InternalPrincipal;
+import com.company.incert.ocsp.security.InternalUserDetails;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
- * Loads user credentials and RBAC roles from the {@code users} and {@code roles} tables.
+ * Loads active users from {@code ocsp.users} and wraps them in {@link InternalUserDetails}
+ * so both {@code SELF_MANAGEMENT} and {@code KEYCLOAK} modes produce the exact same {@link InternalPrincipal}.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,19 +31,26 @@ public class DatabaseUserDetailsService implements UserDetailsService {
         if (username == null || username.isBlank()) {
             throw new UsernameNotFoundException("Username is required");
         }
-        UserEntity user = userRepository.findByUsername(username.trim())
+        UserEntity user = userRepository.findByUsernameAndDeletedAtIsNull(username.trim())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
-        var authorities = user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority(role.getName()))
-                .toList();
+        if (user.getPasswordHash() == null) {
+            throw new UsernameNotFoundException("User '" + username + "' has no local credentials");
+        }
 
-        return User.builder()
-                .username(user.getUsername())
-                .password(user.getPasswordHash())
-                .disabled(!user.isEnabled())
-                .authorities(authorities)
-                .build();
+        Set<String> roles = user.getRoles().stream()
+                .map(RoleEntity::getName)
+                .collect(Collectors.toSet());
+
+        InternalPrincipal principal = new InternalPrincipal(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getFullName(),
+                user.getTenantId(),
+                user.getAuthSource(),
+                roles
+        );
+        return new InternalUserDetails(principal, user.getPasswordHash(), user.isEnabled());
     }
 }
-

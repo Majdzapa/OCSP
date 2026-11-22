@@ -31,8 +31,11 @@ rabbitmq:
     tls-port: 5671
     plaintext-port: 5672
 
+app:
+  auth:
+    mode: KEYCLOAK
+
 security:
-  auth-mode: KEYCLOAK
   tls:
     enabled: true
   cors:
@@ -45,6 +48,10 @@ keycloak:
   client-id: ocsp-console
   jwk-set-uri: http://localhost:8081/realms/incert/protocol/openid-connect/certs
   issuer-uri: http://localhost:8081/realms/incert
+  webhook-secret: incert-keycloak-webhook-secret
+  service-account:
+    client-id: ocsp-user-sync
+    client-secret: ocsp-user-sync-secret
 
 admin:
   username: admin
@@ -73,6 +80,13 @@ ocsp:
       enabled: true
       cron: "0 0 0 * * *"
       alert-threshold-days: 3
+    keycloak-reconciliation:
+      enabled: true
+      cron: "0 0 2 * * *"
+    identity-outbox-retry:
+      enabled: true
+      fixed-delay-ms: 30000
+      max-attempts: 5
 
 hsm:
   enabled: true
