@@ -58,3 +58,4 @@ public class CanonicalizeSerialHexUseCase {
         return HEX.formatHex(new BigInteger(1, HEX.parseHex(clean)).toByteArray()).toLowerCase();
     }
 }
+

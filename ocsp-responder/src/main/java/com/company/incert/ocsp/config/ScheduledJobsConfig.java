@@ -37,3 +37,4 @@ public class ScheduledJobsConfig {
         signingCertificateValidityService.runDailyValidityCheck();
     }
 }
+
