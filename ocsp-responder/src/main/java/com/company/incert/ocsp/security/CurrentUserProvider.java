@@ -25,3 +25,4 @@ public class CurrentUserProvider {
         return getCurrentPrincipal().map(InternalPrincipal::username).orElse("");
     }
 }
+
