@@ -20,6 +20,7 @@ public class AppSecurityProperties {
     @Setter
     public static class Tls {
         private boolean enabled;
+        private boolean clientCertAuthEnabled;
     }
 
     @Getter

@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.config;
 
+import com.company.incert.ocsp.security.ClientCertificateAuthFilter;
 import com.company.incert.ocsp.service.KeycloakSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -40,6 +42,7 @@ public class SecurityConfig {
     private final AppSecurityProperties securityProperties;
     private final KeycloakProperties keycloakProperties;
     private final KeycloakSyncService keycloakSyncService;
+    private final ClientCertificateAuthFilter clientCertificateAuthFilter;
 
     public AuthenticationMode getAuthenticationMode() {
         return authProperties.resolvedMode();
@@ -109,6 +112,7 @@ public class SecurityConfig {
             );
 
         http.httpBasic(Customizer.withDefaults());
+        http.addFilterBefore(clientCertificateAuthFilter, BasicAuthenticationFilter.class);
 
         if (mode.isKeycloak()) {
             log.info("Activating KEYCLOAK OAuth2 Resource Server filter chain with JIT provisioning");

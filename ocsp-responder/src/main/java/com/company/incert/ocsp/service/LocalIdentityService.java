@@ -9,6 +9,7 @@ import com.company.incert.ocsp.entity.AuthSource;
 import com.company.incert.ocsp.entity.RoleEntity;
 import com.company.incert.ocsp.entity.UserEntity;
 import com.company.incert.ocsp.repository.UserRepository;
+import com.company.incert.ocsp.validation.PatternValidation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Conditional;
@@ -49,23 +50,22 @@ public class LocalIdentityService implements IdentityService {
     @Override
     @Transactional
     public UserDto createUser(CreateUserRequest request) {
-        String username = request.username().trim();
+        String username = PatternValidation.requireValidUsername(request.username());
         if (userRepository.existsByUsernameAndDeletedAtIsNull(username)) {
             throw new IllegalArgumentException("User '" + username + "' already exists");
         }
-        if (request.password() == null || request.password().isBlank()) {
-            throw new IllegalArgumentException("Password is required in SELF_MANAGEMENT mode");
-        }
+        String validPassword = PatternValidation.requireValidPassword(request.password());
+        String validEmail = PatternValidation.normalizeAndValidateOptionalEmail(request.email());
         Set<RoleEntity> roles = support.resolveRoles(request.roles());
 
         UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID().toString())
                 .authSource(AuthSource.LOCAL)
                 .username(username)
-                .email(request.email() != null && !request.email().isBlank() ? request.email().trim() : null)
+                .email(validEmail)
                 .emailVerified(false)
                 .fullName(request.fullName() != null && !request.fullName().isBlank() ? request.fullName().trim() : null)
-                .passwordHash(passwordEncoder.encode(request.password()))
+                .passwordHash(passwordEncoder.encode(validPassword))
                 .enabled(request.enabled() == null || request.enabled())
                 .tenantId(request.tenantId() != null && !request.tenantId().isBlank() ? request.tenantId().trim() : "default")
                 .roles(roles)
@@ -122,14 +122,9 @@ public class LocalIdentityService implements IdentityService {
     @Override
     @Transactional
     public void resetPassword(String userId, String newPassword) {
-        if (newPassword == null || newPassword.isBlank()) {
-            throw new IllegalArgumentException("New password is required");
-        }
-        if (newPassword.length() < 4 || newPassword.length() > 128) {
-            throw new IllegalArgumentException("New password must be between 4 and 128 characters");
-        }
+        String validPassword = PatternValidation.requireValidPassword(newPassword);
         UserEntity user = support.findActiveById(userId);
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordHash(passwordEncoder.encode(validPassword));
         userRepository.save(user);
         log.info("[SELF_MANAGEMENT] Password reset for user id={} username='{}'", user.getId(), user.getUsername());
     }

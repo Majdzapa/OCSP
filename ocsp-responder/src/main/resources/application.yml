@@ -5,6 +5,7 @@ app:
 security:
   tls:
     enabled: ${SECURITY_TLS_ENABLED:${AUTH_TLS_ENABLED:${TLS_ENABLED:true}}} # Activate or deactivate TLS for OCSP login & transport
+    client-cert-auth-enabled: ${SECURITY_TLS_CLIENT_CERT_AUTH_ENABLED:false} # Optional mTLS X.509 client-cert binding via user_certificates
   cors:
     allowed-origins: ${SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:3002,http://localhost:3000,http://localhost:5173}
 

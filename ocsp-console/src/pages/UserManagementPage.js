@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, PasswordInput, MultiSelect, Switch, Alert, Loader, Tooltip, } from '@mantine/core';
-import { IconUsers, IconPlus, IconRefresh, IconEdit, IconTrash, IconAlertCircle, IconShieldCheck, IconLock, IconUser, IconMail, IconId, IconKey, } from '@tabler/icons-react';
-import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser } from '../api/client';
+import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, PasswordInput, Textarea, MultiSelect, Switch, Alert, Loader, Tooltip, } from '@mantine/core';
+import { IconUsers, IconPlus, IconRefresh, IconEdit, IconTrash, IconAlertCircle, IconShieldCheck, IconLock, IconUser, IconMail, IconId, IconKey, IconCertificate, } from '@tabler/icons-react';
+import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser, getUserCertificates, assignUserCertificate, removeUserCertificate } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 export const UserManagementPage = () => {
@@ -36,6 +36,12 @@ export const UserManagementPage = () => {
     const [resetTarget, setResetTarget] = useState(null);
     const [resetPasswordVal, setResetPasswordVal] = useState('');
     const [resetConfirmVal, setResetConfirmVal] = useState('');
+
+    const [certsOpen, setCertsOpen] = useState(false);
+    const [certsTarget, setCertsTarget] = useState(null);
+    const [userCerts, setUserCerts] = useState([]);
+    const [certsLoading, setCertsLoading] = useState(false);
+    const [certPem, setCertPem] = useState('');
 
     const fetchAll = async () => {
         try {
@@ -166,6 +172,55 @@ export const UserManagementPage = () => {
         }
     };
 
+    const openCertificates = async (u) => {
+        setCertsTarget(u);
+        setCertPem('');
+        setCertsOpen(true);
+        try {
+            setCertsLoading(true);
+            const list = await getUserCertificates(u.id);
+            setUserCerts(list);
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to load user certificates');
+        } finally {
+            setCertsLoading(false);
+        }
+    };
+
+    const handleAssignCertificate = async (e) => {
+        e.preventDefault();
+        if (!certsTarget || !certPem.trim()) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await assignUserCertificate(certsTarget.id, certPem);
+            setCertPem('');
+            const list = await getUserCertificates(certsTarget.id);
+            setUserCerts(list);
+            setSuccess(`Assigned X.509 certificate to '${certsTarget.username}'.`);
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to assign certificate');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleRemoveCertificate = async (certId) => {
+        if (!certsTarget) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await removeUserCertificate(certsTarget.id, certId);
+            const list = await getUserCertificates(certsTarget.id);
+            setUserCerts(list);
+            setSuccess(`Removed certificate assignment from '${certsTarget.username}'.`);
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to remove certificate');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleDelete = async (u) => {
         if (!window.confirm(`Soft-delete user '${u.username}'?`)) return;
         try {
@@ -283,6 +338,11 @@ export const UserManagementPage = () => {
                                             </Table.Td>
                                             <Table.Td style={{ textAlign: 'right' }}>
                                                 <Group justify="flex-end" gap="xs">
+                                                    <Tooltip label="Assign / Manage X.509 certificates (mTLS)">
+                                                        <ActionIcon variant="light" color="teal" onClick={() => openCertificates(u)}>
+                                                            <IconCertificate size={16} />
+                                                        </ActionIcon>
+                                                    </Tooltip>
                                                     <Tooltip label={isKeycloak ? 'Send Keycloak password reset email' : 'Reset password'}>
                                                         <ActionIcon variant="light" color="yellow" onClick={() => openResetPassword(u)}>
                                                             <IconKey size={16} />
@@ -389,6 +449,62 @@ export const UserManagementPage = () => {
                         </Group>
                     </Stack>
                 </form>
+            </Modal>
+
+            <Modal opened={certsOpen} onClose={() => setCertsOpen(false)} title={`User Certificates (Optional mTLS): ${certsTarget?.username || ''}`} size="lg">
+                <Stack gap="md">
+                    <Text size="xs" c="dimmed">
+                        1-way TLS does not require user certificates. When mTLS client-certificate authentication is enabled (<code>security.tls.client-cert-auth-enabled=true</code>), assigned X.509 certificates authenticate this user by SHA-256 fingerprint.
+                    </Text>
+                    {certsLoading ? (
+                        <Group justify="center" p="md"><Loader size="sm" /></Group>
+                    ) : userCerts.length === 0 ? (
+                        <Text size="sm" c="dimmed">No certificates assigned to this user.</Text>
+                    ) : (
+                        <Table striped withTableBorder>
+                            <Table.Thead>
+                                <Table.Tr>
+                                    <Table.Th>Serial (Hex)</Table.Th>
+                                    <Table.Th>Subject DN</Table.Th>
+                                    <Table.Th>SHA-256 Fingerprint</Table.Th>
+                                    <Table.Th>Expires</Table.Th>
+                                    <Table.Th />
+                                </Table.Tr>
+                            </Table.Thead>
+                            <Table.Tbody>
+                                {userCerts.map((c) => (
+                                    <Table.Tr key={c.id}>
+                                        <Table.Td><code>{c.serialNumberHex}</code></Table.Td>
+                                        <Table.Td><Text size="xs">{c.subjectDn}</Text></Table.Td>
+                                        <Table.Td><Text size="xs" truncate maw={160} title={c.fingerprintSha256}><code>{c.fingerprintSha256}</code></Text></Table.Td>
+                                        <Table.Td><Text size="xs">{c.notAfter ? new Date(c.notAfter).toLocaleDateString() : '—'}</Text></Table.Td>
+                                        <Table.Td>
+                                            <ActionIcon color="red" variant="light" onClick={() => handleRemoveCertificate(c.id)} disabled={saving}>
+                                                <IconTrash size={14} />
+                                            </ActionIcon>
+                                        </Table.Td>
+                                    </Table.Tr>
+                                ))}
+                            </Table.Tbody>
+                        </Table>
+                    )}
+                    <form onSubmit={handleAssignCertificate}>
+                        <Stack gap="sm">
+                            <Textarea
+                                label="Assign New X.509 Certificate (PEM)"
+                                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                                minRows={4}
+                                value={certPem}
+                                onChange={(e) => setCertPem(e.currentTarget.value)}
+                                required
+                            />
+                            <Group justify="flex-end">
+                                <Button variant="default" onClick={() => setCertsOpen(false)}>Close</Button>
+                                <Button type="submit" color="teal" loading={saving}>Assign Certificate</Button>
+                            </Group>
+                        </Stack>
+                    </form>
+                </Stack>
             </Modal>
         </Container>
     );

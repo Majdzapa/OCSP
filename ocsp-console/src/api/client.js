@@ -133,3 +133,6 @@ export const createUser = (req) => api.post('/users', req).then((r) => r.data);
 export const updateUser = (id, req) => api.put(`/users/${id}`, req).then((r) => r.data);
 export const resetUserPassword = (id, newPassword) => api.post(`/users/${id}/reset-password`, newPassword ? { newPassword } : {}).then((r) => r.data);
 export const deleteUser = (id) => api.delete(`/users/${id}`).then((r) => r.data);
+export const getUserCertificates = (userId) => api.get(`/users/${userId}/certificates`).then((r) => r.data);
+export const assignUserCertificate = (userId, certificatePem) => api.post(`/users/${userId}/certificates`, { certificatePem }).then((r) => r.data);
+export const removeUserCertificate = (userId, certId) => api.delete(`/users/${userId}/certificates/${certId}`).then((r) => r.data);

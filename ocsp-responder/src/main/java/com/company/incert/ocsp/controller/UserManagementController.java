@@ -4,8 +4,10 @@ import com.company.incert.ocsp.config.OpenApiConfig;
 import com.company.incert.ocsp.dto.CreateUserRequest;
 import com.company.incert.ocsp.dto.RoleDto;
 import com.company.incert.ocsp.dto.UpdateUserRequest;
+import com.company.incert.ocsp.dto.UserCertificateDto;
 import com.company.incert.ocsp.dto.UserDto;
 import com.company.incert.ocsp.service.IdentityService;
+import com.company.incert.ocsp.service.UserCertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -37,9 +39,11 @@ import java.util.Map;
 public class UserManagementController {
 
     private final IdentityService identityService;
+    private final UserCertificateService userCertificateService;
 
     public record ResetPasswordPayload(String newPassword) {}
     public record SetEnabledPayload(boolean enabled) {}
+    public record AssignCertificatePayload(String certificatePem) {}
 
     @Operation(summary = "List all active users", description = "Returns all non-deleted users and their assigned roles (ADMIN only)")
     @ApiResponses({
@@ -109,6 +113,44 @@ public class UserManagementController {
             identityService.resetPassword(id, payload != null ? payload.newPassword() : null);
             return ResponseEntity.ok(Map.of("status", "PASSWORD_RESET_INITIATED"));
         } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "List certificates assigned to a user", description = "Lists X.509 client certificates assigned to the user for optional mTLS (ADMIN only)")
+    @GetMapping("/users/{id}/certificates")
+    public ResponseEntity<?> listUserCertificates(@PathVariable String id) {
+        try {
+            List<UserCertificateDto> certs = userCertificateService.listUserCertificates(id);
+            return ResponseEntity.ok(certs);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Assign an X.509 certificate to a user", description = "Parses PEM certificate, stores SHA-256 fingerprint and metadata in user_certificates (ADMIN only)")
+    @PostMapping("/users/{id}/certificates")
+    public ResponseEntity<?> assignUserCertificate(
+            @PathVariable String id,
+            @RequestBody AssignCertificatePayload payload) {
+        try {
+            UserCertificateDto created = userCertificateService.assignCertificate(
+                    id, payload != null ? payload.certificatePem() : null);
+            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Remove a user certificate assignment", description = "Unassigns an X.509 client certificate from the user (ADMIN only)")
+    @DeleteMapping("/users/{id}/certificates/{certId}")
+    public ResponseEntity<?> removeUserCertificate(
+            @PathVariable String id,
+            @PathVariable String certId) {
+        try {
+            userCertificateService.removeCertificate(id, certId);
+            return ResponseEntity.ok(Map.of("status", "REMOVED", "certId", certId));
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
