@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginWithCredentials, loginWithBearerToken, getAuthMe, getAuthConfig, } from '../api/client';
+import { loginWithCredentials, loginWithBearerToken, getAuthMe, getAuthConfig, clearAuthStorage, } from '../api/client';
 const AuthContext = createContext(undefined);
 export const AuthProvider = ({ children }) => {
     const [authConfig, setAuthConfig] = useState(null);
@@ -18,11 +18,29 @@ export const AuthProvider = ({ children }) => {
         return null;
     });
     const [isLoading, setIsLoading] = useState(true);
-    const logout = () => {
-        localStorage.removeItem('ocsp_auth_user');
-        localStorage.removeItem('ocsp_basic_auth');
-        localStorage.removeItem('ocsp_bearer_token');
+    const clearLocalAuth = () => {
+        clearAuthStorage();
+        if (window.location.hash && window.location.hash.includes('access_token=')) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
         setUser(null);
+    };
+    const logout = () => {
+        const bearerToken = localStorage.getItem('ocsp_bearer_token');
+        const idToken = localStorage.getItem('ocsp_id_token');
+        const wasKeycloakSession = Boolean(bearerToken);
+        clearLocalAuth();
+        if (wasKeycloakSession && authConfig?.isKeycloak && authConfig?.keycloak?.authServerUrl) {
+            const kc = authConfig.keycloak;
+            const postLogoutRedirectUri = encodeURIComponent(`${window.location.origin}/login`);
+            let logoutUrl =
+                `${kc.authServerUrl}/realms/${kc.realm}/protocol/openid-connect/logout` +
+                    `?client_id=${encodeURIComponent(kc.clientId)}&post_logout_redirect_uri=${postLogoutRedirectUri}`;
+            if (idToken) {
+                logoutUrl += `&id_token_hint=${encodeURIComponent(idToken)}`;
+            }
+            window.location.href = logoutUrl;
+        }
     };
     const refreshAuthConfig = async () => {
         try {
@@ -58,11 +76,11 @@ export const AuthProvider = ({ children }) => {
                     });
                 }
                 else {
-                    logout();
+                    clearLocalAuth();
                 }
             }
             catch (err) {
-                logout();
+                clearLocalAuth();
             }
             finally {
                 setIsLoading(false);
@@ -70,7 +88,7 @@ export const AuthProvider = ({ children }) => {
         };
         initAuth();
         const handleUnauthorized = () => {
-            logout();
+            clearLocalAuth();
         };
         window.addEventListener('ocsp:unauthorized', handleUnauthorized);
         return () => window.removeEventListener('ocsp:unauthorized', handleUnauthorized);
@@ -91,12 +109,15 @@ export const AuthProvider = ({ children }) => {
             basicAuth: encodedBasic,
         });
     };
-    const loginWithToken = async (token) => {
+    const loginWithToken = async (token, idToken) => {
         const res = await loginWithBearerToken(token);
         if (!res.authenticated) {
             throw new Error(res.message || 'Invalid Bearer token');
         }
         localStorage.setItem('ocsp_bearer_token', token);
+        if (idToken) {
+            localStorage.setItem('ocsp_id_token', idToken);
+        }
         localStorage.setItem('ocsp_auth_user', res.username || 'keycloak-admin');
         setUser({
             authenticated: true,

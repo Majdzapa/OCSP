@@ -25,11 +25,13 @@ export const LoginPage = () => {
         const hash = window.location.hash;
         if (!hash.includes('access_token='))
             return;
-        const token = new URLSearchParams(hash.replace(/^#/, '')).get('access_token');
+        const params = new URLSearchParams(hash.replace(/^#/, ''));
+        const token = params.get('access_token');
+        const idToken = params.get('id_token');
         if (!token)
             return;
         setLoading(true);
-        loginWithToken(token)
+        loginWithToken(token, idToken)
             .then(() => {
             // Remove the token from the address bar.
             window.history.replaceState(null, '', window.location.pathname);

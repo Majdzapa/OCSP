@@ -18,12 +18,19 @@ api.interceptors.request.use((config) => {
     }
     return config;
 });
+export const clearAuthStorage = () => {
+    localStorage.removeItem('ocsp_auth_user');
+    localStorage.removeItem('ocsp_basic_auth');
+    localStorage.removeItem('ocsp_bearer_token');
+    localStorage.removeItem('ocsp_id_token');
+    sessionStorage.clear();
+    delete api.defaults.headers.common['Authorization'];
+    delete authApi.defaults.headers.common['Authorization'];
+};
 // Auto logout on 401 Unauthorized
 api.interceptors.response.use((response) => response, (error) => {
     if (error.response?.status === 401) {
-        localStorage.removeItem('ocsp_auth_user');
-        localStorage.removeItem('ocsp_basic_auth');
-        localStorage.removeItem('ocsp_bearer_token');
+        clearAuthStorage();
         window.dispatchEvent(new CustomEvent('ocsp:unauthorized'));
     }
     return Promise.reject(error);
