@@ -65,7 +65,7 @@ class CertificateStatusConsumerServiceTest {
 
         consumerService.consume(payload, 42L, "ocsp.certificate.status", false);
 
-        verify(statusService).applyStatusChange(any(CertificateStatusEvent.class));
+        verify(statusService).applyStatusChange(any(com.company.incert.ocsp.status.dto.CertificateStatusUpdateCommand.class));
 
         ArgumentCaptor<InboxEvent> captor = ArgumentCaptor.forClass(InboxEvent.class);
         verify(inboxRepository, times(2)).save(captor.capture());

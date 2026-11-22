@@ -1,6 +1,6 @@
 package com.company.incert.ocsp.auth.security;
 
-import com.company.incert.ocsp.auth.config.AppSecurityProperties;
+import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.auth.service.UserCertificateService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

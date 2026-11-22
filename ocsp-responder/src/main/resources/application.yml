@@ -24,10 +24,10 @@ keycloak:
   client-id: ${KEYCLOAK_CLIENT_ID:ocsp-console}
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs}
   issuer-uri: ${KEYCLOAK_ISSUER_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}}
-  webhook-secret: ${KEYCLOAK_WEBHOOK_SECRET:incert-keycloak-webhook-secret}
+  webhook-secret: ${KEYCLOAK_WEBHOOK_SECRET:}
   service-account:
     client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:ocsp-user-sync}
-    client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:ocsp-user-sync-secret}
+    client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:}
 
 spring:
   application:
@@ -38,7 +38,7 @@ spring:
   datasource:
     url: jdbc:mariadb://${MARIADB_HOST:localhost}:${MARIADB_PORT:3307}/${MARIADB_DB:ocsp}
     username: ${MARIADB_USER:ocsp_app}
-    password: ${MARIADB_PASSWORD:changeme}
+    password: ${MARIADB_PASSWORD:}
     driver-class-name: org.mariadb.jdbc.Driver
     hikari:
       maximum-pool-size: 15
@@ -63,15 +63,15 @@ spring:
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5671}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    username: ${RABBITMQ_USERNAME:ocsp_amqp}
+    password: ${RABBITMQ_PASSWORD:}
     ssl:
       enabled: ${rabbitmq.tls.enabled:true}
       key-store: ${RABBITMQ_SSL_KEYSTORE:classpath:certs/rabbitmq/client-keystore.p12}
-      key-store-password: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:changeme}
+      key-store-password: ${RABBITMQ_SSL_KEYSTORE_PASSWORD:}
       key-store-type: PKCS12
       trust-store: ${RABBITMQ_SSL_TRUSTSTORE:classpath:certs/rabbitmq/client-truststore.p12}
-      trust-store-password: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:changeme}
+      trust-store-password: ${RABBITMQ_SSL_TRUSTSTORE_PASSWORD:}
       trust-store-type: PKCS12
       verify-hostname: ${RABBITMQ_SSL_VERIFY_HOSTNAME:true}
     listener:
@@ -93,7 +93,7 @@ spring:
 
 admin:
   username: ${ADMIN_USERNAME:admin}
-  password: ${ADMIN_PASSWORD:changeme}
+  password: ${ADMIN_PASSWORD:}
 
 server:
   port: ${SERVER_PORT:8080}

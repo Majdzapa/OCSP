@@ -3,7 +3,7 @@ package com.company.incert.ocsp.status.service;
 import com.company.incert.ocsp.status.entity.CertificateStatus;
 import com.company.incert.ocsp.status.entity.RevocationReason;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
-import com.company.incert.ocsp.rabbitmq.messaging.CertificateStatusEvent;
+import com.company.incert.ocsp.status.dto.CertificateStatusUpdateCommand;
 import com.company.incert.ocsp.status.repository.RevocationStatusRepository;
 import com.company.incert.ocsp.shared.usecase.CanonicalizeSerialHexUseCase;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -86,7 +86,7 @@ public class CertificateStatusService {
      * @return true if the row was inserted or updated
      */
     @Transactional
-    public boolean applyStatusChange(CertificateStatusEvent event) {
+    public boolean applyStatusChange(CertificateStatusUpdateCommand event) {
         byte[] nameHash = parseHex(event.issuerNameHashHex());
         byte[] keyHash = parseHex(event.issuerKeyHashHex());
         byte[] serial = parseSerial(event.serialNumberHex());

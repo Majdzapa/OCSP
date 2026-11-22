@@ -1,6 +1,6 @@
 package com.company.incert.ocsp.auth.service;
 
-import com.company.incert.ocsp.schedule.ScheduledJobsProperties;
+import com.company.incert.ocsp.shared.config.ScheduledJobsProperties;
 import com.company.incert.ocsp.auth.entity.IdentityOutboxEntity;
 import com.company.incert.ocsp.auth.repository.IdentityOutboxRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;

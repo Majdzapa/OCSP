@@ -3,7 +3,7 @@ package com.company.incert.ocsp.auth;
 
 import com.company.incert.ocsp.auth.controller.AuthController;
 import com.company.incert.ocsp.auth.config.AppAuthProperties;
-import com.company.incert.ocsp.auth.config.AppSecurityProperties;
+import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.auth.config.KeycloakProperties;
 import com.company.incert.ocsp.auth.entity.AuthSource;
 import com.company.incert.ocsp.auth.security.AuthenticationService;

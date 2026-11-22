@@ -1,4 +1,4 @@
-package com.company.incert.ocsp.schedule;
+package com.company.incert.ocsp.shared.config;
 
 import lombok.Getter;
 import lombok.Setter;

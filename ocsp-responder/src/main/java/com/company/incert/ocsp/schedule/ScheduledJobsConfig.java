@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.schedule;
 
+
+import com.company.incert.ocsp.shared.config.ScheduledJobsProperties;
 import com.company.incert.ocsp.auth.service.IdentityOutboxService;
 import com.company.incert.ocsp.auth.service.KeycloakSyncService;
 import com.company.incert.ocsp.signing.service.SigningCertificateValidityService;

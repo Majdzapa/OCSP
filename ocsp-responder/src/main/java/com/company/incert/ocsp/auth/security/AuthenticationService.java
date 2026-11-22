@@ -1,7 +1,7 @@
 package com.company.incert.ocsp.auth.security;
 
 import com.company.incert.ocsp.auth.config.AppAuthProperties;
-import com.company.incert.ocsp.auth.config.AppSecurityProperties;
+import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.auth.config.AuthenticationMode;
 import com.company.incert.ocsp.auth.config.KeycloakProperties;
 import lombok.RequiredArgsConstructor;

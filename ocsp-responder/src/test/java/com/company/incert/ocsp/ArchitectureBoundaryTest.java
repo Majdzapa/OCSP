@@ -1,55 +1,55 @@
 package com.company.incert.ocsp;
 
-import com.company.incert.ocsp.auth.controller.AuthController;
-import com.company.incert.ocsp.auth.repository.UserRepository;
-import com.company.incert.ocsp.auth.security.AuthenticationService;
-import com.company.incert.ocsp.status.service.CertificateStatusService;
-import com.company.incert.ocsp.auth.service.KeycloakAdminClient;
-import com.company.incert.ocsp.responder.service.OcspResponderService;
-import com.company.incert.ocsp.rabbitmq.service.OutboxReconciliationService;
-import com.company.incert.ocsp.signing.service.SigningCertificateService;
-import com.company.incert.ocsp.signing.service.SigningCertificateValidityService;
-import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
 
-import java.lang.reflect.Field;
-import java.util.List;
-import java.util.Set;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
- * Enforces Modular Monolith separation: OCSP business services must never depend
- * on login, credential encoding, user persistence, or Keycloak admin components.
+ * ArchUnit architectural boundary rules enforcing clean Modular Monolith domain isolation.
  */
+@AnalyzeClasses(
+        packages = "com.company.incert.ocsp",
+        importOptions = ImportOption.DoNotIncludeTests.class
+)
 class ArchitectureBoundaryTest {
 
-    private static final Set<Class<?>> FORBIDDEN_AUTH_DEPENDENCIES = Set.of(
-            AuthController.class,
-            AuthenticationService.class,
-            UserRepository.class,
-            PasswordEncoder.class,
-            KeycloakAdminClient.class
-    );
+    @ArchTest
+    static final ArchRule coreDomainsMustNotDependOnAuth =
+            noClasses().that().resideInAnyPackage(
+                    "..ocsp.status..",
+                    "..ocsp.responder..",
+                    "..ocsp.signing..",
+                    "..ocsp.rabbitmq.."
+            ).should().dependOnClassesThat().resideInAPackage("..ocsp.auth..");
 
-    private static final List<Class<?>> BUSINESS_SERVICES = List.of(
-            OcspResponderService.class,
-            CertificateStatusService.class,
-            SigningCertificateService.class,
-            SigningCertificateValidityService.class,
-            OutboxReconciliationService.class
-    );
+    @ArchTest
+    static final ArchRule coreDomainsMustNotDependOnRabbitMq =
+            noClasses().that().resideInAnyPackage(
+                    "..ocsp.status..",
+                    "..ocsp.responder..",
+                    "..ocsp.signing..",
+                    "..ocsp.auth.."
+            ).should().dependOnClassesThat().resideInAPackage("..ocsp.rabbitmq..");
 
-    @Test
-    void businessServicesMustNotDependOnLoginOrAuthComponents() {
-        for (Class<?> businessClass : BUSINESS_SERVICES) {
-            for (Field field : businessClass.getDeclaredFields()) {
-                assertThat(FORBIDDEN_AUTH_DEPENDENCIES)
-                        .as("Business service %s must not depend on auth type %s",
-                                businessClass.getSimpleName(), field.getType().getSimpleName())
-                        .doesNotContain(field.getType());
-            }
-        }
-    }
+    @ArchTest
+    static final ArchRule sharedMustNotDependOnFeatureDomains =
+            noClasses().that().resideInAPackage("..ocsp.shared..")
+                    .should().dependOnClassesThat().resideInAnyPackage(
+                            "..ocsp.auth..",
+                            "..ocsp.rabbitmq..",
+                            "..ocsp.schedule..",
+                            "..ocsp.signing..",
+                            "..ocsp.status..",
+                            "..ocsp.responder..",
+                            "..ocsp.dashboard.."
+                    );
+
+    @ArchTest
+    static final ArchRule domainSlicesMustBeFreeOfCycles =
+            slices().matching("com.company.incert.ocsp.(*)..")
+                    .should().beFreeOfCycles();
 }
-

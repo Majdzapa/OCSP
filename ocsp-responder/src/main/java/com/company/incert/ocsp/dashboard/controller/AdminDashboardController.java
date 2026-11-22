@@ -1,6 +1,6 @@
-package com.company.incert.ocsp.status.controller;
+package com.company.incert.ocsp.dashboard.controller;
 
-import com.company.incert.ocsp.auth.config.AppSecurityProperties;
+import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.shared.config.OpenApiConfig;
 import com.company.incert.ocsp.rabbitmq.config.RabbitMqTlsProperties;
 import com.company.incert.ocsp.status.entity.CertificateStatus;

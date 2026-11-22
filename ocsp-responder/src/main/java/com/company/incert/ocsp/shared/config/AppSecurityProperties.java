@@ -1,4 +1,4 @@
-package com.company.incert.ocsp.auth.config;
+package com.company.incert.ocsp.shared.config;
 
 import lombok.Getter;
 import lombok.Setter;

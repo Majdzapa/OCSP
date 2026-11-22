@@ -1,9 +1,9 @@
 package com.company.incert.ocsp.rabbitmq.messaging;
 
 
-import com.company.incert.ocsp.rabbitmq.messaging.CertificateStatusConsumer;
 import com.company.incert.ocsp.rabbitmq.entity.InboxEvent;
 import com.company.incert.ocsp.rabbitmq.repository.InboxEventRepository;
+import com.company.incert.ocsp.status.dto.CertificateStatusUpdateCommand;
 import com.company.incert.ocsp.status.service.CertificateStatusService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -82,7 +82,18 @@ public class CertificateStatusConsumerService implements CertificateStatusConsum
             inbox = inboxRepository.save(inbox);
 
             // Apply status change — runs in the same transaction; rolls back together if it fails
-            boolean applied = statusService.applyStatusChange(event);
+            CertificateStatusUpdateCommand cmd = new CertificateStatusUpdateCommand(
+                    event.eventId(),
+                    event.occurredAt(),
+                    event.issuerKeyHashHex(),
+                    event.issuerNameHashHex(),
+                    event.serialNumberHex(),
+                    event.status(),
+                    event.revocationTime(),
+                    event.revocationReason(),
+                    event.sequence()
+            );
+            boolean applied = statusService.applyStatusChange(cmd);
             inbox.setProcessedAt(Instant.now());
             inbox.setProcessingStatus(applied ? "PROCESSED" : "SKIPPED");
             inboxRepository.save(inbox);

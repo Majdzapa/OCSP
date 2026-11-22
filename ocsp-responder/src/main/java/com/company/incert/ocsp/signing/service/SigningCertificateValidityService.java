@@ -1,6 +1,6 @@
 package com.company.incert.ocsp.signing.service;
 
-import com.company.incert.ocsp.schedule.ScheduledJobsProperties;
+import com.company.incert.ocsp.shared.config.ScheduledJobsProperties;
 import com.company.incert.ocsp.signing.dto.GenerateCsrRequest;
 import com.company.incert.ocsp.signing.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.signing.dto.SigningCertValidityReportDto;

@@ -5,7 +5,7 @@ import com.company.incert.ocsp.status.service.CertificateStatusService;
 import com.company.incert.ocsp.status.entity.CertificateStatus;
 import com.company.incert.ocsp.status.entity.RevocationReason;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
-import com.company.incert.ocsp.rabbitmq.messaging.CertificateStatusEvent;
+import com.company.incert.ocsp.status.dto.CertificateStatusUpdateCommand;
 import com.company.incert.ocsp.status.repository.RevocationStatusRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +39,7 @@ class CertificateStatusServiceTest {
     void shouldInsertNewCertificateStatus() {
         when(repository.findByCertId(any(), any(), any())).thenReturn(Optional.empty());
 
-        CertificateStatusEvent event = new CertificateStatusEvent(
+        CertificateStatusUpdateCommand event = new CertificateStatusUpdateCommand(
             "evt-1",
             Instant.now(),
             "aabbcc",
@@ -73,7 +73,7 @@ class CertificateStatusServiceTest {
 
         when(repository.findByCertId(any(), any(), any())).thenReturn(Optional.of(existing));
 
-        CertificateStatusEvent event = new CertificateStatusEvent(
+        CertificateStatusUpdateCommand event = new CertificateStatusUpdateCommand(
             "evt-2",
             Instant.now(),
             "02",
@@ -104,7 +104,7 @@ class CertificateStatusServiceTest {
 
         when(repository.findByCertId(any(), any(), any())).thenReturn(Optional.of(existing));
 
-        CertificateStatusEvent staleEvent = new CertificateStatusEvent(
+        CertificateStatusUpdateCommand staleEvent = new CertificateStatusUpdateCommand(
             "evt-old",
             Instant.now(),
             "02",
