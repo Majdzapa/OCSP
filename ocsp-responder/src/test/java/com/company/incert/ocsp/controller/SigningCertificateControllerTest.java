@@ -95,11 +95,27 @@ class SigningCertificateControllerTest {
         );
         when(service.addCertificate(request)).thenReturn(dto);
 
-        ResponseEntity<?> response = controller.addCertificate(request);
+        var adminAuth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        ResponseEntity<?> response = controller.addCertificate(request, adminAuth);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isEqualTo(dto);
         verify(service, times(1)).addCertificate(request);
+    }
+
+    @Test
+    void addCertificate_agentCannotActivateImmediately() {
+        AddSigningCertificateRequest request = new AddSigningCertificateRequest(
+                "agent-alias", "key-label", "CERT-PEM", true
+        );
+        var agentAuth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "agent", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_AGENT")));
+
+        ResponseEntity<?> response = controller.addCertificate(request, agentAuth);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        verify(service, times(0)).addCertificate(request);
     }
 
     @Test

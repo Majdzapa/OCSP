@@ -6,17 +6,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -25,21 +22,21 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 /**
- * Security configuration supporting dual authentication modes:
+ * Security & RBAC configuration supporting dual authentication modes:
  * <ul>
- *   <li><b>SELF_MANAGED</b>: Username and password authentication (HTTP Basic Auth).</li>
+ *   <li><b>SELF_MANAGED</b>: Username and password authentication backed by {@code users} / {@code roles} tables.</li>
  *   <li><b>KEYCLOAK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
  * </ul>
- * Configured via {@code security.auth-mode} (see {@link AppSecurityProperties}).
+ * Roles: {@code ROLE_ADMIN}, {@code ROLE_AGENT}, {@code ROLE_AUDITOR}.
  */
 @Slf4j
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final AppSecurityProperties securityProperties;
-    private final AdminProperties adminProperties;
     private final KeycloakProperties keycloakProperties;
 
     public AuthenticationMode getAuthenticationMode() {
@@ -63,16 +60,6 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    @Bean
-    public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
-        UserDetails admin = User.builder()
-                .username(adminProperties.getUsername())
-                .password(passwordEncoder.encode(adminProperties.getPassword()))
-                .roles("ADMIN")
-                .build();
-        return new InMemoryUserDetailsManager(admin);
-    }
-
     public JwtDecoder jwtDecoder() {
         String jwkSetUri = keycloakProperties.effectiveJwkSetUri();
         log.info("Initializing NimbusJwtDecoder for Keycloak with JWKS URI: {}", jwkSetUri);
@@ -82,7 +69,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         AuthenticationMode mode = getAuthenticationMode();
-        log.info("Configuring OCSP Responder Security with Authentication Mode: {}", mode);
+        log.info("Configuring OCSP Responder Security & RBAC with Authentication Mode: {}", mode);
 
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -102,12 +89,31 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/config", "/api/v1/auth/me").permitAll()
                 // Login endpoint is public so credentials can be submitted
                 .requestMatchers("/api/v1/auth/login").permitAll()
-                // All admin & management endpoints require ROLE_ADMIN
+
+                // --- RBAC: Admin-only endpoints ---
+                .requestMatchers("/api/v1/admin/users/**", "/api/v1/admin/roles/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT,
+                        "/api/v1/admin/signing-certificates/*/activate",
+                        "/api/v1/admin/signing-certificates/*/deactivate").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/signing-certificates/*").hasRole("ADMIN")
+
+                // --- RBAC: Admin & Agent operational endpoints ---
+                .requestMatchers(HttpMethod.POST,
+                        "/api/v1/admin/signing-certificates/csr",
+                        "/api/v1/admin/signing-certificates/*/renew-request",
+                        "/api/v1/admin/signing-certificates",
+                        "/api/v1/admin/signing-certificates/validity/check",
+                        "/api/v1/admin/reconciliation/replay").hasAnyRole("ADMIN", "AGENT")
+
+                // --- RBAC: Read-only audit & dashboard endpoints (Admin, Agent, Auditor) ---
+                .requestMatchers(HttpMethod.GET, "/api/v1/admin/**").hasAnyRole("ADMIN", "AGENT", "AUDITOR")
+
+                // Catch-all for any other /api/v1/admin/** mutation requires ADMIN
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             );
 
-        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass admin fallback in KEYCLOAK)
+        // HTTP Basic Auth is active in both modes (standard auth in SELF_MANAGED, break-glass fallback in KEYCLOAK)
         http.httpBasic(Customizer.withDefaults());
 
         if (mode.isKeycloak()) {

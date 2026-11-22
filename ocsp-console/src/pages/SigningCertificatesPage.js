@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, Textarea, Switch, Select, Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, } from '@mantine/core';
 import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, } from '@tabler/icons-react';
 import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, generateSigningCsr, } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 function downloadTextFile(content, filename) {
     const blob = new Blob([content], { type: 'application/x-pem-file' });
     const url = URL.createObjectURL(blob);
@@ -14,6 +15,10 @@ function downloadTextFile(content, filename) {
     URL.revokeObjectURL(url);
 }
 export const SigningCertificatesPage = () => {
+    const { user } = useAuth();
+    const roleNames = (user?.roles ?? []).map((r) => typeof r === 'string' ? r : (r?.authority ?? ''));
+    const isAdmin = roleNames.includes('ROLE_ADMIN');
+    const canOperateCsr = isAdmin || roleNames.includes('ROLE_AGENT');
     const [certificates, setCertificates] = useState([]);
     const [hsmInfo, setHsmInfo] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -208,19 +213,21 @@ export const SigningCertificatesPage = () => {
             <Button variant="default" leftSection={<IconRefresh size={16}/>} onClick={fetchAll} loading={loading}>
               Refresh
             </Button>
-            <Button variant="light" color="cyan" leftSection={<IconFileCertificate size={16}/>} onClick={() => {
-            setError(null);
-            setCsrResult(null);
-            setCsrModalOpen(true);
-        }}>
-              Generate CSR from HSM
-            </Button>
-            <Button variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} leftSection={<IconPlus size={16}/>} onClick={() => {
-            setError(null);
-            setAddModalOpen(true);
-        }}>
-              Import Signing Certificate
-            </Button>
+            {canOperateCsr && (<>
+                <Button variant="light" color="cyan" leftSection={<IconFileCertificate size={16}/>} onClick={() => {
+                setError(null);
+                setCsrResult(null);
+                setCsrModalOpen(true);
+            }}>
+                  Generate CSR from HSM
+                </Button>
+                <Button variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} leftSection={<IconPlus size={16}/>} onClick={() => {
+                setError(null);
+                setAddModalOpen(true);
+            }}>
+                  Import Signing Certificate
+                </Button>
+              </>)}
           </Group>
         </Group>
 
@@ -364,11 +371,11 @@ export const SigningCertificatesPage = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Group justify="flex-end" gap="xs">
-                          {cert.active ? (<Button size="compact-xs" variant="light" color="orange" loading={actionLoading} disabled={activeCerts.length <= 1} onClick={() => handleDeactivate(cert.id, cert.alias)}>
+                          {isAdmin && (cert.active ? (<Button size="compact-xs" variant="light" color="orange" loading={actionLoading} disabled={activeCerts.length <= 1} onClick={() => handleDeactivate(cert.id, cert.alias)}>
                               Deactivate
                             </Button>) : (<Button size="compact-xs" variant="filled" color="green" leftSection={<IconCheck size={14}/>} loading={actionLoading} disabled={cert.expired} onClick={() => handleActivate(cert.id, cert.alias)}>
                               Activate
-                            </Button>)}
+                            </Button>))}
                           <Tooltip label="View Certificate PEM">
                             <ActionIcon variant="light" color="blue" onClick={() => {
                     setSelectedCert(cert);
@@ -377,7 +384,7 @@ export const SigningCertificatesPage = () => {
                               <IconEye size={16}/>
                             </ActionIcon>
                           </Tooltip>
-                          {!cert.active && (<Tooltip label="Delete certificate">
+                          {isAdmin && !cert.active && (<Tooltip label="Delete certificate">
                               <ActionIcon variant="light" color="red" loading={actionLoading} onClick={() => handleDelete(cert.id, cert.alias)}>
                                 <IconTrash size={16}/>
                               </ActionIcon>
@@ -510,7 +517,7 @@ export const SigningCertificatesPage = () => {
 
             <Textarea placeholder="-----BEGIN CERTIFICATE-----&#10;MIID...&#10;-----END CERTIFICATE-----" description="Paste or upload the CA-signed X.509 signing certificate in PEM format" minRows={6} maxRows={10} value={certificatePem} onChange={(e) => setCertificatePem(e.currentTarget.value)} required/>
 
-            <Switch label="Make active immediately" description="If checked, this certificate will immediately become the active signer for all OCSP responses (otherwise kept in standby)" checked={activateImmediately} onChange={(e) => setActivateImmediately(e.currentTarget.checked)} color="green"/>
+            {isAdmin && (<Switch label="Make active immediately" description="If checked, this certificate will immediately become the active signer for all OCSP responses (otherwise kept in standby)" checked={activateImmediately} onChange={(e) => setActivateImmediately(e.currentTarget.checked)} color="green"/>)}
 
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={() => setAddModalOpen(false)}>

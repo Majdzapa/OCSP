@@ -7,6 +7,7 @@
 ** xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]
 ** xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]
 ** xref:authentication.adoc[Authentication Modes & Keycloak SSO]
+** xref:urls-and-rbac.adoc[URLs & Role-Based Access Control (RBAC)]
 ** xref:tls-management.adoc[TLS Security Configuration]
 * Configuration & Operations
 ** xref:configuration-properties.adoc[Configuration Properties & Profiles (dev / local / prod)]

@@ -95,6 +95,7 @@ http://localhost:15672
 * xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]: Detailed breakdown of all scheduled jobs and RabbitMQ-only self-healing reconciliation.
 * xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]: Post-commit multi-CA signer synchronization, daily validity cron, 3-day alert threshold, and 1-click renewal CSR.
 * xref:authentication.adoc[Authentication Modes & Keycloak SSO]: `KEYCLOAK` and `SELF_MANAGED` modes on port `3002`.
+* xref:urls-and-rbac.adoc[URLs & Role-Based Access Control (RBAC)]: Complete URL catalog, `users`/`roles` schema, `AdminUserInitializer`, and `ROLE_ADMIN` / `ROLE_AGENT` / `ROLE_AUDITOR` permissions.
 * xref:tls-management.adoc[TLS Security Configuration]: Transport and login TLS settings (`AppSecurityProperties` & `RabbitMqTlsProperties`).
 * xref:configuration-properties.adoc[Configuration Properties & Profiles]: Complete YAML and `@ConfigurationProperties` reference (`application.yml`, `application-dev.yml`, `application-local.yml`).
 * xref:deployment-docker.adoc[Docker Deployment & Compose]: Container orchestration and healthchecks.

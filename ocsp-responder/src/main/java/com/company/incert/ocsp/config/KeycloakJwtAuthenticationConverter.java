@@ -18,7 +18,7 @@ import java.util.Set;
  * <ul>
  *   <li>{@code realm_access.roles}</li>
  *   <li>{@code resource_access.<client>.roles}</li>
- *   <li>{@code groups} (e.g. /ocsp-administrators -> ROLE_ADMIN)</li>
+ *   <li>{@code groups} (e.g. /ocsp-administrators -> ROLE_ADMIN, /ocsp-agents -> ROLE_AGENT, /ocsp-auditors -> ROLE_AUDITOR)</li>
  *   <li>Direct {@code roles} claim</li>
  * </ul>
  */
@@ -28,7 +28,6 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
 
-        // Helper to format role names cleanly
         java.util.function.Consumer<String> addRole = r -> {
             if (r == null || r.isBlank()) return;
             String normalized = r.trim().toUpperCase();
@@ -65,16 +64,15 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
             }
         }
 
-        // 4. Extract groups claim (e.g. ["/ocsp-administrators", "/ocsp-operators"])
+        // 4. Extract groups claim
         if (jwt.getClaim("groups") instanceof Collection<?> groups) {
             for (Object grp : groups) {
                 String groupName = grp.toString().toLowerCase().replace("/", "").trim();
                 if (groupName.contains("admin")) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                 }
-                if (groupName.contains("operator")) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_OPERATOR"));
-                    authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                if (groupName.contains("agent") || groupName.contains("operator")) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_AGENT"));
                 }
                 if (groupName.contains("auditor")) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_AUDITOR"));
@@ -82,7 +80,7 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
             }
         }
 
-        // 5. Default fallback if username or subject is "admin"
+        // 5. Fallback username
         String username = jwt.getClaimAsString("preferred_username");
         if (username == null) {
             username = jwt.getSubject();

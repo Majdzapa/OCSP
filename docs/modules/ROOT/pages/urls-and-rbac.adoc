@@ -1,0 +1,195 @@
+= URLs & Role-Based Access Control (RBAC)
+:toc:
+
+This guide documents every public, operational, and administrative URL across the **Incert OCSP Subsystem v5.0** together with the complete **Role-Based Access Control (RBAC)** matrix enforced by Spring Security (`SecurityConfig`, `@EnableMethodSecurity`, and `KeycloakJwtAuthenticationConverter`) and the database-backed `users` / `roles` tables.
+
+== Service & Console URLs
+
+[cols="2,1,2,3", options="header"]
+|===
+| Service | Port | Base URL | Key Routes
+
+| *OCSP Admin Console (`ocsp-console`)*
+| `3002`
+| http://localhost:3002
+| `/login`, `/dashboard`, `/inbox`, `/revocations`, `/signing-certificates` (`/signing-cert`), `/signing-validity`, `/cert-checker`, `/users` *(ADMIN only)*, `/docs/`
+
+| *OCSP Responder & Admin API (`ocsp-responder`)*
+| `8080`
+| http://localhost:8080
+| `/ocsp` (RFC 6960 POST/GET), `/api/v1/auth/**`, `/api/v1/admin/**`, `/swagger-ui.html`, `/actuator/health`
+
+| *Standalone OCSP Client (`ocsp-client`)*
+| `8082`
+| http://localhost:8082
+| `/` (OCSP Test Harness UI with Issuer CA PEM), `/api/v1/client/check`, `/api/v1/client/info`, `/swagger-ui.html`
+
+| *Keycloak IAM Server (`ocsp-keycloak`)*
+| `8081`
+| http://localhost:8081
+| `/realms/incert/protocol/openid-connect/auth`, `/realms/incert/protocol/openid-connect/certs`
+
+| *KMS Simulator Console (`kms-console`)*
+| `3001`
+| http://localhost:3001
+| `/cas` (Root & Sub CA creation), `/certificates` (CSR issuance & revocation), `/outbox`
+
+| *KMS Simulator API (`kms-simulator`)*
+| `8090`
+| http://localhost:8090
+| `/api/v1/cas/**`, `/api/v1/certificates/**`, `/swagger-ui.html`
+
+| *RabbitMQ Management UI (`ocsp-rabbitmq`)*
+| `15672`
+| http://localhost:15672
+| Broker queues, exchanges, and mTLS connections (`5671` AMQPS, `5672` AMQP)
+|===
+
+== RBAC Roles & Built-In Admin Initializer
+
+All local users and roles are stored in MariaDB (`ocsp.users`, `ocsp.roles`, `ocsp.user_roles` via Flyway migration `V8__users_and_roles.sql`).
+
+* **Built-In Admin Initializer (`AdminUserInitializer`)**:
+  On `ApplicationReadyEvent`, `AdminUserInitializer` seeds the 3 canonical roles (`ROLE_ADMIN`, `ROLE_AGENT`, `ROLE_AUDITOR`) and creates the built-in administrator account from `AdminProperties` (`admin.username` / `admin.password` in `application*.yml`) with BCrypt-hashed password and `ROLE_ADMIN` if it does not already exist in `ocsp.users`.
+* **Keycloak OIDC Mapping (`KeycloakJwtAuthenticationConverter`)**:
+  In `KEYCLOAK` mode, realm roles, client roles, and groups (`/ocsp-administrators`, `/ocsp-agents`, `/ocsp-auditors`) map to `ROLE_ADMIN`, `ROLE_AGENT`, and `ROLE_AUDITOR`.
+
+[cols="1,3", options="header"]
+|===
+| Role | Intended Persona & Capabilities
+
+| `ROLE_ADMIN`
+| **PKI Administrator**: Full access to all endpoints, including **User Management** (`/api/v1/admin/users/**`, `/api/v1/admin/roles/**`), **Signing Certificate Activation / Deactivation / Deletion**, CSR generation, certificate import, reconciliation replay, and all read/audit views.
+
+| `ROLE_AGENT`
+| **PKI Operational Agent**: Can generate HSM CSRs (`POST /api/v1/admin/signing-certificates/csr`), import standby signing certificates (`POST /api/v1/admin/signing-certificates` with `activateImmediately=false`), generate renewal CSRs (`POST /api/v1/admin/signing-certificates/\{id\}/renew-request`), trigger validity checks, trigger RabbitMQ reconciliation replay, and view all audit/dashboard endpoints. **Cannot** access User Management or activate/deactivate/delete signing certificates (`403 Forbidden`).
+
+| `ROLE_AUDITOR`
+| **Security Auditor (Read-Only)**: Can view dashboard statistics, revocation feed, inbox audit, reconciliation verification status, signing certificate list/validity reports, and database certificate check (`GET /api/v1/admin/**` except `/users` and `/roles`). **Cannot** mutate state, generate CSRs, or manage users (`403 Forbidden`).
+|===
+
+== URL & Endpoint Permission Matrix (`ocsp-responder :8080`)
+
+=== Public & Authentication URLs
+
+[cols="1,3,1,3", options="header"]
+|===
+| Method | URL Pattern | Access | Purpose
+
+| `POST` / `GET`
+| `/ocsp`, `/ocsp/\{base64url\}`
+| `PUBLIC`
+| RFC 6960 OCSP status queries (no authentication required for relying parties).
+
+| `GET`
+| `/api/v1/auth/config`, `/api/v1/auth/me`
+| `PUBLIC`
+| Auth mode metadata (`KEYCLOAK` vs `SELF_MANAGED`) and current session identity/roles.
+
+| `POST`
+| `/api/v1/auth/login`
+| `PUBLIC`
+| Validates username & password against `ocsp.users` (`SELF_MANAGED`) or confirms Keycloak Bearer JWT session.
+
+| `GET`
+| `/actuator/health`, `/actuator/info`, `/swagger-ui.html`, `/v3/api-docs/**`
+| `PUBLIC`
+| Healthchecks and OpenAPI documentation.
+|===
+
+=== User Management URLs (`ROLE_ADMIN` Only)
+
+[cols="1,3,1,3", options="header"]
+|===
+| Method | URL Pattern | Required Role(s) | Purpose
+
+| `GET`
+| `/api/v1/admin/users`
+| `ROLE_ADMIN`
+| List all users and their assigned roles (returns `403` for `AGENT` / `AUDITOR`).
+
+| `GET`
+| `/api/v1/admin/roles`
+| `ROLE_ADMIN`
+| List all RBAC roles (`ROLE_ADMIN`, `ROLE_AGENT`, `ROLE_AUDITOR`).
+
+| `POST`
+| `/api/v1/admin/users`
+| `ROLE_ADMIN`
+| Create a new user in `ocsp.users` with BCrypt password and assigned roles.
+
+| `PUT`
+| `/api/v1/admin/users/\{id\}`
+| `ROLE_ADMIN`
+| Update user roles, enabled/disabled status, or reset password (guards against disabling/demoting last admin).
+
+| `DELETE`
+| `/api/v1/admin/users/\{id\}`
+| `ROLE_ADMIN`
+| Delete a user (guards against deleting self or last active admin).
+|===
+
+=== Signing Certificates, CSR & Validity URLs
+
+[cols="1,3,2,3", options="header"]
+|===
+| Method | URL Pattern | Required Role(s) | Purpose
+
+| `GET`
+| `/api/v1/admin/signing-certificates`, `/active`, `/hsm-info`, `/validity`
+| `ADMIN`, `AGENT`, `AUDITOR`
+| View registered signing certificates, active certificate, HSM key labels, and 3-day validity report.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/csr`
+| `ADMIN`, `AGENT`
+| Generate (or reuse) an HSM keypair and sign a PKCS#10 CSR.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/\{id\}/renew-request`
+| `ADMIN`, `AGENT`
+| Generate a PKCS#10 renewal CSR in SoftHSM2 for an expiring signing certificate.
+
+| `POST`
+| `/api/v1/admin/signing-certificates`
+| `ADMIN`, `AGENT` *(note: `activateImmediately=true` requires `ADMIN`)*
+| Import a CA-signed `OCSP_SIGNING` certificate PEM into the HSM token & database.
+
+| `POST`
+| `/api/v1/admin/signing-certificates/validity/check`
+| `ADMIN`, `AGENT`
+| Trigger an immediate signing certificate validity check.
+
+| `PUT`
+| `/api/v1/admin/signing-certificates/\{id\}/activate`
+| `ROLE_ADMIN`
+| Activate a signing certificate for OCSP response signing (`403` for `AGENT` / `AUDITOR`).
+
+| `PUT`
+| `/api/v1/admin/signing-certificates/\{id\}/deactivate`
+| `ROLE_ADMIN`
+| Deactivate an active signing certificate (`403` for `AGENT` / `AUDITOR`).
+
+| `DELETE`
+| `/api/v1/admin/signing-certificates/\{id\}`
+| `ROLE_ADMIN`
+| Delete an inactive signing certificate (`403` for `AGENT` / `AUDITOR`).
+|===
+
+=== Audit, Dashboard & Reconciliation URLs
+
+[cols="1,3,2,3", options="header"]
+|===
+| Method | URL Pattern | Required Role(s) | Purpose
+
+| `GET`
+| `/api/v1/admin/dashboard/stats`, `/health`, `/certificates`, `/revocations`, `/cert-check/\{serialHex\}`, `/inbox`, `/inbox/stats`, `/reconciliation/verify`
+| `ADMIN`, `AGENT`, `AUDITOR`
+| Read-only operational telemetry, revocation feed, inbox events, and Outbox ↔ Inbox parity report.
+
+| `POST`
+| `/api/v1/admin/reconciliation/replay`
+| `ADMIN`, `AGENT`
+| Publish `REPLAY_EVENTS` over RabbitMQ to heal missing/failed events (`403` for `AUDITOR`).
+|===
+

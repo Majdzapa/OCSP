@@ -1,6 +1,5 @@
 package com.company.incert.ocsp.controller;
 
-import com.company.incert.ocsp.config.AdminProperties;
 import com.company.incert.ocsp.config.AppSecurityProperties;
 import com.company.incert.ocsp.config.KeycloakProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +8,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Map;
@@ -29,16 +33,21 @@ class AuthControllerTest {
         security.setAuthMode(authMode);
         security.getTls().setEnabled(true);
 
-        AdminProperties admin = new AdminProperties();
-        admin.setUsername("admin");
-        admin.setPassword("changeme");
-
         KeycloakProperties keycloak = new KeycloakProperties();
         keycloak.setAuthServerUrl("http://localhost:8081");
         keycloak.setRealm("incert");
         keycloak.setClientId("ocsp-console");
 
-        return new AuthController(security, admin, keycloak);
+        PasswordEncoder encoder = new BCryptPasswordEncoder();
+        String encodedAdmin = encoder.encode("changeme");
+        UserDetailsService uds = username -> {
+            if ("admin".equals(username)) {
+                return User.builder().username("admin").password(encodedAdmin).authorities("ROLE_ADMIN").build();
+            }
+            throw new UsernameNotFoundException("Not found: " + username);
+        };
+
+        return new AuthController(security, keycloak, uds, encoder);
     }
 
     @Test

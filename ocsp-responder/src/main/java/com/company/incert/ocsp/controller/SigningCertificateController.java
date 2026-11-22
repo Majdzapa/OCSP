@@ -19,6 +19,8 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -64,13 +66,21 @@ public class SigningCertificateController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @Operation(summary = "Add a new signing certificate", description = "Registers a new signing certificate from PEM. Optionally activates it immediately.")
+    @Operation(summary = "Add a new signing certificate", description = "Registers a new signing certificate from PEM. Only ADMIN can set activateImmediately=true.")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Certificate registered successfully"),
-        @ApiResponse(responseCode = "400", description = "Invalid certificate PEM or duplicate alias")
+        @ApiResponse(responseCode = "400", description = "Invalid certificate PEM or duplicate alias"),
+        @ApiResponse(responseCode = "403", description = "Forbidden — activateImmediately requires ROLE_ADMIN")
     })
     @PostMapping
-    public ResponseEntity<?> addCertificate(@Valid @RequestBody AddSigningCertificateRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
+    public ResponseEntity<?> addCertificate(
+            @Valid @RequestBody AddSigningCertificateRequest request,
+            Authentication auth) {
+        if (Boolean.TRUE.equals(request.activateImmediately()) && !isAdmin(auth)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Only ROLE_ADMIN can activate a signing certificate immediately"));
+        }
         try {
             SigningCertificateDto created = certificateService.addCertificate(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(created);
@@ -79,12 +89,14 @@ public class SigningCertificateController {
         }
     }
 
-    @Operation(summary = "Activate signing certificate", description = "Marks the specified certificate as active for signing responses for its issuing CA (multiple active signers supported)")
+    @Operation(summary = "Activate signing certificate", description = "Marks the specified certificate as active for signing responses for its issuing CA (ADMIN only)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Certificate activated successfully"),
-        @ApiResponse(responseCode = "400", description = "Certificate is expired, missing HSM key, or not found")
+        @ApiResponse(responseCode = "400", description = "Certificate is expired, missing HSM key, or not found"),
+        @ApiResponse(responseCode = "403", description = "Forbidden — requires ROLE_ADMIN")
     })
     @PutMapping("/{id}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> activate(
             @Parameter(description = "ID of the signing certificate to activate")
             @PathVariable Long id) {
@@ -96,12 +108,14 @@ public class SigningCertificateController {
         }
     }
 
-    @Operation(summary = "Deactivate signing certificate", description = "Deactivates an active signing certificate (at least one active certificate must remain)")
+    @Operation(summary = "Deactivate signing certificate", description = "Deactivates an active signing certificate (ADMIN only; at least one active certificate must remain)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Certificate deactivated successfully"),
-        @ApiResponse(responseCode = "400", description = "Cannot deactivate the last remaining active certificate or not found")
+        @ApiResponse(responseCode = "400", description = "Cannot deactivate the last remaining active certificate or not found"),
+        @ApiResponse(responseCode = "403", description = "Forbidden — requires ROLE_ADMIN")
     })
     @PutMapping("/{id}/deactivate")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> deactivate(
             @Parameter(description = "ID of the signing certificate to deactivate")
             @PathVariable Long id) {
@@ -119,12 +133,13 @@ public class SigningCertificateController {
         return ResponseEntity.ok(certificateService.getHsmInfo());
     }
 
-    @Operation(summary = "Generate a PKCS#10 CSR from the HSM", description = "Generates (or reuses) a non-extractable keypair in the HSM and returns a PEM-encoded PKCS#10 CSR")
+    @Operation(summary = "Generate a PKCS#10 CSR from the HSM", description = "Generates (or reuses) a non-extractable keypair in the HSM and returns a PEM-encoded PKCS#10 CSR (ADMIN and AGENT)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "CSR generated successfully"),
         @ApiResponse(responseCode = "400", description = "Invalid request or HSM key conflict")
     })
     @PostMapping("/csr")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     public ResponseEntity<?> generateCsr(@Valid @RequestBody GenerateCsrRequest request) {
         try {
             GenerateCsrResponse csr = certificateService.generateCsr(request);
@@ -134,13 +149,15 @@ public class SigningCertificateController {
         }
     }
 
-    @Operation(summary = "Delete an inactive signing certificate", description = "Removes a certificate from the registry. Cannot delete the active certificate.")
+    @Operation(summary = "Delete an inactive signing certificate", description = "Removes a certificate from the registry (ADMIN only; cannot delete the active certificate)")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Certificate deleted"),
         @ApiResponse(responseCode = "400", description = "Cannot delete active certificate"),
+        @ApiResponse(responseCode = "403", description = "Forbidden — requires ROLE_ADMIN"),
         @ApiResponse(responseCode = "404", description = "Certificate not found")
     })
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> delete(
             @Parameter(description = "ID of the signing certificate to delete")
             @PathVariable Long id) {
@@ -164,6 +181,7 @@ public class SigningCertificateController {
     @Operation(summary = "Run the daily signing certificate validity check now",
                description = "Triggers the daily validity check job immediately, logs alerts for certificates expiring within 3 days, and returns the updated report")
     @PostMapping("/validity/check")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     public ResponseEntity<SigningCertValidityReportDto> runValidityCheckNow() {
         return ResponseEntity.ok(validityService.runDailyValidityCheck());
     }
@@ -171,8 +189,9 @@ public class SigningCertificateController {
     public record RenewalCsrRequest(Boolean reuseExistingKey, String newKeyLabel, Integer keySize) {}
 
     @Operation(summary = "Create a renewal CSR for an existing signing certificate",
-               description = "Generates a PKCS#10 renewal CSR for the specified signing certificate (reusing its HSM key by default or generating a new key)")
+               description = "Generates a PKCS#10 renewal CSR for the specified signing certificate (ADMIN and AGENT)")
     @PostMapping("/{id}/renew-request")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     public ResponseEntity<?> createRenewalRequest(
             @PathVariable Long id,
             @RequestBody(required = false) RenewalCsrRequest request) {
@@ -185,6 +204,11 @@ public class SigningCertificateController {
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private static boolean isAdmin(Authentication auth) {
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 }
 

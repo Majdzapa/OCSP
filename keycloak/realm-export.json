@@ -12,6 +12,10 @@
         "description": "Administrator role for Incert OCSP Console"
       },
       {
+        "name": "ROLE_AGENT",
+        "description": "Operational agent role (generate CSRs, import certs, trigger reconciliation)"
+      },
+      {
         "name": "ROLE_OPERATOR",
         "description": "Operator role for Incert OCSP Console"
       },
@@ -35,10 +39,17 @@
       ]
     },
     {
+      "name": "ocsp-agents",
+      "path": "/ocsp-agents",
+      "realmRoles": [
+        "ROLE_AGENT"
+      ]
+    },
+    {
       "name": "ocsp-operators",
       "path": "/ocsp-operators",
       "realmRoles": [
-        "ROLE_ADMIN",
+        "ROLE_AGENT",
         "ROLE_OPERATOR"
       ]
     },

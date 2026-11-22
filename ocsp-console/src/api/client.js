@@ -119,3 +119,9 @@ export const generateSigningCsr = (req) => api.post('/signing-certificates/csr',
 export const getSigningCertValidityReport = () => api.get('/signing-certificates/validity').then((r) => r.data);
 export const runSigningCertValidityCheckNow = () => api.post('/signing-certificates/validity/check').then((r) => r.data);
 export const createSigningCertRenewalRequest = (id, req) => api.post(`/signing-certificates/${id}/renew-request`, req ?? { reuseExistingKey: true }).then((r) => r.data);
+// ---- User Management (ADMIN only) ----
+export const getUsers = () => api.get('/users').then((r) => r.data);
+export const getRoles = () => api.get('/roles').then((r) => r.data);
+export const createUser = (req) => api.post('/users', req).then((r) => r.data);
+export const updateUser = (id, req) => api.put(`/users/${id}`, req).then((r) => r.data);
+export const deleteUser = (id) => api.delete(`/users/${id}`).then((r) => r.data);

@@ -1,12 +1,13 @@
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import { AppShell, Box, Group, Stack, Text, ThemeIcon, Tooltip, Button, Badge, Avatar, Divider, } from '@mantine/core';
-import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, } from '@tabler/icons-react';
+import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, IconUsers, } from '@tabler/icons-react';
 import { DashboardPage } from './pages/DashboardPage';
 import { RevocationFeed } from './pages/RevocationFeed';
 import { SigningCertificatesPage } from './pages/SigningCertificatesPage';
 import { SigningCertValidityPage } from './pages/SigningCertValidityPage';
 import { CertCheckerPage } from './pages/CertCheckerPage';
 import { InboxAuditPage } from './pages/InboxAuditPage';
+import { UserManagementPage } from './pages/UserManagementPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -25,10 +26,13 @@ const navItems = [
     { label: 'Signing Cert', path: '/signing-cert', icon: IconCertificate },
     { label: 'Cert Validity', path: '/signing-validity', icon: IconClock },
     { label: 'Cert Checker', path: '/cert-checker', icon: IconSearch },
+    { label: 'User Management', path: '/users', icon: IconUsers, adminOnly: true },
 ];
 function MainLayout() {
     const { user, logout } = useAuth();
     const { stats } = useDashboardStats(10_000);
+    const roleNames = (user?.roles ?? []).map((r) => typeof r === 'string' ? r : (r?.authority ?? ''));
+    const isAdmin = roleNames.includes('ROLE_ADMIN');
     return (<AppShell navbar={{ width: 250, breakpoint: 'sm' }} padding="md" styles={{
             main: {
                 backgroundColor: 'var(--mantine-color-dark-7)',
@@ -70,7 +74,7 @@ function MainLayout() {
 
           {/* Nav Items */}
           <Stack gap={4} mt="xs">
-            {navItems.map((item) => {
+            {navItems.filter((item) => !item.adminOnly || isAdmin).map((item) => {
             const Icon = item.icon;
             return (<NavLink key={item.path} to={item.path} style={({ isActive }) => ({
                     display: 'flex',
@@ -243,6 +247,7 @@ function MainLayout() {
           <Route path="/signing-certificates" element={<SigningCertificatesPage />}/>
           <Route path="/signing-validity" element={<SigningCertValidityPage />}/>
           <Route path="/cert-checker" element={<CertCheckerPage />}/>
+          <Route path="/users" element={isAdmin ? <UserManagementPage /> : <Navigate to="/dashboard" replace/>}/>
           <Route path="/audit" element={<RevocationFeed />}/>
         </Routes>
       </AppShell.Main>

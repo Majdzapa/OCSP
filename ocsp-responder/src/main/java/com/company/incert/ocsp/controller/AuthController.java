@@ -1,6 +1,5 @@
 package com.company.incert.ocsp.controller;
 
-import com.company.incert.ocsp.config.AdminProperties;
 import com.company.incert.ocsp.config.AppSecurityProperties;
 import com.company.incert.ocsp.config.AuthenticationMode;
 import com.company.incert.ocsp.config.KeycloakProperties;
@@ -14,18 +13,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * Authentication configuration and session endpoints.
  *
  * <p>Supports {@code KEYCLOAK} (OAuth2 / OIDC Bearer JWT) and {@code SELF_MANAGED}
- * (username & password). TLS is a deployment setting ({@code security.tls.enabled});
- * it is exposed read-only.
- *
- * <p>IMPORTANT: No credential values (passwords) are ever included in HTTP responses.
+ * (username & password validated against the {@code users} / {@code roles} tables).
+ * TLS is a deployment setting ({@code security.tls.enabled}); it is exposed read-only.
  */
 @Slf4j
 @RestController
@@ -33,27 +36,26 @@ import java.util.Map;
 public class AuthController {
 
     private final AppSecurityProperties securityProperties;
-    private final AdminProperties adminProperties;
     private final KeycloakProperties keycloakProperties;
+    private final UserDetailsService userDetailsService;
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
     public AuthController(AppSecurityProperties securityProperties,
-                          AdminProperties adminProperties,
-                          KeycloakProperties keycloakProperties) {
+                          KeycloakProperties keycloakProperties,
+                          UserDetailsService userDetailsService,
+                          PasswordEncoder passwordEncoder) {
         this.securityProperties = securityProperties;
-        this.adminProperties = adminProperties;
         this.keycloakProperties = keycloakProperties;
+        this.userDetailsService = userDetailsService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Schema(description = "Credentials payload for username/password login")
     public record LoginPayload(
-        @Schema(description = "Admin username", example = "admin") String username,
-        @Schema(description = "Admin password") String password
+        @Schema(description = "Username", example = "admin") String username,
+        @Schema(description = "Password") String password
     ) {}
-
-    // -------------------------------------------------------------------------
-    // Public endpoints — readable by unauthenticated callers (safe metadata only)
-    // -------------------------------------------------------------------------
 
     @Operation(summary = "Get active authentication configuration",
                description = "Returns auth mode, TLS status, and Keycloak coordinates. No secrets included.")
@@ -82,7 +84,7 @@ public class AuthController {
     @GetMapping("/api/v1/auth/me")
     public ResponseEntity<Map<String, Object>> me(Authentication auth) {
         AuthenticationMode mode = securityProperties.authenticationMode();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+        if (!isAuthenticated(auth)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                 "authenticated", false,
                 "authMode", mode.name(),
@@ -92,14 +94,14 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
             "authenticated", true,
             "username", auth.getName(),
-            "roles", auth.getAuthorities(),
+            "roles", auth.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList(),
             "authMode", mode.name(),
             "tlsEnabled", securityProperties.getTls().isEnabled()
         ));
     }
 
-    @Operation(summary = "Authenticate admin credentials",
-               description = "Validates username/password or Keycloak Bearer session and returns confirmation. No raw secrets in response.")
+    @Operation(summary = "Authenticate credentials",
+               description = "Validates username/password against the users table or confirms a Keycloak Bearer session.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Authentication successful"),
         @ApiResponse(responseCode = "401", description = "Invalid credentials")
@@ -114,12 +116,21 @@ public class AuthController {
 
         // 1. Already authenticated by Spring Security (HttpBasic / JWT Bearer)
         if (isAuthenticated(auth)) {
-            return ok(mode, auth.getName(), "SESSION");
+            List<String> roles = auth.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
+            return ok(mode, auth.getName(), roles, "SESSION");
         }
 
         // 2. Username / password credential payload provided (in SELF_MANAGED mode)
-        if (payload != null && !mode.isKeycloak() && isValidBasic(payload.username(), payload.password())) {
-            return ok(mode, adminProperties.getUsername(), "BASIC");
+        if (payload != null && !mode.isKeycloak() && payload.username() != null && payload.password() != null) {
+            try {
+                UserDetails user = userDetailsService.loadUserByUsername(payload.username().trim());
+                if (user.isEnabled() && passwordEncoder.matches(payload.password(), user.getPassword())) {
+                    List<String> roles = user.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
+                    return ok(mode, user.getUsername(), roles, "BASIC");
+                }
+            } catch (UsernameNotFoundException ignored) {
+                // Fall through to 401
+            }
         }
 
         log.warn("Authentication attempt failed: authMode={}", mode);
@@ -134,24 +145,15 @@ public class AuthController {
         ));
     }
 
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
     private static boolean isAuthenticated(Authentication auth) {
         return auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
     }
 
-    private boolean isValidBasic(String username, String password) {
-        return username != null && password != null
-            && adminProperties.getUsername().equals(username.trim())
-            && adminProperties.getPassword().equals(password);
-    }
-
-    private ResponseEntity<Map<String, Object>> ok(AuthenticationMode mode, String username, String authType) {
+    private ResponseEntity<Map<String, Object>> ok(AuthenticationMode mode, String username, List<String> roles, String authType) {
         return ResponseEntity.ok(Map.of(
             "authenticated", true,
             "username", username,
+            "roles", roles,
             "authMode", mode.name(),
             "tlsEnabled", securityProperties.getTls().isEnabled(),
             "authType", authType
