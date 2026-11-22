@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, PasswordInput, MultiSelect, Switch, Alert, Loader, Tooltip, } from '@mantine/core';
-import { IconUsers, IconPlus, IconRefresh, IconEdit, IconTrash, IconAlertCircle, IconShieldCheck, IconLock, IconUser, IconMail, IconId, } from '@tabler/icons-react';
-import { getUsers, getRoles, createUser, updateUser, deleteUser } from '../api/client';
+import { IconUsers, IconPlus, IconRefresh, IconEdit, IconTrash, IconAlertCircle, IconShieldCheck, IconLock, IconUser, IconMail, IconId, IconKey, } from '@tabler/icons-react';
+import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 export const UserManagementPage = () => {
@@ -31,6 +31,11 @@ export const UserManagementPage = () => {
     const [editRoles, setEditRoles] = useState([]);
     const [editEnabled, setEditEnabled] = useState(true);
     const [editPassword, setEditPassword] = useState('');
+
+    const [resetOpen, setResetOpen] = useState(false);
+    const [resetTarget, setResetTarget] = useState(null);
+    const [resetPasswordVal, setResetPasswordVal] = useState('');
+    const [resetConfirmVal, setResetConfirmVal] = useState('');
 
     const fetchAll = async () => {
         try {
@@ -118,6 +123,44 @@ export const UserManagementPage = () => {
             await fetchAll();
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to update user');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const openResetPassword = (u) => {
+        setResetTarget(u);
+        setResetPasswordVal('');
+        setResetConfirmVal('');
+        setResetOpen(true);
+    };
+
+    const handleResetPassword = async (e) => {
+        e.preventDefault();
+        if (!resetTarget) return;
+        if (!isKeycloak) {
+            if (resetPasswordVal.length < 4) {
+                setError('New password must be at least 4 characters');
+                return;
+            }
+            if (resetPasswordVal !== resetConfirmVal) {
+                setError('Passwords do not match');
+                return;
+            }
+        }
+        try {
+            setSaving(true);
+            setError(null);
+            setSuccess(null);
+            await resetUserPassword(resetTarget.id, isKeycloak ? null : resetPasswordVal);
+            setResetOpen(false);
+            setSuccess(
+                isKeycloak
+                    ? `Password reset email triggered in Keycloak for '${resetTarget.username}'.`
+                    : `Password reset successfully for '${resetTarget.username}'.`
+            );
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to reset password');
         } finally {
             setSaving(false);
         }
@@ -240,6 +283,11 @@ export const UserManagementPage = () => {
                                             </Table.Td>
                                             <Table.Td style={{ textAlign: 'right' }}>
                                                 <Group justify="flex-end" gap="xs">
+                                                    <Tooltip label={isKeycloak ? 'Send Keycloak password reset email' : 'Reset password'}>
+                                                        <ActionIcon variant="light" color="yellow" onClick={() => openResetPassword(u)}>
+                                                            <IconKey size={16} />
+                                                        </ActionIcon>
+                                                    </Tooltip>
                                                     <Tooltip label="Edit user">
                                                         <ActionIcon variant="light" color="indigo" onClick={() => openEdit(u)}>
                                                             <IconEdit size={16} />
@@ -300,6 +348,44 @@ export const UserManagementPage = () => {
                         <Group justify="flex-end" mt="sm">
                             <Button variant="default" onClick={() => setEditOpen(false)}>Cancel</Button>
                             <Button type="submit" color="indigo" loading={saving}>Save Changes</Button>
+                        </Group>
+                    </Stack>
+                </form>
+            </Modal>
+
+            <Modal opened={resetOpen} onClose={() => setResetOpen(false)} title={`Reset Password: ${resetTarget?.username || ''}`} size="md">
+                <form onSubmit={handleResetPassword}>
+                    <Stack gap="md">
+                        {isKeycloak ? (
+                            <Text size="sm" c="dimmed">
+                                In KEYCLOAK mode, credentials are owned by Keycloak. Submitting will trigger a Keycloak
+                                password-reset email (<code>UPDATE_PASSWORD</code>) for <strong>{resetTarget?.email || resetTarget?.username}</strong>.
+                            </Text>
+                        ) : (
+                            <>
+                                <PasswordInput
+                                    label="New Password"
+                                    leftSection={<IconLock size={16} />}
+                                    value={resetPasswordVal}
+                                    onChange={(e) => setResetPasswordVal(e.currentTarget.value)}
+                                    required
+                                    minLength={4}
+                                />
+                                <PasswordInput
+                                    label="Confirm New Password"
+                                    leftSection={<IconLock size={16} />}
+                                    value={resetConfirmVal}
+                                    onChange={(e) => setResetConfirmVal(e.currentTarget.value)}
+                                    required
+                                    minLength={4}
+                                />
+                            </>
+                        )}
+                        <Group justify="flex-end" mt="sm">
+                            <Button variant="default" onClick={() => setResetOpen(false)}>Cancel</Button>
+                            <Button type="submit" color="yellow" loading={saving}>
+                                {isKeycloak ? 'Send Reset Email' : 'Reset Password'}
+                            </Button>
                         </Group>
                     </Stack>
                 </form>

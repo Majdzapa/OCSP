@@ -131,4 +131,5 @@ export const getUsers = () => api.get('/users').then((r) => r.data);
 export const getRoles = () => api.get('/roles').then((r) => r.data);
 export const createUser = (req) => api.post('/users', req).then((r) => r.data);
 export const updateUser = (id, req) => api.put(`/users/${id}`, req).then((r) => r.data);
+export const resetUserPassword = (id, newPassword) => api.post(`/users/${id}/reset-password`, newPassword ? { newPassword } : {}).then((r) => r.data);
 export const deleteUser = (id) => api.delete(`/users/${id}`).then((r) => r.data);

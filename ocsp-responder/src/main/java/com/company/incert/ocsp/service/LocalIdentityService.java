@@ -125,6 +125,9 @@ public class LocalIdentityService implements IdentityService {
         if (newPassword == null || newPassword.isBlank()) {
             throw new IllegalArgumentException("New password is required");
         }
+        if (newPassword.length() < 4 || newPassword.length() > 128) {
+            throw new IllegalArgumentException("New password must be between 4 and 128 characters");
+        }
         UserEntity user = support.findActiveById(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
