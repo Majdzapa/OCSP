@@ -71,26 +71,12 @@ class OutboxReconciliationServiceTest {
         );
         service.onOutboxManifest(objectMapper.writeValueAsString(manifest));
 
-        when(inboxRepository.findAll()).thenReturn(List.of(
-                InboxEvent.builder()
-                        .eventId("evt-1")
-                        .certificateSerial("01a2")
-                        .status("GOOD")
-                        .sequence(0L)
-                        .processingStatus("PROCESSED")
-                        .receivedAt(Instant.now())
-                        .build(),
-                InboxEvent.builder()
-                        .eventId("evt-2")
-                        .certificateSerial("02b3")
-                        .status("GOOD")
-                        .sequence(0L)
-                        .processingStatus("FAILED")
-                        .receivedAt(Instant.now())
-                        .build()
-        ));
-
-        when(statusService.findAll()).thenReturn(List.of(
+        when(inboxRepository.findEventIdsByProcessingStatus(any(), any())).thenReturn(List.of("evt-2"));
+        when(inboxRepository.countByProcessingStatus("FAILED")).thenReturn(1L);
+        when(inboxRepository.findExistingEventIds(any())).thenReturn(List.of("evt-1", "evt-2"));
+        when(inboxRepository.count()).thenReturn(2L);
+        when(statusService.countAll()).thenReturn(1L);
+        when(statusService.findBySerialNumbers(any())).thenReturn(List.of(
                 RevocationStatus.builder()
                         .serialNumber(new BigInteger("01a2", 16).toByteArray())
                         .status(CertificateStatus.GOOD)

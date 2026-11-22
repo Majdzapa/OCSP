@@ -61,6 +61,14 @@ public class CertificateStatusService {
     }
 
     @Transactional(readOnly = true)
+    public List<RevocationStatus> findBySerialNumbers(java.util.Collection<byte[]> serialNumbers) {
+        if (serialNumbers == null || serialNumbers.isEmpty()) {
+            return List.of();
+        }
+        return repository.findBySerialNumberIn(serialNumbers);
+    }
+
+    @Transactional(readOnly = true)
     public long countByStatus(CertificateStatus status) {
         return repository.countByStatus(status);
     }

@@ -14,9 +14,9 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
@@ -114,51 +114,30 @@ public class OutboxReconciliationService {
         }
     }
 
+    private static final int RECONCILE_BATCH_SIZE = 500;
+    private static final int FAILED_INBOX_SAMPLE_LIMIT = 1000;
+
     public Map<String, Object> verifyReconciliation() {
         OutboxManifestEvent manifest = latestManifestRef.get();
         if (manifest == null) {
             requestManifestViaRabbitMq();
         }
 
-        List<InboxEvent> allInboxEvents = inboxRepository.findAll();
-        List<RevocationStatus> responderCerts = statusService.findAll();
         HexFormat hex = HexFormat.of();
-
-        Map<String, RevocationStatus> responderMap = new HashMap<>();
-        for (RevocationStatus r : responderCerts) {
-            String sHex = canonicalHex(hex.formatHex(r.getSerialNumber()), hex);
-            if (!sHex.isEmpty()) {
-                responderMap.put(sHex, r);
-            }
-        }
-
-        Map<String, InboxEvent> inboxByEventId = new HashMap<>();
-        List<String> failedInInboxEventIds = new ArrayList<>();
-        Map<String, InboxEvent> latestInboxBySerial = new LinkedHashMap<>();
-
-        for (InboxEvent ev : allInboxEvents) {
-            inboxByEventId.put(ev.getEventId(), ev);
-            if ("FAILED".equalsIgnoreCase(ev.getProcessingStatus())) {
-                failedInInboxEventIds.add(ev.getEventId());
-                continue;
-            }
-            String canonicalSerial = canonicalHex(ev.getCertificateSerial(), hex);
-            if (canonicalSerial.isEmpty()) continue;
-
-            InboxEvent current = latestInboxBySerial.get(canonicalSerial);
-            if (current == null
-                    || ev.getSequence() > current.getSequence()
-                    || (ev.getSequence() == current.getSequence()
-                        && ev.getReceivedAt() != null
-                        && (current.getReceivedAt() == null || ev.getReceivedAt().isAfter(current.getReceivedAt())))) {
-                latestInboxBySerial.put(canonicalSerial, ev);
-            }
-        }
+        List<String> failedInInboxEventIds = inboxRepository.findEventIdsByProcessingStatus(
+                "FAILED", PageRequest.of(0, FAILED_INBOX_SAMPLE_LIMIT));
+        long failedInInboxTotal = inboxRepository.countByProcessingStatus("FAILED");
 
         List<String> missingInInboxEventIds = new ArrayList<>();
-        if (manifest != null && manifest.outboxEventIds() != null) {
-            for (String outboxEventId : manifest.outboxEventIds()) {
-                if (!inboxByEventId.containsKey(outboxEventId)) {
+        if (manifest != null && manifest.outboxEventIds() != null && !manifest.outboxEventIds().isEmpty()) {
+            Set<String> presentEventIds = new HashSet<>();
+            List<String> outboxIds = manifest.outboxEventIds();
+            for (int i = 0; i < outboxIds.size(); i += RECONCILE_BATCH_SIZE) {
+                List<String> chunk = outboxIds.subList(i, Math.min(i + RECONCILE_BATCH_SIZE, outboxIds.size()));
+                presentEventIds.addAll(inboxRepository.findExistingEventIds(chunk));
+            }
+            for (String outboxEventId : outboxIds) {
+                if (!presentEventIds.contains(outboxEventId)) {
                     missingInInboxEventIds.add(outboxEventId);
                 }
             }
@@ -167,11 +146,12 @@ public class OutboxReconciliationService {
         List<String> missingSerials = new ArrayList<>();
         List<Map<String, Object>> mismatches = new ArrayList<>();
         int matched = 0;
+        int fallbackSampleTotal = 0;
 
         if (manifest != null && manifest.certificates() != null) {
-            // Compare directly against the KMS Outbox manifest received via RabbitMQ
+            Map<String, RevocationStatus> responderMap = loadResponderMapForManifest(manifest.certificates(), hex);
             for (OutboxManifestEvent.CertificateDigest cert : manifest.certificates()) {
-                String serialHex = canonicalHex(cert.serialNumberHex(), hex);
+                String serialHex = canonicalHex(cert.serialNumberHex());
                 if (serialHex.isEmpty()) continue;
 
                 String expectedStatus = String.valueOf(cert.status());
@@ -194,12 +174,28 @@ public class OutboxReconciliationService {
                 }
             }
         } else {
-            // Fallback to Inbox vs Responder DB until the first RabbitMQ Outbox manifest arrives
+            // Bounded fallback to latest Inbox page vs Responder DB until the first RabbitMQ Outbox manifest arrives
+            List<InboxEvent> recentInbox = inboxRepository.findAllByOrderByReceivedAtDesc(
+                    PageRequest.of(0, RECONCILE_BATCH_SIZE)).getContent();
+            Map<String, InboxEvent> latestInboxBySerial = new LinkedHashMap<>();
+            for (InboxEvent ev : recentInbox) {
+                if ("FAILED".equalsIgnoreCase(ev.getProcessingStatus())) continue;
+                String canonicalSerial = canonicalHex(ev.getCertificateSerial());
+                if (canonicalSerial.isEmpty()) continue;
+                InboxEvent current = latestInboxBySerial.get(canonicalSerial);
+                if (current == null
+                        || ev.getSequence() > current.getSequence()
+                        || (ev.getSequence() == current.getSequence()
+                            && ev.getReceivedAt() != null
+                            && (current.getReceivedAt() == null || ev.getReceivedAt().isAfter(current.getReceivedAt())))) {
+                    latestInboxBySerial.put(canonicalSerial, ev);
+                }
+            }
+            fallbackSampleTotal = latestInboxBySerial.size();
+            Map<String, RevocationStatus> responderMap = loadResponderMapForSerialHexes(latestInboxBySerial.keySet(), hex);
             for (Map.Entry<String, InboxEvent> entry : latestInboxBySerial.entrySet()) {
                 String serialHex = entry.getKey();
-                InboxEvent latestEv = entry.getValue();
-                String expectedStatus = String.valueOf(latestEv.getStatus());
-
+                String expectedStatus = String.valueOf(entry.getValue().getStatus());
                 RevocationStatus rc = responderMap.get(serialHex);
                 if (rc == null) {
                     missingSerials.add(serialHex);
@@ -218,17 +214,17 @@ public class OutboxReconciliationService {
             }
         }
 
-        long outboxTotalEvents = manifest != null ? manifest.totalOutboxEvents() : allInboxEvents.size();
-        long outboxSentEvents = manifest != null ? manifest.sentOutboxEvents() : allInboxEvents.size();
+        long inboxCount = inboxRepository.count();
+        long responderTotal = statusService.countAll();
+        long outboxTotalEvents = manifest != null ? manifest.totalOutboxEvents() : inboxCount;
+        long outboxSentEvents = manifest != null ? manifest.sentOutboxEvents() : inboxCount;
         long outboxPendingEvents = manifest != null ? manifest.pendingOutboxEvents() : 0L;
-        int kmsTotal = manifest != null ? manifest.totalCertificates() : latestInboxBySerial.size();
-        int responderTotal = responderCerts.size();
-        long inboxCount = allInboxEvents.size();
+        int kmsTotal = manifest != null ? manifest.totalCertificates() : fallbackSampleTotal;
 
         boolean isSynchronized = missingSerials.isEmpty()
                 && mismatches.isEmpty()
                 && missingInInboxEventIds.isEmpty()
-                && failedInInboxEventIds.isEmpty()
+                && failedInInboxTotal == 0
                 && outboxPendingEvents == 0;
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -240,7 +236,7 @@ public class OutboxReconciliationService {
         result.put("outboxPendingEvents", outboxPendingEvents);
         result.put("missingInInboxCount", missingInInboxEventIds.size());
         result.put("missingInInboxEventIds", missingInInboxEventIds);
-        result.put("failedInInboxCount", failedInInboxEventIds.size());
+        result.put("failedInInboxCount", failedInInboxTotal);
         result.put("failedInInboxEventIds", failedInInboxEventIds);
         result.put("kmsTotal", kmsTotal);
         result.put("responderTotal", responderTotal);
@@ -254,7 +250,41 @@ public class OutboxReconciliationService {
         return result;
     }
 
-    private static String canonicalHex(String rawSerial, HexFormat hex) {
+    private Map<String, RevocationStatus> loadResponderMapForManifest(
+            List<OutboxManifestEvent.CertificateDigest> certificates, HexFormat hex) {
+        List<String> serialHexes = new ArrayList<>(certificates.size());
+        for (OutboxManifestEvent.CertificateDigest cert : certificates) {
+            String s = canonicalHex(cert.serialNumberHex());
+            if (!s.isEmpty()) {
+                serialHexes.add(s);
+            }
+        }
+        return loadResponderMapForSerialHexes(serialHexes, hex);
+    }
+
+    private Map<String, RevocationStatus> loadResponderMapForSerialHexes(
+            Collection<String> serialHexes, HexFormat hex) {
+        Map<String, RevocationStatus> responderMap = new HashMap<>();
+        if (serialHexes.isEmpty()) {
+            return responderMap;
+        }
+        List<byte[]> allSerialBytes = new ArrayList<>(serialHexes.size());
+        for (String s : serialHexes) {
+            allSerialBytes.add(CanonicalizeSerialHexUseCase.toCanonicalSerialBytes(s));
+        }
+        for (int i = 0; i < allSerialBytes.size(); i += RECONCILE_BATCH_SIZE) {
+            List<byte[]> chunk = allSerialBytes.subList(i, Math.min(i + RECONCILE_BATCH_SIZE, allSerialBytes.size()));
+            for (RevocationStatus r : statusService.findBySerialNumbers(chunk)) {
+                String sHex = canonicalHex(hex.formatHex(r.getSerialNumber()));
+                if (!sHex.isEmpty()) {
+                    responderMap.put(sHex, r);
+                }
+            }
+        }
+        return responderMap;
+    }
+
+    private static String canonicalHex(String rawSerial) {
         return CanonicalizeSerialHexUseCase.toCanonicalSerialHex(rawSerial);
     }
 }
