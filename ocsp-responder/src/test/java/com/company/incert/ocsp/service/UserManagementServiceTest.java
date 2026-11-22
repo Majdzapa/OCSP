@@ -74,7 +74,9 @@ class UserManagementServiceTest {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        AdminUserInitializer initializer = new AdminUserInitializer(userRepository, roleRepository, passwordEncoder, props);
+        AppAuthProperties authProps = new AppAuthProperties();
+        authProps.setMode("SELF_MANAGEMENT");
+        AdminUserInitializer initializer = new AdminUserInitializer(userRepository, roleRepository, passwordEncoder, props, authProps);
         initializer.initializeBuiltInAdmin();
 
         ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);

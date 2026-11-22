@@ -41,6 +41,7 @@ public class AdminUserInitializer {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AdminProperties adminProperties;
+    private final AppAuthProperties authProperties;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -66,7 +67,21 @@ public class AdminUserInitializer {
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN was not initialized"));
 
         userRepository.findByUsername(normalizedUsername).ifPresentOrElse(
-            existing -> log.debug("Built-in admin user '{}' already exists in users table", normalizedUsername),
+            existing -> {
+                if (!authProperties.resolvedMode().isKeycloak() && (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank())) {
+                    existing.setAuthSource(AuthSource.LOCAL);
+                    existing.setPasswordHash(passwordEncoder.encode(rawPassword));
+                    existing.setEnabled(true);
+                    existing.setDeletedAt(null);
+                    if (existing.getRoles().stream().noneMatch(r -> ROLE_ADMIN.equals(r.getName()))) {
+                        existing.getRoles().add(adminRole);
+                    }
+                    userRepository.save(existing);
+                    log.info("[SELF_MANAGEMENT] Provisioned local credentials for existing built-in admin user '{}'", normalizedUsername);
+                } else {
+                    log.debug("Built-in admin user '{}' already exists in users table", normalizedUsername);
+                }
+            },
             () -> {
                 UserEntity adminUser = UserEntity.builder()
                         .id(UUID.randomUUID().toString())
