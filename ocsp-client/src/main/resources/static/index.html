@@ -85,7 +85,7 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-    input[type="text"] {
+    input[type="text"], textarea {
       width: 100%;
       background: #080d1a;
       border: 1px solid var(--card-border);
@@ -97,7 +97,7 @@
       outline: none;
       transition: border 0.15s ease;
     }
-    input[type="text"]:focus {
+    input[type="text"]:focus, textarea:focus {
       border-color: var(--accent);
     }
     .presets {
@@ -280,6 +280,11 @@
         </div>
       </div>
 
+      <div style="margin-bottom: 16px;">
+        <label for="issuerPemInput">Issuer CA Certificate (PEM)</label>
+        <textarea id="issuerPemInput" rows="4" style="font-size: 0.78rem; resize: vertical;" placeholder="-----BEGIN CERTIFICATE-----&#10;Paste the issuing CA certificate PEM downloaded from KMS Certificate Authorities (:3001/cas)&#10;-----END CERTIFICATE-----"></textarea>
+      </div>
+
       <div class="options-box">
         <!-- Nonce switch -->
         <div class="toggle-group">
@@ -398,6 +403,19 @@
   <script>
     let currentMethod = 'POST';
 
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedPem = localStorage.getItem('ocsp_client_issuer_pem') || localStorage.getItem('ocsp_checker_issuer_pem') || '';
+      const pemEl = document.getElementById('issuerPemInput');
+      if (pemEl && savedPem) {
+        pemEl.value = savedPem;
+      }
+      if (pemEl) {
+        pemEl.addEventListener('input', () => {
+          localStorage.setItem('ocsp_client_issuer_pem', pemEl.value);
+        });
+      }
+    });
+
     function setSerial(hex) {
       document.getElementById('serialInput').value = hex;
     }
@@ -426,6 +444,7 @@
     async function sendOcspRequest() {
       const serial = document.getElementById('serialInput').value.trim();
       const responderUrl = document.getElementById('responderUrl').value.trim();
+      const issuerPem = document.getElementById('issuerPemInput').value.trim();
       const includeNonce = document.getElementById('nonceToggle').checked;
       const btn = document.getElementById('btnSend');
 
@@ -442,7 +461,8 @@
           serialHex: serial,
           responderUrl: responderUrl,
           includeNonce: includeNonce,
-          method: currentMethod
+          method: currentMethod,
+          ...(issuerPem ? { issuerPem: issuerPem } : {})
         };
 
         const res = await fetch('/api/v1/client/check', {
