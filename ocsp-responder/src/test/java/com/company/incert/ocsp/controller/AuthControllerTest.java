@@ -4,13 +4,17 @@ import com.company.incert.ocsp.config.AppAuthProperties;
 import com.company.incert.ocsp.config.AppSecurityProperties;
 import com.company.incert.ocsp.config.KeycloakProperties;
 import com.company.incert.ocsp.entity.AuthSource;
+import com.company.incert.ocsp.security.AuthenticationService;
 import com.company.incert.ocsp.security.InternalPrincipal;
 import com.company.incert.ocsp.security.InternalUserDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -56,7 +60,11 @@ class AuthControllerTest {
             throw new UsernameNotFoundException("Not found: " + username);
         };
 
-        return new AuthController(authProps, security, keycloak, uds, encoder);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(uds);
+        provider.setPasswordEncoder(encoder);
+        AuthenticationManager authManager = new ProviderManager(provider);
+
+        return new AuthController(new AuthenticationService(authProps, security, keycloak, authManager));
     }
 
     @Test
