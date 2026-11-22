@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.controller;
 
+import com.company.incert.ocsp.config.AppSecurityProperties;
+import com.company.incert.ocsp.config.RabbitMqTlsProperties;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.service.CertificateStatusService;
 import com.company.incert.ocsp.signing.OcspSigner;
@@ -8,7 +10,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Map;
 
@@ -25,10 +26,12 @@ class AdminDashboardControllerTest {
     void setUp() {
         statusService = mock(CertificateStatusService.class);
         ocspSigner = mock(OcspSigner.class);
-        controller = new AdminDashboardController(statusService, ocspSigner, new SimpleMeterRegistry());
-
-        ReflectionTestUtils.setField(controller, "tlsEnabled", true);
-        ReflectionTestUtils.setField(controller, "ocspLoginTlsEnabled", true);
+        RabbitMqTlsProperties rabbitMqTls = new RabbitMqTlsProperties();
+        rabbitMqTls.setEnabled(true);
+        AppSecurityProperties securityProperties = new AppSecurityProperties();
+        securityProperties.getTls().setEnabled(true);
+        controller = new AdminDashboardController(statusService, ocspSigner, new SimpleMeterRegistry(),
+                rabbitMqTls, securityProperties);
     }
 
     @Test

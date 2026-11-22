@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.OcspRabbitMqProperties;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.entity.InboxEvent;
 import com.company.incert.ocsp.entity.RevocationStatus;
@@ -45,7 +46,8 @@ class OutboxReconciliationServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        service = new OutboxReconciliationService(inboxRepository, statusService, rabbitTemplate, objectMapper);
+        service = new OutboxReconciliationService(inboxRepository, statusService, rabbitTemplate, objectMapper,
+                new OcspRabbitMqProperties());
     }
 
     @Test

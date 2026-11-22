@@ -3,10 +3,12 @@ package com.company.incert.ocsp.client;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 import java.security.Security;
 
 @SpringBootApplication
+@ConfigurationPropertiesScan("com.company.incert.ocsp.client.config")
 public class OcspClientApplication {
 
     static {

@@ -1,10 +1,12 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.OcspRabbitMqProperties;
 import com.company.incert.ocsp.entity.InboxEvent;
 import com.company.incert.ocsp.entity.RevocationStatus;
 import com.company.incert.ocsp.messaging.OutboxManifestEvent;
 import com.company.incert.ocsp.messaging.ReconciliationCommandMessage;
 import com.company.incert.ocsp.repository.InboxEventRepository;
+import com.company.incert.ocsp.usecase.CanonicalizeSerialHexUseCase;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +14,6 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigInteger;
@@ -39,16 +40,11 @@ public class OutboxReconciliationService {
     private final CertificateStatusService statusService;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
-
-    @Value("${ocsp.rabbitmq.exchange:incert.certificate.status}")
-    private String exchange;
-
-    @Value("${ocsp.rabbitmq.reconciliation-request-routing-key:incert.reconciliation.request.v1}")
-    private String requestRoutingKey;
+    private final OcspRabbitMqProperties rabbitProperties;
 
     private final AtomicReference<OutboxManifestEvent> latestManifestRef = new AtomicReference<>();
 
-    @RabbitListener(queues = "${ocsp.rabbitmq.reconciliation-manifest-queue:ocsp.reconciliation.manifest}")
+    @RabbitListener(queues = "${ocsp.rabbitmq.reconciliation-manifest-queue}")
     public void onOutboxManifest(String payload) {
         try {
             OutboxManifestEvent manifest = objectMapper.readValue(payload, OutboxManifestEvent.class);
@@ -111,7 +107,8 @@ public class OutboxReconciliationService {
             props.setContentType(MessageProperties.CONTENT_TYPE_JSON);
             props.setContentEncoding(StandardCharsets.UTF_8.name());
             props.setMessageId(UUID.randomUUID().toString());
-            rabbitTemplate.send(exchange, requestRoutingKey, new Message(json.getBytes(StandardCharsets.UTF_8), props));
+            rabbitTemplate.send(rabbitProperties.getExchange(), rabbitProperties.getReconciliationRequestRoutingKey(),
+                    new Message(json.getBytes(StandardCharsets.UTF_8), props));
         } catch (Exception e) {
             log.warn("Could not publish reconciliation command {} to RabbitMQ: {}", cmd.command(), e.getMessage());
         }
@@ -258,11 +255,7 @@ public class OutboxReconciliationService {
     }
 
     private static String canonicalHex(String rawSerial, HexFormat hex) {
-        if (rawSerial == null) return "";
-        String clean = rawSerial.toLowerCase().replaceAll("[^0-9a-f]", "");
-        if (clean.isEmpty()) return "";
-        if (clean.length() % 2 != 0) clean = "0" + clean;
-        return hex.formatHex(new BigInteger(1, hex.parseHex(clean)).toByteArray()).toLowerCase();
+        return CanonicalizeSerialHexUseCase.toCanonicalSerialHex(rawSerial);
     }
 }
 

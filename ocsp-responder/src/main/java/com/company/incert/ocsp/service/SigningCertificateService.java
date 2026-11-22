@@ -10,6 +10,7 @@ import com.company.incert.ocsp.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.OcspSigner;
 import com.company.incert.ocsp.signing.Pkcs11OcspSigner;
 import com.company.incert.ocsp.signing.SigningAlgorithm;
+import com.company.incert.ocsp.usecase.FindSigningCertificateUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -41,6 +42,12 @@ public class SigningCertificateService {
     private final SigningCertificateRepository repository;
     private final OcspSigner ocspSigner;
     private final ApplicationEventPublisher eventPublisher;
+    private final FindSigningCertificateUseCase findSigningCertificate;
+
+    /** Publishes a "no active signer / just resync with the HSM" event (repeated across flows). */
+    private void publishSignerStateRefresh() {
+        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+    }
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -122,14 +129,13 @@ public class SigningCertificateService {
             return activate(saved.getId());
         }
 
-        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+        publishSignerStateRefresh();
         return toDto(saved);
     }
 
     @Transactional
     public SigningCertificateDto activate(Long id) {
-        SigningCertificate target = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Signing certificate not found with id: " + id));
+        SigningCertificate target = findSigningCertificate.execute(id);
 
         if (Instant.now().isAfter(target.getNotAfter())) {
             throw new IllegalStateException("Cannot activate an expired certificate (expired at: " + target.getNotAfter() + ")");
@@ -158,8 +164,7 @@ public class SigningCertificateService {
 
     @Transactional
     public SigningCertificateDto deactivate(Long id) {
-        SigningCertificate target = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Signing certificate not found with id: " + id));
+        SigningCertificate target = findSigningCertificate.execute(id);
 
         if (!target.isActive()) {
             return toDto(target);
@@ -181,7 +186,7 @@ public class SigningCertificateService {
                     fallback.getSignatureAlgorithm(),
                     true));
         } else {
-            eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+            publishSignerStateRefresh();
         }
 
         log.info("Deactivated signing certificate: id={}, alias='{}'", updated.getId(), updated.getAlias());
@@ -190,15 +195,14 @@ public class SigningCertificateService {
 
     @Transactional
     public void delete(Long id) {
-        SigningCertificate cert = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Signing certificate not found with id: " + id));
+        SigningCertificate cert = findSigningCertificate.execute(id);
 
         if (cert.isActive()) {
             throw new IllegalStateException("Cannot delete the currently active signing certificate. Please activate another certificate first.");
         }
 
         repository.delete(cert);
-        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+        publishSignerStateRefresh();
         log.info("Deleted inactive signing certificate: id={}, alias='{}'", id, cert.getAlias());
     }
 

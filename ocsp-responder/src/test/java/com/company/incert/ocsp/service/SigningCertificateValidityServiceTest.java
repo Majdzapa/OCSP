@@ -1,10 +1,12 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.ScheduledJobsProperties;
 import com.company.incert.ocsp.dto.GenerateCsrRequest;
 import com.company.incert.ocsp.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.dto.SigningCertValidityReportDto;
 import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
+import com.company.incert.ocsp.usecase.FindSigningCertificateUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +37,8 @@ class SigningCertificateValidityServiceTest {
 
     @BeforeEach
     void setUp() {
-        validityService = new SigningCertificateValidityService(repository, signingCertificateService);
+        validityService = new SigningCertificateValidityService(repository, signingCertificateService,
+                new FindSigningCertificateUseCase(repository), new ScheduledJobsProperties());
     }
 
     @Test

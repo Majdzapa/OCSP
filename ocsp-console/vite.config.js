@@ -21,7 +21,9 @@ import react from '@vitejs/plugin-react'
  * local development only.  Never use this in production.
  */
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({ include: /\.(js|jsx)$/ })],
+  esbuild: { loader: 'jsx', include: /src\/.*\.jsx?$/, exclude: [] },
+  optimizeDeps: { esbuildOptions: { loader: { '.js': 'jsx' } } },
   server: {
     port: 5173,
     proxy: {

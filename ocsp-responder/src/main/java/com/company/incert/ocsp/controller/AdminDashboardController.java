@@ -1,6 +1,8 @@
 package com.company.incert.ocsp.controller;
 
+import com.company.incert.ocsp.config.AppSecurityProperties;
 import com.company.incert.ocsp.config.OpenApiConfig;
+import com.company.incert.ocsp.config.RabbitMqTlsProperties;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.service.CertificateStatusService;
 import com.company.incert.ocsp.signing.OcspSigner;
@@ -12,7 +14,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,16 +32,12 @@ public class AdminDashboardController {
     private final CertificateStatusService statusService;
     private final OcspSigner ocspSigner;
     private final MeterRegistry meterRegistry;
+    private final RabbitMqTlsProperties rabbitMqTls;
+    private final AppSecurityProperties securityProperties;
 
     private final AtomicLong lastTimerCount = new AtomicLong(0);
     private final AtomicLong lastSampleNanos = new AtomicLong(System.nanoTime());
     private volatile double lastRollingRps = 0.0;
-
-    @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
-    private boolean tlsEnabled;
-
-    @Value("${security.tls.enabled:${auth.tls.enabled:${tls.enabled:true}}}")
-    private boolean ocspLoginTlsEnabled;
 
     @Operation(summary = "Get admin dashboard statistics",
                description = "Retrieves live counts of good/revoked certificates, signing key expiry, and real-time Micrometer metrics")
@@ -69,9 +66,9 @@ public class AdminDashboardController {
             Map.entry("signingCertDaysUntilExpiry", signingCertDaysLeft),
             Map.entry("cachingEnabled", false),
             Map.entry("architecture", "Decoupled OCSP Responder"),
-            Map.entry("tlsEnabled", tlsEnabled),
-            Map.entry("ocspLoginTlsEnabled", ocspLoginTlsEnabled),
-            Map.entry("messagingBroker", tlsEnabled ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
+            Map.entry("tlsEnabled", rabbitMqTls.isEnabled()),
+            Map.entry("ocspLoginTlsEnabled", securityProperties.getTls().isEnabled()),
+            Map.entry("messagingBroker", rabbitMqTls.isEnabled() ? "RabbitMQ (AMQPS / Strict mTLS)" : "RabbitMQ (Plaintext)"),
             Map.entry("avgSigningLatencyMs", avgLatencyMs),
             Map.entry("requestsPerSecond", requestsPerSecond),
             Map.entry("totalRequests", totalRequests),

@@ -315,7 +315,7 @@ flowchart TD
 
 ### How It Works Step-by-Step
 1. **Daily Scheduled Execution (`Job J4`)**:
-   - `SigningCertificateValidityService.runDailyValidityCheck()` runs automatically every day at **00:00 UTC** (`@Scheduled(cron = "${ocsp.signing-cert.validity-cron:0 0 0 * * *}")`), once on application startup (`ApplicationReadyEvent`), and on demand via `POST /api/v1/admin/signing-certificates/validity/check`.
+   - `SigningCertificateValidityService.runDailyValidityCheck()` runs automatically every day at **00:00 UTC** (`@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron:0 0 0 * * *}")`), once on application startup (`ApplicationReadyEvent`), and on demand via `POST /api/v1/admin/signing-certificates/validity/check`.
 2. **3-Day Expiry Evaluation & Alert Generation**:
    - Reads all rows from `ocsp.signing_certificates`.
    - For each certificate, calculates `Duration.between(now, cert.getNotAfter())`:

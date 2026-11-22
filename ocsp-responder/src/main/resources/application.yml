@@ -112,13 +112,21 @@ ocsp:
     routing-key: ${OCSP_RABBITMQ_ROUTING_KEY:incert.certificate.status.v1}
     dead-letter-exchange: ${OCSP_RABBITMQ_DLX:incert.certificate.status.dlx}
     dead-letter-queue: ${OCSP_RABBITMQ_DLQ:ocsp.certificate.status.dlq}
+    # Outbox <-> Inbox reconciliation (pure RabbitMQ, no REST call to KMS)
+    reconciliation-manifest-queue: ${OCSP_RABBITMQ_RECONCILIATION_MANIFEST_QUEUE:ocsp.reconciliation.manifest}
+    reconciliation-manifest-routing-key: ${OCSP_RABBITMQ_RECONCILIATION_MANIFEST_ROUTING_KEY:incert.reconciliation.manifest.v1}
+    reconciliation-request-queue: ${OCSP_RABBITMQ_RECONCILIATION_REQUEST_QUEUE:kms.reconciliation.request}
+    reconciliation-request-routing-key: ${OCSP_RABBITMQ_RECONCILIATION_REQUEST_ROUTING_KEY:incert.reconciliation.request.v1}
   responder:
     next-update-window: ${OCSP_NEXT_UPDATE_WINDOW:PT24H}
   client:
     default-responder-url: http://${OCSP_RESPONDER_HOST:localhost}:${OCSP_RESPONDER_PORT:8080}/ocsp
-  reconciliation:
-    enabled: ${RECONCILIATION_ENABLED:true}
-    cron: "${RECONCILIATION_CRON:0 0/15 * * * *}"
+  # All scheduled jobs of the responder (bound by config/ScheduledJobsProperties)
+  jobs:
+    signing-cert-validity:
+      enabled: ${OCSP_JOB_SIGNING_CERT_VALIDITY_ENABLED:true}
+      cron: "${OCSP_JOB_SIGNING_CERT_VALIDITY_CRON:0 0 0 * * *}" # every day at 00:00
+      alert-threshold-days: ${OCSP_JOB_SIGNING_CERT_ALERT_THRESHOLD_DAYS:3}
 
 hsm:
   enabled: ${HSM_ENABLED:true}

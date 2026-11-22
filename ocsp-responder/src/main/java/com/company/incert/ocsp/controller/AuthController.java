@@ -1,6 +1,9 @@
 package com.company.incert.ocsp.controller;
 
+import com.company.incert.ocsp.config.AdminProperties;
+import com.company.incert.ocsp.config.AppSecurityProperties;
 import com.company.incert.ocsp.config.AuthenticationMode;
+import com.company.incert.ocsp.config.KeycloakProperties;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -8,7 +11,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -32,33 +34,17 @@ import java.util.Map;
 @Tag(name = "Authentication", description = "Admin authentication and session verification endpoints")
 public class AuthController {
 
-    private final String authModeStr;
-    private final boolean tlsEnabled;
-    private final String adminUsername;
-    private final String adminPassword;
-    private final String adminApiKey;
-    private final String keycloakAuthServerUrl;
-    private final String keycloakRealm;
-    private final String keycloakClientId;
+    private final AppSecurityProperties securityProperties;
+    private final AdminProperties adminProperties;
+    private final KeycloakProperties keycloakProperties;
 
     @Autowired
-    public AuthController(
-            @Value("${security.auth-mode:${auth.mode:SELF_MANAGED}}") String authModeStr,
-            @Value("${security.tls.enabled:${auth.tls.enabled:${tls.enabled:true}}}") boolean tlsEnabled,
-            @Value("${admin.username:admin}") String adminUsername,
-            @Value("${admin.password:changeme}") String adminPassword,
-            @Value("${admin.api-key:incert-admin-secret-key}") String adminApiKey,
-            @Value("${keycloak.public-url:${keycloak.auth-server-url:http://localhost:8081}}") String keycloakAuthServerUrl,
-            @Value("${keycloak.realm:incert}") String keycloakRealm,
-            @Value("${keycloak.client-id:ocsp-console}") String keycloakClientId) {
-        this.authModeStr = authModeStr;
-        this.tlsEnabled = tlsEnabled;
-        this.adminUsername = adminUsername;
-        this.adminPassword = adminPassword;
-        this.adminApiKey = adminApiKey;
-        this.keycloakAuthServerUrl = keycloakAuthServerUrl;
-        this.keycloakRealm = keycloakRealm;
-        this.keycloakClientId = keycloakClientId;
+    public AuthController(AppSecurityProperties securityProperties,
+                          AdminProperties adminProperties,
+                          KeycloakProperties keycloakProperties) {
+        this.securityProperties = securityProperties;
+        this.adminProperties = adminProperties;
+        this.keycloakProperties = keycloakProperties;
     }
 
     @Schema(description = "Credentials payload for login (supports username/password or API key)")
@@ -76,15 +62,15 @@ public class AuthController {
                description = "Returns auth mode, TLS status, and Keycloak coordinates. No secrets included.")
     @GetMapping("/api/v1/auth/config")
     public ResponseEntity<Map<String, Object>> getConfig() {
-        AuthenticationMode mode = AuthenticationMode.fromString(authModeStr);
+        AuthenticationMode mode = securityProperties.authenticationMode();
         Map<String, Object> body = Map.of(
             "authMode", mode.name(),
             "isKeycloak", mode.isKeycloak(),
-            "tlsEnabled", tlsEnabled,
+            "tlsEnabled", securityProperties.getTls().isEnabled(),
             "keycloak", Map.of(
-                "authServerUrl", keycloakAuthServerUrl,
-                "realm", keycloakRealm,
-                "clientId", keycloakClientId
+                "authServerUrl", keycloakProperties.effectivePublicUrl(),
+                "realm", keycloakProperties.getRealm(),
+                "clientId", keycloakProperties.getClientId()
             )
         );
         return ResponseEntity.ok(body);
@@ -98,7 +84,7 @@ public class AuthController {
     })
     @GetMapping("/api/v1/auth/me")
     public ResponseEntity<Map<String, Object>> me(Authentication auth) {
-        AuthenticationMode mode = AuthenticationMode.fromString(authModeStr);
+        AuthenticationMode mode = securityProperties.authenticationMode();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                 "authenticated", false,
@@ -111,7 +97,7 @@ public class AuthController {
             "username", auth.getName(),
             "roles", auth.getAuthorities(),
             "authMode", mode.name(),
-            "tlsEnabled", tlsEnabled
+            "tlsEnabled", securityProperties.getTls().isEnabled()
         ));
     }
 
@@ -127,7 +113,7 @@ public class AuthController {
             @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Login credentials", required = false)
             @RequestBody(required = false) LoginPayload payload) {
 
-        AuthenticationMode mode = AuthenticationMode.fromString(authModeStr);
+        AuthenticationMode mode = securityProperties.authenticationMode();
 
         // 1. Already authenticated by Spring Security (HttpBasic / ApiKeyFilter / JWT Bearer)
         if (isAuthenticated(auth)) {
@@ -140,7 +126,7 @@ public class AuthController {
                 return ok(mode, "api-key-admin", "API_KEY");
             }
             if (!mode.isKeycloak() && isValidBasic(payload.username(), payload.password())) {
-                return ok(mode, adminUsername, "BASIC");
+                return ok(mode, adminProperties.getUsername(), "BASIC");
             }
         }
 
@@ -169,14 +155,14 @@ public class AuthController {
         if (provided == null || provided.isBlank()) return false;
         return MessageDigest.isEqual(
             provided.trim().getBytes(),
-            adminApiKey.getBytes()
+            adminProperties.getApiKey().getBytes()
         );
     }
 
     private boolean isValidBasic(String username, String password) {
         return username != null && password != null
-            && adminUsername.equals(username.trim())
-            && adminPassword.equals(password);
+            && adminProperties.getUsername().equals(username.trim())
+            && adminProperties.getPassword().equals(password);
     }
 
     private ResponseEntity<Map<String, Object>> ok(AuthenticationMode mode, String username, String authType) {
@@ -184,7 +170,7 @@ public class AuthController {
             "authenticated", true,
             "username", username,
             "authMode", mode.name(),
-            "tlsEnabled", tlsEnabled,
+            "tlsEnabled", securityProperties.getTls().isEnabled(),
             "authType", authType
         ));
     }

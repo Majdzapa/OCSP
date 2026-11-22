@@ -1,7 +1,7 @@
 package com.company.incert.ocsp.config;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -31,40 +31,26 @@ import java.util.List;
  *   <li><b>SELF_MANAGED</b> (default): HTTP Basic Auth (admin / changeme) and API Key (X-API-KEY).</li>
  *   <li><b>KEYCLOCK</b>: OAuth2 / OpenID Connect Resource Server validating Keycloak JWT Bearer tokens.</li>
  * </ul>
- * Configured via {@code security.auth-mode} or {@code auth.mode}.
+ * Configured via {@code security.auth-mode} (see {@link AppSecurityProperties}).
  */
 @Slf4j
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Value("${security.auth-mode:${auth.mode:SELF_MANAGED}}")
-    private String authModeStr;
-
-    @Value("${admin.username:admin}")
-    private String adminUsername;
-
-    @Value("${admin.password:changeme}")
-    private String adminPassword;
-
-    @Value("${admin.api-key:incert-admin-secret-key}")
-    private String adminApiKey;
-
-    @Value("${keycloak.jwk-set-uri:${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:8081/realms/incert/protocol/openid-connect/certs}}")
-    private String keycloakJwkSetUri;
+    private final AppSecurityProperties securityProperties;
+    private final AdminProperties adminProperties;
+    private final KeycloakProperties keycloakProperties;
 
     public AuthenticationMode getAuthenticationMode() {
-        return AuthenticationMode.fromString(authModeStr);
+        return securityProperties.authenticationMode();
     }
-
-    @Value("${security.cors.allowed-origins:http://localhost:3002,http://localhost:3000,http://localhost:5173}")
-    private String allowedOriginsRaw;
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        List<String> origins = List.of(allowedOriginsRaw.split(","));
-        config.setAllowedOrigins(origins);
+        config.setAllowedOrigins(securityProperties.getCors().getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -81,16 +67,17 @@ public class SecurityConfig {
     @Bean
     public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
         UserDetails admin = User.builder()
-                .username(adminUsername)
-                .password(passwordEncoder.encode(adminPassword))
+                .username(adminProperties.getUsername())
+                .password(passwordEncoder.encode(adminProperties.getPassword()))
                 .roles("ADMIN")
                 .build();
         return new InMemoryUserDetailsManager(admin);
     }
 
     public JwtDecoder jwtDecoder() {
-        log.info("Initializing NimbusJwtDecoder for Keycloak with JWKS URI: {}", keycloakJwkSetUri);
-        return NimbusJwtDecoder.withJwkSetUri(keycloakJwkSetUri).build();
+        String jwkSetUri = keycloakProperties.effectiveJwkSetUri();
+        log.info("Initializing NimbusJwtDecoder for Keycloak with JWKS URI: {}", jwkSetUri);
+        return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
     }
 
     @Bean
@@ -101,7 +88,7 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
-            .addFilterBefore(new ApiKeyAuthFilter(adminApiKey), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new ApiKeyAuthFilter(adminProperties.getApiKey()), UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 // Allow CORS pre-flight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

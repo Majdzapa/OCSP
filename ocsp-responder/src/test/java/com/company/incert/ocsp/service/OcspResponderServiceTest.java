@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.OcspResponderProperties;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.entity.RevocationReason;
 import com.company.incert.ocsp.entity.RevocationStatus;
@@ -89,7 +90,7 @@ class OcspResponderServiceTest {
             new X509CertificateHolder[]{caCertHolder},
             Instant.now().plus(30, ChronoUnit.DAYS)
         );
-        service = new OcspResponderService(statusService, signer, meterRegistry, Duration.ofHours(24));
+        service = new OcspResponderService(statusService, signer, meterRegistry, responderProperties());
     }
 
     @Test
@@ -201,7 +202,7 @@ class OcspResponderServiceTest {
         OcspSigner unconfigured = org.mockito.Mockito.mock(OcspSigner.class);
         when(unconfigured.selectSigner(any())).thenThrow(new SignerNotConfiguredException("no active signing certificate"));
         OcspResponderService noSignerService =
-                new OcspResponderService(statusService, unconfigured, meterRegistry, Duration.ofHours(24));
+                new OcspResponderService(statusService, unconfigured, meterRegistry, responderProperties());
 
         DigestCalculatorProvider digCalcProv = new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
         CertificateID certId = new CertificateID(digCalcProv.get(CertificateID.HASH_SHA1), caCertHolder, BigInteger.valueOf(4242));
@@ -214,5 +215,10 @@ class OcspResponderServiceTest {
         assertThat(meterRegistry.counter("ocsp.request.error", "reason", "no_signer").count()).isEqualTo(1.0);
     }
 
-}
 
+    private static OcspResponderProperties responderProperties() {
+        OcspResponderProperties properties = new OcspResponderProperties();
+        properties.setNextUpdateWindow(Duration.ofHours(24));
+        return properties;
+    }
+}

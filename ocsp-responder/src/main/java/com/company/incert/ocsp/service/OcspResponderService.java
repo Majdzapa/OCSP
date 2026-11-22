@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.OcspResponderProperties;
 import com.company.incert.ocsp.entity.CertificateStatus;
 import com.company.incert.ocsp.entity.RevocationReason;
 import com.company.incert.ocsp.entity.RevocationStatus;
@@ -14,7 +15,6 @@ import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.ocsp.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -50,11 +50,11 @@ public class OcspResponderService {
             CertificateStatusService statusService,
             OcspSigner signer,
             MeterRegistry meterRegistry,
-            @Value("${ocsp.responder.next-update-window:PT1H}") Duration nextUpdateWindow) {
+            OcspResponderProperties properties) {
         this.statusService = statusService;
         this.signer = signer;
         this.meterRegistry = meterRegistry;
-        this.nextUpdateWindow = nextUpdateWindow;
+        this.nextUpdateWindow = properties.getNextUpdateWindow();
     }
 
     /** Handles a DER-encoded OCSPRequest and always returns a DER-encoded OCSPResponse. */

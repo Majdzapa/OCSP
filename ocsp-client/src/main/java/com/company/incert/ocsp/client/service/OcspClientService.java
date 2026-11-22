@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.client.service;
 
+import com.company.incert.ocsp.client.config.OcspClientProperties;
 import com.company.incert.ocsp.client.dto.OcspCheckRequest;
 import com.company.incert.ocsp.client.dto.OcspCheckResult;
 import com.company.incert.ocsp.client.dto.OcspCheckResult.Check;
@@ -20,7 +21,6 @@ import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.DigestCalculatorProvider;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
@@ -58,11 +58,10 @@ public class OcspClientService {
 
     public OcspClientService(
             RestClient.Builder restClientBuilder,
-            @Value("${ocsp.client.default-responder-url:http://localhost:8080/ocsp}") String defaultResponderUrl,
-            @Value("${PKI_DIR:./data/pki}") String pkiDir) {
+            OcspClientProperties properties) {
         this.restClient = restClientBuilder.build();
-        this.defaultResponderUrl = defaultResponderUrl;
-        this.pkiDir = pkiDir;
+        this.defaultResponderUrl = properties.getDefaultResponderUrl();
+        this.pkiDir = properties.getPkiDir();
     }
 
     @EventListener(ApplicationReadyEvent.class)

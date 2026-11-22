@@ -5,6 +5,7 @@ import com.company.incert.ocsp.dto.GenerateCsrRequest;
 import com.company.incert.ocsp.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.dto.HsmInfoDto;
 import com.company.incert.ocsp.dto.SigningCertificateDto;
+import com.company.incert.ocsp.usecase.FindSigningCertificateUseCase;
 import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.OcspSigner;
@@ -55,7 +56,8 @@ class SigningCertificateServiceTest {
                     if (event instanceof SigningCertificateService.SigningConfigurationChangedEvent e) {
                         service.onSigningConfigurationChanged(e);
                     }
-                }
+                },
+                new FindSigningCertificateUseCase(repository)
         );
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");

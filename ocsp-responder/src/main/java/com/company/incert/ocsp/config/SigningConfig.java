@@ -3,6 +3,7 @@ package com.company.incert.ocsp.config;
 import com.company.incert.ocsp.signing.OcspSigner;
 import com.company.incert.ocsp.signing.Pkcs11OcspSigner;
 import com.company.incert.ocsp.signing.SoftwareKeyOcspSigner;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
@@ -15,7 +16,6 @@ import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,6 +36,7 @@ import java.util.Date;
  */
 @Slf4j
 @Configuration
+@RequiredArgsConstructor
 public class SigningConfig {
 
     static {
@@ -44,33 +45,18 @@ public class SigningConfig {
         }
     }
 
-    @Value("${hsm.pkcs11-library:}")
-    private String pkcs11Library;
-
-    @Value("${hsm.token-label:ocsp-signing}")
-    private String tokenLabel;
-
-    @Value("${hsm.pin:1234}")
-    private String pin;
-
-    @Value("${hsm.key-label:ocsp-signing-key}")
-    private String keyLabel;
-
-    @Value("${hsm.slot-index:0}")
-    private int slotIndex;
-
-    @Value("${hsm.config-path:}")
-    private String configPath;
+    private final HsmProperties hsm;
 
     @Bean
     @ConditionalOnProperty(name = "hsm.enabled", havingValue = "true", matchIfMissing = true)
     public OcspSigner pkcs11OcspSigner() {
         log.info("Connecting to HSM via PKCS#11: library={}, token={}, keyLabel={}, slotIndex={}",
-                pkcs11Library, tokenLabel, keyLabel, slotIndex);
+                hsm.getPkcs11Library(), hsm.getTokenLabel(), hsm.getKeyLabel(), hsm.getSlotIndex());
         // Hard failure: if HSM is enabled and unreachable, the service must NOT start.
         // A silent software-key fallback in production would sign responses with
         // an in-memory key whose private material is not HSM-protected — a security violation.
-        return new Pkcs11OcspSigner(pkcs11Library, tokenLabel, pin, keyLabel, slotIndex, configPath);
+        return new Pkcs11OcspSigner(hsm.getPkcs11Library(), hsm.getTokenLabel(), hsm.getPin(),
+                hsm.getKeyLabel(), hsm.getSlotIndex(), hsm.getConfigPath());
     }
 
     @Bean

@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.client.service;
 
+import com.company.incert.ocsp.client.config.OcspClientProperties;
 import com.company.incert.ocsp.client.dto.OcspCheckRequest;
 import com.company.incert.ocsp.client.dto.OcspCheckResult;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -64,10 +65,13 @@ class OcspClientServiceTest {
         restClientBuilder = RestClient.builder();
         mockServer = MockRestServiceServer.bindTo(restClientBuilder).build();
 
+        OcspClientProperties clientProperties = new OcspClientProperties();
+        clientProperties.setDefaultResponderUrl("http://localhost:8080/ocsp");
+        clientProperties.setPkiDir("./target/test-pki");
+
         clientService = new OcspClientService(
                 restClientBuilder,
-                "http://localhost:8080/ocsp",
-                "./target/test-pki"
+                clientProperties
         );
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");

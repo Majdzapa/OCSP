@@ -8,6 +8,7 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.ExchangeBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.amqp.autoconfigure.ConnectionFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -32,102 +33,76 @@ import org.springframework.context.annotation.Configuration;
  */
 @Slf4j
 @Configuration
+@RequiredArgsConstructor
 public class RabbitMqConfig {
 
-    @Value("${rabbitmq.tls.enabled:${spring.rabbitmq.ssl.enabled:true}}")
-    private boolean tlsEnabled;
+    private final OcspRabbitMqProperties rabbit;
+    private final RabbitMqTlsProperties tls;
 
     @Value("${spring.rabbitmq.port:5671}")
     private int configuredPort;
 
-    @Value("${ocsp.rabbitmq.exchange}")
-    private String exchange;
-
-    @Value("${ocsp.rabbitmq.queue}")
-    private String queue;
-
-    @Value("${ocsp.rabbitmq.routing-key}")
-    private String routingKey;
-
-    @Value("${ocsp.rabbitmq.dead-letter-exchange}")
-    private String deadLetterExchange;
-
-    @Value("${ocsp.rabbitmq.dead-letter-queue}")
-    private String deadLetterQueue;
-
-    @Value("${ocsp.rabbitmq.reconciliation-manifest-queue:ocsp.reconciliation.manifest}")
-    private String reconciliationManifestQueue;
-
-    @Value("${ocsp.rabbitmq.reconciliation-manifest-routing-key:incert.reconciliation.manifest.v1}")
-    private String reconciliationManifestRoutingKey;
-
-    @Value("${ocsp.rabbitmq.reconciliation-request-queue:kms.reconciliation.request}")
-    private String reconciliationRequestQueue;
-
-    @Value("${ocsp.rabbitmq.reconciliation-request-routing-key:incert.reconciliation.request.v1}")
-    private String reconciliationRequestRoutingKey;
-
     @Bean
     public DirectExchange certificateStatusExchange() {
-        return ExchangeBuilder.directExchange(exchange).durable(true).build();
+        return ExchangeBuilder.directExchange(rabbit.getExchange()).durable(true).build();
     }
 
     @Bean
     public Queue certificateStatusQueue() {
-        return QueueBuilder.durable(queue)
-            .withArgument("x-dead-letter-exchange", deadLetterExchange)
-            .withArgument("x-dead-letter-routing-key", deadLetterQueue)
+        return QueueBuilder.durable(rabbit.getQueue())
+            .withArgument("x-dead-letter-exchange", rabbit.getDeadLetterExchange())
+            .withArgument("x-dead-letter-routing-key", rabbit.getDeadLetterQueue())
             .build();
     }
 
     @Bean
     public Binding certificateStatusBinding() {
-        return BindingBuilder.bind(certificateStatusQueue()).to(certificateStatusExchange()).with(routingKey);
+        return BindingBuilder.bind(certificateStatusQueue()).to(certificateStatusExchange()).with(rabbit.getRoutingKey());
     }
 
     @Bean
     public DirectExchange certificateStatusDeadLetterExchange() {
-        return ExchangeBuilder.directExchange(deadLetterExchange).durable(true).build();
+        return ExchangeBuilder.directExchange(rabbit.getDeadLetterExchange()).durable(true).build();
     }
 
     @Bean
     public Queue certificateStatusDeadLetterQueue() {
-        return QueueBuilder.durable(deadLetterQueue).build();
+        return QueueBuilder.durable(rabbit.getDeadLetterQueue()).build();
     }
 
     @Bean
     public Binding certificateStatusDeadLetterBinding() {
         return BindingBuilder.bind(certificateStatusDeadLetterQueue())
-            .to(certificateStatusDeadLetterExchange()).with(deadLetterQueue);
+            .to(certificateStatusDeadLetterExchange()).with(rabbit.getDeadLetterQueue());
     }
 
     @Bean
     public Queue reconciliationManifestQueue() {
-        return QueueBuilder.durable(reconciliationManifestQueue).build();
+        return QueueBuilder.durable(rabbit.getReconciliationManifestQueue()).build();
     }
 
     @Bean
     public Binding reconciliationManifestBinding() {
         return BindingBuilder.bind(reconciliationManifestQueue())
-            .to(certificateStatusExchange()).with(reconciliationManifestRoutingKey);
+            .to(certificateStatusExchange()).with(rabbit.getReconciliationManifestRoutingKey());
     }
 
     @Bean
     public Queue reconciliationRequestQueue() {
-        return QueueBuilder.durable(reconciliationRequestQueue).build();
+        return QueueBuilder.durable(rabbit.getReconciliationRequestQueue()).build();
     }
 
     @Bean
     public Binding reconciliationRequestBinding() {
         return BindingBuilder.bind(reconciliationRequestQueue())
-            .to(certificateStatusExchange()).with(reconciliationRequestRoutingKey);
+            .to(certificateStatusExchange()).with(rabbit.getReconciliationRequestRoutingKey());
     }
 
     @Bean
     public ConnectionFactoryCustomizer rabbitMqTlsPortCustomizer() {
         return (ConnectionFactory factory) -> {
-            log.info("RabbitMQ Config: tlsEnabled={}, configuredPort={}", tlsEnabled, configuredPort);
-            if (!tlsEnabled && configuredPort == 5671) {
+            log.info("RabbitMQ Config: tlsEnabled={}, configuredPort={}", tls.isEnabled(), configuredPort);
+            if (!tls.isEnabled() && configuredPort == 5671) {
                 log.info("TLS is deactivated; switching RabbitMQ connection port to 5672 (plaintext)");
                 factory.setPort(5672);
             }

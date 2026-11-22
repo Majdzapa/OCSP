@@ -5,6 +5,7 @@ import com.company.incert.ocsp.entity.RevocationReason;
 import com.company.incert.ocsp.entity.RevocationStatus;
 import com.company.incert.ocsp.messaging.CertificateStatusEvent;
 import com.company.incert.ocsp.repository.RevocationStatusRepository;
+import com.company.incert.ocsp.usecase.CanonicalizeSerialHexUseCase;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -130,14 +131,7 @@ public class CertificateStatusService {
     }
 
     static byte[] parseHex(String hex) {
-        if (hex == null) {
-            throw new IllegalArgumentException("hex value is required");
-        }
-        String clean = hex.toLowerCase().replaceAll("[^0-9a-f]", "");
-        if (clean.length() % 2 != 0) {
-            clean = "0" + clean;
-        }
-        return HexFormat.of().parseHex(clean);
+        return CanonicalizeSerialHexUseCase.parseHexBytes(hex);
     }
 
     /**
@@ -146,7 +140,7 @@ public class CertificateStatusService {
      * Makes "00ab.." and "ab.." style hex inputs compare equal to the DER integer value.
      */
     static byte[] parseSerial(String hex) {
-        return new java.math.BigInteger(1, parseHex(hex)).toByteArray();
+        return CanonicalizeSerialHexUseCase.toCanonicalSerialBytes(hex);
     }
 }
 

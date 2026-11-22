@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.service;
 
+import com.company.incert.ocsp.config.ScheduledJobsProperties;
 import com.company.incert.ocsp.dto.GenerateCsrRequest;
 import com.company.incert.ocsp.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.dto.SigningCertValidityReportDto;
@@ -7,12 +8,11 @@ import com.company.incert.ocsp.dto.SigningCertValidityReportDto.CertificateValid
 import com.company.incert.ocsp.dto.SigningCertValidityReportDto.ValidityAlertDto;
 import com.company.incert.ocsp.entity.SigningCertificate;
 import com.company.incert.ocsp.repository.SigningCertificateRepository;
+import com.company.incert.ocsp.usecase.FindSigningCertificateUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,26 +34,25 @@ public class SigningCertificateValidityService {
 
     private final SigningCertificateRepository repository;
     private final SigningCertificateService signingCertificateService;
-
-    @Value("${ocsp.signing-cert.alert-threshold-days:3}")
-    private int alertThresholdDays;
-
-    @Value("${ocsp.signing-cert.validity-cron:0 0 0 * * *}")
-    private String dailyCron;
+    private final FindSigningCertificateUseCase findSigningCertificate;
+    private final ScheduledJobsProperties jobsProperties;
 
     private final AtomicReference<Instant> lastCheckedAtRef = new AtomicReference<>();
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional(readOnly = true)
     public void onStartupCheck() {
-        runDailyValidityCheck();
+        if (jobsProperties.getSigningCertValidity().isEnabled()) {
+            runDailyValidityCheck();
+        }
     }
 
     /**
-     * Daily scheduled job (default: every day at 00:00) checking all registered signing certificates
-     * and logging alerts for any certificate expiring within 3 days or already expired.
+     * Evaluates all registered signing certificates and logs alerts for any certificate
+     * expiring within the configured threshold (default 3 days) or already expired.
+     * Invoked on schedule by {@link com.company.incert.ocsp.config.ScheduledJobsConfig},
+     * on startup, and on demand via the admin REST API.
      */
-    @Scheduled(cron = "${ocsp.signing-cert.validity-cron:0 0 0 * * *}")
     @Transactional(readOnly = true)
     public SigningCertValidityReportDto runDailyValidityCheck() {
         Instant now = Instant.now();
@@ -84,8 +83,7 @@ public class SigningCertificateValidityService {
      */
     @Transactional(readOnly = true)
     public GenerateCsrResponse createRenewalRequest(Long certificateId, Boolean reuseExistingKey, String newKeyLabel, Integer keySize) {
-        SigningCertificate cert = repository.findById(certificateId)
-                .orElseThrow(() -> new IllegalArgumentException("Signing certificate not found with id: " + certificateId));
+        SigningCertificate cert = findSigningCertificate.execute(certificateId);
 
         boolean reuse = reuseExistingKey == null || reuseExistingKey;
         String targetKeyLabel = (!reuse && newKeyLabel != null && !newKeyLabel.isBlank())
@@ -110,7 +108,7 @@ public class SigningCertificateValidityService {
     }
 
     private SigningCertValidityReportDto buildReport(Instant now, Instant lastCheckedAt) {
-        int threshold = alertThresholdDays > 0 ? alertThresholdDays : 3;
+        int threshold = jobsProperties.getSigningCertValidity().effectiveAlertThresholdDays();
         List<SigningCertificate> all = repository.findAll();
 
         List<CertificateValidityItemDto> items = new ArrayList<>(all.size());
@@ -200,7 +198,7 @@ public class SigningCertificateValidityService {
         return new SigningCertValidityReportDto(
                 lastCheckedAt,
                 threshold,
-                dailyCron != null ? dailyCron : "0 0 0 * * *",
+                jobsProperties.getSigningCertValidity().getCron(),
                 all.size(),
                 activeCount,
                 healthyCount,

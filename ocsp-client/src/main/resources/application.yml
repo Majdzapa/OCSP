@@ -8,6 +8,8 @@ spring:
 ocsp:
   client:
     default-responder-url: ${OCSP_RESPONDER_URL:http://localhost:8080/ocsp}
+    # Optional directory with a trusted CA certificate (intermediate-ca-cert.pem, intermediate-ca.pem, ca-chain.pem)
+    pki-dir: ${PKI_DIR:./data/pki}
 
 management:
   endpoints:

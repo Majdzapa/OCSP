@@ -1,5 +1,8 @@
 package com.company.incert.ocsp.controller;
 
+import com.company.incert.ocsp.config.AdminProperties;
+import com.company.incert.ocsp.config.AppSecurityProperties;
+import com.company.incert.ocsp.config.KeycloakProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -18,8 +21,25 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new AuthController("SELF_MANAGED", true, "admin", "changeme", "incert-admin-secret-key",
-                "http://localhost:8081", "incert", "ocsp-console");
+        controller = newController("SELF_MANAGED");
+    }
+
+    private static AuthController newController(String authMode) {
+        AppSecurityProperties security = new AppSecurityProperties();
+        security.setAuthMode(authMode);
+        security.getTls().setEnabled(true);
+
+        AdminProperties admin = new AdminProperties();
+        admin.setUsername("admin");
+        admin.setPassword("changeme");
+        admin.setApiKey("incert-admin-secret-key");
+
+        KeycloakProperties keycloak = new KeycloakProperties();
+        keycloak.setAuthServerUrl("http://localhost:8081");
+        keycloak.setRealm("incert");
+        keycloak.setClientId("ocsp-console");
+
+        return new AuthController(security, admin, keycloak);
     }
 
     @Test
@@ -37,9 +57,7 @@ class AuthControllerTest {
     @Test
     void getConfig_legacyKeyclockAlias_resolvesToKeycloakMode() {
         // "KEYCLOCK" (legacy typo) must be normalised to the canonical KEYCLOAK enum.
-        var keycloakController = new AuthController(
-                "KEYCLOCK", true, "admin", "changeme", "incert-admin-secret-key",
-                "http://localhost:8081", "incert", "ocsp-console");
+        var keycloakController = newController("KEYCLOCK");
         ResponseEntity<Map<String, Object>> response = keycloakController.getConfig();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         // AuthenticationMode.fromString("KEYCLOCK") returns KEYCLOAK (canonical name)

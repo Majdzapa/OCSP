@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.client.controller;
 
+import com.company.incert.ocsp.client.config.OcspClientProperties;
 import com.company.incert.ocsp.client.dto.OcspCheckRequest;
 import com.company.incert.ocsp.client.dto.OcspCheckResult;
 import com.company.incert.ocsp.client.service.OcspClientService;
@@ -10,7 +11,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,8 +26,7 @@ public class OcspClientController {
 
     private final OcspClientService clientService;
 
-    @Value("${ocsp.client.default-responder-url:http://localhost:8080/ocsp}")
-    private String defaultResponderUrl;
+    private final OcspClientProperties clientProperties;
 
     @Operation(summary = "Perform OCSP validation check", description = "Constructs an RFC 6960 OCSPRequest (POST DER or GET base64url, with optional nonce), queries the responder, and cryptographically validates the response signature against the CA certificate")
     @ApiResponses({
@@ -50,7 +49,7 @@ public class OcspClientController {
         return ResponseEntity.ok(Map.of(
             "service", "Incert OCSP Client & Testing Service",
             "version", "3.0.0",
-            "defaultResponderUrl", defaultResponderUrl,
+            "defaultResponderUrl", clientProperties.getDefaultResponderUrl(),
             "rfcCompliance", List.of("RFC 6960 (OCSP)", "RFC 8954 (Nonce Extension)")
         ));
     }
