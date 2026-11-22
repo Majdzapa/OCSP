@@ -1,14 +1,14 @@
 package com.company.incert.ocsp;
 
-import com.company.incert.ocsp.controller.AuthController;
-import com.company.incert.ocsp.repository.UserRepository;
-import com.company.incert.ocsp.security.AuthenticationService;
-import com.company.incert.ocsp.service.CertificateStatusService;
-import com.company.incert.ocsp.service.KeycloakAdminClient;
-import com.company.incert.ocsp.service.OcspResponderService;
-import com.company.incert.ocsp.service.OutboxReconciliationService;
-import com.company.incert.ocsp.service.SigningCertificateService;
-import com.company.incert.ocsp.service.SigningCertificateValidityService;
+import com.company.incert.ocsp.auth.controller.AuthController;
+import com.company.incert.ocsp.auth.repository.UserRepository;
+import com.company.incert.ocsp.auth.security.AuthenticationService;
+import com.company.incert.ocsp.status.service.CertificateStatusService;
+import com.company.incert.ocsp.auth.service.KeycloakAdminClient;
+import com.company.incert.ocsp.responder.service.OcspResponderService;
+import com.company.incert.ocsp.rabbitmq.service.OutboxReconciliationService;
+import com.company.incert.ocsp.signing.service.SigningCertificateService;
+import com.company.incert.ocsp.signing.service.SigningCertificateValidityService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 

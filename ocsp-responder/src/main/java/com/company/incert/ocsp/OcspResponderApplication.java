@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableScheduling
-@ConfigurationPropertiesScan("com.company.incert.ocsp.config")
+@ConfigurationPropertiesScan("com.company.incert.ocsp")
 public class OcspResponderApplication {
     public static void main(String[] args) {
         SpringApplication.run(OcspResponderApplication.class, args);
