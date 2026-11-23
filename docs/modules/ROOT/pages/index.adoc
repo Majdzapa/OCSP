@@ -94,8 +94,8 @@ http://localhost:15672
 * xref:messaging-rabbitmq.adoc[RabbitMQ mTLS & Zero-REST Reconciliation]: 4-queue topology, mTLS certificates, `InboxFailureRecorder`, and manifest/replay messaging.
 * xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]: Detailed breakdown of all scheduled jobs and RabbitMQ-only self-healing reconciliation.
 * xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]: Post-commit multi-CA signer synchronization, daily validity cron, 3-day alert threshold, and 1-click renewal CSR.
-* xref:authentication.adoc[Dual-Mode Authentication]: `app.auth.mode = SELF_MANAGEMENT | KEYCLOAK`, ownership matrix, UUID schema, `IdentityService` strategy, and `InternalPrincipal`.
-* xref:identity-sync-and-migration.adoc[Keycloak Sync, Outbox Retry & Mode Migration]: JIT provisioning, webhook listener, nightly reconciliation, `identity_outbox`, and mode migration procedure.
+* xref:authentication.adoc[Authentication, SecurityPermissions & RBAC]: `app.auth.mode = SELF_MANAGEMENT | KEYCLOAK`, ordered `SecurityFilterChain`s, `SecurityPermissions` + `hasPermission(...)`, and `ProductionSecretsValidator`.
+* xref:trusted-cas-and-mtls.adoc[Trusted CAs & Mutual TLS (Hot-Reload)]: `trusted_cas` & `user_certificates` tables, hot-reloaded in-memory truststore (zero restart), and `/trusted-cas` Console UI.
 * xref:urls-and-rbac.adoc[URLs & Role-Based Access Control (RBAC)]: Complete URL catalog, `users`/`roles` schema, `AdminUserInitializer`, and `ROLE_ADMIN` / `ROLE_AGENT` / `ROLE_AUDITOR` permissions.
 * xref:tls-management.adoc[TLS Security Configuration]: Transport and login TLS settings (`AppSecurityProperties` & `RabbitMqTlsProperties`).
 * xref:configuration-properties.adoc[Configuration Properties & Profiles]: Complete YAML and `@ConfigurationProperties` reference (`application.yml`, `application-dev.yml`, `application-local.yml`).

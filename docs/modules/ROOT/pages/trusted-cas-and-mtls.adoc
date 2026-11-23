@@ -1,0 +1,37 @@
+= Trusted CAs & Mutual TLS (Hot-Reload, Zero Restart)
+:toc:
+
+The Incert OCSP Responder supports optional **Mutual TLS (mTLS)** client-certificate authentication backed by a hot-reloaded in-memory Trusted CA truststore (`com.company.incert.ocsp.trust`).
+
+== 1. How Hot-Reload Works (No Application Restart)
+
+* **Schema (`V11__trusted_cas.sql` & `V10__user_certificates.sql`):**
+  - `trusted_cas` stores imported CA certificates (`BasicConstraints CA:TRUE`), their SHA-256 fingerprints, validity dates, and `enabled` flag.
+  - `user_certificates` binds individual X.509 client certificates (by unique SHA-256 fingerprint) to a user in `ocsp.users`.
+* **In-Memory Truststore (`TrustedCaService`):**
+  - Loads all enabled CAs into a thread-safe `CopyOnWriteArrayList<X509Certificate>` on `ApplicationReadyEvent`.
+  - Every `importTrustedCa`, `setEnabled`, and `deleteTrustedCa` operation immediately reloads the in-memory truststore.
+  - **Result:** Newly imported or disabled CAs take effect immediately for both user-certificate assignment and mTLS verification without restarting `ocsp-responder`.
+
+== 2. mTLS Client-Certificate Verification Flow
+
+1. An administrator imports the issuing CA certificate via the Console UI (`/trusted-cas`) or `POST /api/v1/admin/trusted-cas`.
+2. An administrator assigns a user's X.509 client certificate via `POST /api/v1/admin/users/\{id\}/certificates`. `UserCertificateService` cryptographically verifies (`cert.verify(ca.getPublicKey())`) that the certificate is issued by an active Trusted CA before saving.
+3. When `security.tls.client-cert-auth-enabled=true`, `ClientCertificateAuthFilter` reads the presented client `X509Certificate`, verifies it against the hot-reloaded `TrustedCaService`, looks up the SHA-256 fingerprint in `user_certificates`, and populates the uniform `InternalPrincipal`.
+
+NOTE: Standard 1-way TLS (`security.tls.client-cert-auth-enabled=false`) does not require user certificates.
+
+== 3. REST API Endpoints
+
+[cols="1,2,2,3",options="header"]
+|===
+| Method | Endpoint | Required Permission | Description
+| `GET` | `/api/v1/admin/trusted-cas` | `TRUSTED_CA_READ` | List all Trusted CAs and expiry/trust status
+| `POST` | `/api/v1/admin/trusted-cas` | `TRUSTED_CA_MANAGE` | Import a CA PEM (`CA:TRUE`) and hot-reload immediately
+| `PUT` | `/api/v1/admin/trusted-cas/\{id\}/enabled` | `TRUSTED_CA_MANAGE` | Enable or disable a Trusted CA and hot-reload
+| `DELETE` | `/api/v1/admin/trusted-cas/\{id\}` | `TRUSTED_CA_MANAGE` | Remove a Trusted CA and hot-reload
+| `GET` | `/api/v1/admin/users/\{id\}/certificates` | `USER_MANAGE` | List X.509 client certificates assigned to a user
+| `POST` | `/api/v1/admin/users/\{id\}/certificates` | `USER_MANAGE` | Assign a Trusted-CA-issued X.509 certificate to a user
+| `DELETE` | `/api/v1/admin/users/\{id\}/certificates/\{certId\}` | `USER_MANAGE` | Remove a user certificate assignment
+|===
+

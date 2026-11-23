@@ -1,57 +1,38 @@
-= Dual-Mode Authentication (`SELF_MANAGEMENT` | `KEYCLOAK`)
+= Authentication, SecurityPermissions & Ordered Filter Chains
 :toc:
 
-The OCSP Responder and Admin Console (`http://localhost:3002`) support two mutually exclusive authentication modes configured via `app.auth.mode`:
+The OCSP Responder supports two independent authentication modes configured via `app.auth.mode` (`SELF_MANAGEMENT` or `KEYCLOAK`), with **no cross-system user synchronization**, plus fine-grained **`hasPermission(...)`** RBAC powered by the `SecurityPermissions` enum.
 
-[source,yaml]
-----
-app:
-  auth:
-    mode: ${APP_AUTH_MODE:${AUTH_MODE:KEYCLOAK}} # SELF_MANAGEMENT or KEYCLOAK
-----
+== 1. Authentication Modes (`app.auth.mode`)
 
-== Core Ownership Rule: One Writer Per Data Domain
-
-Exactly one system owns identity per deployment. Two writers are never allowed for the same data:
-
-[cols="2,2,2", options="header"]
+[cols="1,2,2",options="header"]
 |===
-| Data Domain | `SELF_MANAGEMENT` | `KEYCLOAK`
-
-| *Credentials, MFA, Sessions*
-| App DB (`ocsp.users.password_hash`)
-| Keycloak IAM (`ocsp-keycloak`)
-
-| *Identity* (`username`, `email`, `full_name`, `enabled`)
-| App DB (`ocsp.users`, `auth_source = LOCAL`)
-| Keycloak (App DB holds a read-only replica keyed by `external_id`, `auth_source = KEYCLOAK`)
-
-| *App Profile* (`roles`, `tenant_id`, `preferences_json`, `audit`)
-| App DB (`ocsp.users`, `ocsp.user_roles`)
-| App DB (`ocsp.users`, `ocsp.user_roles`)
+| Mode | Identity & Credentials | How It Works
+| `SELF_MANAGEMENT` | Application DB (`ocsp.users`, `ocsp.user_roles`) | `LocalIdentityService` manages UUID users with BCrypt password hashes, `PatternValidation`, and password reset. `AuthenticationService` delegates login to Spring Security's `AuthenticationManager`.
+| `KEYCLOAK` | Keycloak OIDC (`incert` realm) | `KeycloakJwtAuthenticationConverter` statelessly extracts `sub`, `preferred_username`, `email`, `name`, `realm_access.roles`, and `groups` directly from the verified JWT into `InternalPrincipal` with zero DB writes.
 |===
 
-== UUID Data Model (`V9__dual_mode_identity.sql`)
+Both modes (and optional mTLS client certificates) resolve to the exact same `InternalPrincipal` (`userId`, `username`, `email`, `fullName`, `tenantId`, `authSource`, `roles`).
 
-* **`users.id` (`CHAR(36)` UUID PK)**: Internal immutable primary key used by all foreign keys (`user_roles.user_id`).
-* **`users.external_id` (`VARCHAR(255)` UNIQUE)**: Keycloak `sub` claim in `KEYCLOAK` mode (`NULL` for pure `LOCAL` users).
-* **`users.auth_source`**: `LOCAL` or `KEYCLOAK`.
-* **`users.password_hash`**: BCrypt hash for `LOCAL` users only; **always `NULL` for `KEYCLOAK` users**.
-* **`users.tenant_id` & `users.preferences_json`**: Application-owned profile columns.
-* **`users.deleted_at`**: Soft-delete timestamp (supports GDPR anonymization).
-* **`identity_outbox`**: Outbox/retry queue for non-transactional Keycloak Admin API operations.
+== 2. Ordered SecurityFilterChains (`SecurityConfig`)
 
-== Strategy Interface (`IdentityService`) & Uniform `InternalPrincipal`
+1. **`@Order(1)` Public OCSP & Probes**: `/ocsp`, `/ocsp/**`, `/actuator/health`, `/actuator/info`, `/v3/api-docs/**`, `/swagger-ui/**` — stateless, zero auth overhead.
+2. **`@Order(2)` Authentication Boundary**: `/api/v1/auth/**` — `/config`, `/me`, `/login`.
+3. **`@Order(3)` Protected Admin & Business Plane**: `/api/v1/admin/**` — requires authentication; fine-grained authorization is enforced on every controller method via `@PreAuthorize("hasPermission(null, '<PERMISSION>')")`.
 
-* **`IdentityService`** (`createUser`, `updateUser`, `setEnabled`, `resetPassword`, `deleteUser`) has two implementations selected by `@Conditional`:
-  - `LocalIdentityService` (`app.auth.mode=SELF_MANAGEMENT`): Writes directly to MariaDB and hashes passwords with BCrypt.
-  - `KeycloakIdentityService` (`app.auth.mode=KEYCLOAK`): Calls `KeycloakAdminClient` first using the least-privilege `ocsp-user-sync` service account (`view-users`, `manage-users`), then upserts the DB replica by `external_id` (with `password_hash = null`).
-* **One `InternalPrincipal`**: Both `DatabaseUserDetailsService` (`SELF_MANAGEMENT`) and `KeycloakJwtAuthenticationConverter` (`KEYCLOAK`) produce the exact same `InternalPrincipal` (`userId`, `username`, `email`, `fullName`, `tenantId`, `authSource`, `roles`). Business code never checks `app.auth.mode`.
-* **UI Enforcement**: In `KEYCLOAK` mode, `UserManagementPage.js` hides password fields so operators never submit credentials to the app.
+== 3. Fine-Grained RBAC (`SecurityPermissions` + `hasPermission`)
 
-== Keycloak OIDC Configuration (`keycloak/realm-export.json`)
+`OcspPermissionEvaluator` (registered on `MethodSecurityExpressionHandler`) evaluates `hasPermission(null, '<PERMISSION>')` against the `SecurityPermissions` enum:
 
-* **Realm**: `incert`
-* **Console Client**: `ocsp-console` (Public client, redirect URIs `http://localhost:3002/*`, `http://localhost:3000/*`)
-* **Service Account Client**: `ocsp-user-sync` (Confidential client, `serviceAccountsEnabled: true`, least-privilege `realm-management` roles: `view-users`, `manage-users`)
-* **Default Users**: `admin` / `changeme`, `operator` / `changeme`, `auditor` / `changeme`.
+[cols="2,1,1,1",options="header"]
+|===
+| `SecurityPermissions` | `ROLE_ADMIN` | `ROLE_AGENT` / `ROLE_OPERATOR` | `ROLE_AUDITOR`
+| `DASHBOARD_READ`, `REVOCATION_READ`, `INBOX_READ`, `CERT_CHECK_READ`, `SIGNING_CERT_READ`, `TRUSTED_CA_READ` | Allowed | Allowed | Allowed
+| `SIGNING_CERT_CREATE_CSR`, `SIGNING_CERT_IMPORT`, `SIGNING_CERT_VALIDITY_CHECK`, `SIGNING_CERT_RENEW`, `INBOX_REPLAY` | Allowed | Allowed | Denied
+| `SIGNING_CERT_ACTIVATE`, `SIGNING_CERT_DEACTIVATE`, `SIGNING_CERT_DELETE` | Allowed | Denied | Denied
+| `TRUSTED_CA_MANAGE`, `USER_READ`, `USER_MANAGE` | Allowed | Denied | Denied
+|===
+
+== 4. Production Secrets Validation (`ProductionSecretsValidator`)
+
+Base `application.yml` contains no hardcoded default secrets (dev defaults live strictly in `application-dev.yml` and `application-local.yml`). Outside `dev`, `local`, or `test` profiles, `ProductionSecretsValidator` refuses startup if any required secret is blank or matches a known development default.

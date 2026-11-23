@@ -6,9 +6,8 @@
 ** xref:messaging-rabbitmq.adoc[RabbitMQ mTLS & Zero-REST Reconciliation]
 ** xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]
 ** xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]
-** xref:authentication.adoc[Dual-Mode Authentication (SELF_MANAGEMENT / KEYCLOAK)]
-** xref:identity-sync-and-migration.adoc[Keycloak Sync, Outbox Retry & Mode Migration]
-** xref:keycloak-setup-and-hooks.adoc[Keycloak Configuration & Event Hooks]
+** xref:authentication.adoc[Authentication, SecurityPermissions & RBAC]
+** xref:trusted-cas-and-mtls.adoc[Trusted CAs & Mutual TLS (Hot-Reload)]
 ** xref:urls-and-rbac.adoc[URLs & Role-Based Access Control (RBAC)]
 ** xref:tls-management.adoc[TLS Security Configuration]
 * Configuration & Operations
