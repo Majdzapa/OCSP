@@ -6,6 +6,10 @@
 app:
   auth:
     mode: ${APP_AUTH_MODE:${AUTH_MODE:KEYCLOAK}}
+    jwt:
+      secret: ${APP_AUTH_JWT_SECRET:incert-dev-jwt-signing-secret-key-change-in-production-32bytes}
+      issuer: ${APP_AUTH_JWT_ISSUER:incert-ocsp}
+      expiration: ${APP_AUTH_JWT_EXPIRATION:PT8H}
 
 security:
   tls:

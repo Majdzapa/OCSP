@@ -41,6 +41,7 @@ class AuthControllerTest {
     private static AuthController newController(String authMode) {
         AppAuthProperties authProps = new AppAuthProperties();
         authProps.setMode(authMode);
+        authProps.getJwt().setSecret("unit-test-jwt-secret-key-at-least-32-bytes");
 
         AppSecurityProperties security = new AppSecurityProperties();
         security.getTls().setEnabled(true);
@@ -65,8 +66,9 @@ class AuthControllerTest {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(uds);
         provider.setPasswordEncoder(encoder);
         AuthenticationManager authManager = new ProviderManager(provider);
+        var jwtService = new com.company.incert.ocsp.auth.security.LocalJwtTokenService(authProps);
 
-        return new AuthController(new AuthenticationService(authProps, security, keycloak, authManager));
+        return new AuthController(new AuthenticationService(authProps, security, keycloak, authManager, jwtService));
     }
 
     @Test
@@ -125,7 +127,9 @@ class AuthControllerTest {
         assertThat(response.getBody()).containsEntry("authenticated", true);
         assertThat(response.getBody()).containsEntry("userId", "uuid-admin-1");
         assertThat(response.getBody()).containsEntry("username", "admin");
-        assertThat(response.getBody()).containsEntry("authType", "BASIC");
+        assertThat(response.getBody()).containsEntry("authType", "BEARER");
+        assertThat(response.getBody()).containsEntry("tokenType", "Bearer");
+        assertThat(response.getBody().get("accessToken")).isInstanceOf(String.class).asString().isNotBlank();
     }
 
     @Test

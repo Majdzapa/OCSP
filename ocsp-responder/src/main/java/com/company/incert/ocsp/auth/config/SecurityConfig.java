@@ -1,6 +1,7 @@
 package com.company.incert.ocsp.auth.config;
 
 import com.company.incert.ocsp.auth.security.ClientCertificateAuthFilter;
+import com.company.incert.ocsp.auth.security.LocalBearerTokenAuthFilter;
 import com.company.incert.ocsp.auth.security.OcspPermissionEvaluator;
 import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -24,7 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -46,6 +46,7 @@ public class SecurityConfig {
     private final AppSecurityProperties securityProperties;
     private final KeycloakProperties keycloakProperties;
     private final ClientCertificateAuthFilter clientCertificateAuthFilter;
+    private final LocalBearerTokenAuthFilter localBearerTokenAuthFilter;
     private final OcspPermissionEvaluator permissionEvaluator;
 
     public AuthenticationMode getAuthenticationMode() {
@@ -139,8 +140,8 @@ public class SecurityConfig {
     }
 
     private void applyAuthMechanisms(HttpSecurity http, AuthenticationMode mode) throws Exception {
-        http.httpBasic(Customizer.withDefaults());
-        http.addFilterBefore(clientCertificateAuthFilter, BasicAuthenticationFilter.class);
+        http.httpBasic(AbstractHttpConfigurer::disable);
+        http.addFilterBefore(clientCertificateAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         if (mode.isKeycloak()) {
             log.info("Activating KEYCLOAK stateless OAuth2 Resource Server filter chain");
@@ -150,6 +151,9 @@ public class SecurityConfig {
                     .jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())
                 )
             );
+        } else {
+            log.info("Activating SELF_MANAGEMENT Bearer JWT filter chain");
+            http.addFilterBefore(localBearerTokenAuthFilter, UsernamePasswordAuthenticationFilter.class);
         }
     }
 }

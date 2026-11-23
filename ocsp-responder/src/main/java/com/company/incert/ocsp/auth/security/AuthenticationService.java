@@ -29,6 +29,7 @@ public class AuthenticationService {
     private final AppSecurityProperties securityProperties;
     private final KeycloakProperties keycloakProperties;
     private final AuthenticationManager authenticationManager;
+    private final LocalJwtTokenService localJwtTokenService;
 
     public AuthenticationMode resolvedMode() {
         return authProperties.resolvedMode();
@@ -78,7 +79,12 @@ public class AuthenticationService {
                 Authentication authenticated = authenticationManager.authenticate(
                         new UsernamePasswordAuthenticationToken(username.trim(), password));
                 InternalPrincipal principal = InternalPrincipal.from(authenticated);
-                return Optional.of(buildSuccessPayload(mode, principal, "BASIC"));
+                String accessToken = localJwtTokenService.issueToken(principal);
+                Map<String, Object> payload = buildSuccessPayload(mode, principal, "BEARER");
+                payload.put("accessToken", accessToken);
+                payload.put("tokenType", "Bearer");
+                payload.put("expiresIn", localJwtTokenService.expiresInSeconds());
+                return Optional.of(payload);
             } catch (AuthenticationException ignored) {
                 // Fall through to failure
             }

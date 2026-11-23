@@ -6,15 +6,11 @@ export const api = axios.create({
         'Content-Type': 'application/json',
     },
 });
-// Dynamically attach credentials from localStorage
+// Dynamically attach Bearer JWT from localStorage
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('ocsp_bearer_token');
-    const basicAuth = localStorage.getItem('ocsp_basic_auth');
     if (token) {
         config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    else if (basicAuth) {
-        config.headers['Authorization'] = basicAuth;
     }
     return config;
 });
@@ -58,12 +54,9 @@ export const loginWithBearerToken = async (token) => {
 };
 export const getAuthMe = async () => {
     const token = localStorage.getItem('ocsp_bearer_token');
-    const basicAuth = localStorage.getItem('ocsp_basic_auth');
     const headers = {};
     if (token)
         headers['Authorization'] = `Bearer ${token}`;
-    else if (basicAuth)
-        headers['Authorization'] = basicAuth;
     const res = await authApi.get('/me', { headers });
     return res.data;
 };

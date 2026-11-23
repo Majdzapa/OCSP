@@ -6,13 +6,11 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(() => {
         const savedUser = localStorage.getItem('ocsp_auth_user');
         const hasToken = localStorage.getItem('ocsp_bearer_token');
-        const hasBasic = localStorage.getItem('ocsp_basic_auth');
-        if (savedUser && (hasToken || hasBasic)) {
+        if (savedUser && hasToken) {
             return {
                 authenticated: true,
                 username: savedUser,
-                token: hasToken || undefined,
-                basicAuth: hasBasic || undefined,
+                token: hasToken,
             };
         }
         return null;
@@ -28,9 +26,9 @@ export const AuthProvider = ({ children }) => {
     const logout = () => {
         const bearerToken = localStorage.getItem('ocsp_bearer_token');
         const idToken = localStorage.getItem('ocsp_id_token');
-        const wasKeycloakSession = Boolean(bearerToken);
+        const wasKeycloakSession = Boolean(bearerToken) && Boolean(authConfig?.isKeycloak);
         clearLocalAuth();
-        if (wasKeycloakSession && authConfig?.isKeycloak && authConfig?.keycloak?.authServerUrl) {
+        if (wasKeycloakSession && authConfig?.keycloak?.authServerUrl) {
             const kc = authConfig.keycloak;
             const postLogoutRedirectUri = encodeURIComponent(`${window.location.origin}/login`);
             let logoutUrl =
@@ -53,13 +51,11 @@ export const AuthProvider = ({ children }) => {
             return null;
         }
     };
-    // Validate existing stored token on mount & fetch server auth config
     useEffect(() => {
         const initAuth = async () => {
             await refreshAuthConfig();
             const hasToken = localStorage.getItem('ocsp_bearer_token');
-            const hasBasic = localStorage.getItem('ocsp_basic_auth');
-            if (!hasToken && !hasBasic) {
+            if (!hasToken) {
                 setIsLoading(false);
                 return;
             }
@@ -71,8 +67,7 @@ export const AuthProvider = ({ children }) => {
                         username: info.username,
                         roles: info.roles,
                         authMode: info.authMode,
-                        token: hasToken || undefined,
-                        basicAuth: hasBasic || undefined,
+                        token: hasToken,
                     });
                 }
                 else {
@@ -95,18 +90,18 @@ export const AuthProvider = ({ children }) => {
     }, []);
     const login = async (username, password) => {
         const res = await loginWithCredentials(username, password);
-        if (!res.authenticated) {
+        if (!res.authenticated || !res.accessToken) {
             throw new Error(res.message || 'Invalid credentials');
         }
-        const encodedBasic = 'Basic ' + btoa(`${username}:${password}`);
-        localStorage.setItem('ocsp_basic_auth', encodedBasic);
+        localStorage.removeItem('ocsp_basic_auth');
+        localStorage.setItem('ocsp_bearer_token', res.accessToken);
         localStorage.setItem('ocsp_auth_user', res.username || username);
         setUser({
             authenticated: true,
             username: res.username || username,
             roles: res.roles,
             authMode: res.authMode,
-            basicAuth: encodedBasic,
+            token: res.accessToken,
         });
     };
     const loginWithToken = async (token, idToken) => {
@@ -114,6 +109,7 @@ export const AuthProvider = ({ children }) => {
         if (!res.authenticated) {
             throw new Error(res.message || 'Invalid Bearer token');
         }
+        localStorage.removeItem('ocsp_basic_auth');
         localStorage.setItem('ocsp_bearer_token', token);
         if (idToken) {
             localStorage.setItem('ocsp_id_token', idToken);

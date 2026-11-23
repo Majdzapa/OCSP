@@ -26,7 +26,8 @@ public class ProductionSecretsValidator implements InitializingBean {
             "guest",
             "rootpassword",
             "incert-keycloak-webhook-secret",
-            "ocsp-user-sync-secret"
+            "ocsp-user-sync-secret",
+            "incert-dev-jwt-signing-secret-key-change-in-production-32bytes"
     );
 
     private final Environment environment;
@@ -58,6 +59,7 @@ public class ProductionSecretsValidator implements InitializingBean {
         boolean isKeycloak = "KEYCLOAK".equalsIgnoreCase(authMode) || "KEYCLOCK".equalsIgnoreCase(authMode);
         if (!isKeycloak) {
             checkSecret("admin.password", violations);
+            checkSecret("app.auth.jwt.secret", violations);
         }
 
         if (!violations.isEmpty()) {

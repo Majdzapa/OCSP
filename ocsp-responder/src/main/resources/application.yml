@@ -1,6 +1,10 @@
 app:
   auth:
     mode: ${APP_AUTH_MODE:${AUTH_MODE:KEYCLOAK}} # SELF_MANAGEMENT or KEYCLOAK
+    jwt:
+      secret: ${APP_AUTH_JWT_SECRET:}
+      issuer: ${APP_AUTH_JWT_ISSUER:incert-ocsp}
+      expiration: ${APP_AUTH_JWT_EXPIRATION:PT8H}
 
 security:
   tls:
