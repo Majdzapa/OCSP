@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.status.controller;
 
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.company.incert.ocsp.shared.config.OpenApiConfig;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
 import com.company.incert.ocsp.status.service.CertificateStatusService;
@@ -43,6 +45,7 @@ public class CertCheckController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/{serialHex}")
+    @PreAuthorize("hasPermission(null, 'CERT_CHECK_READ')")
     public ResponseEntity<CertStatusResponse> checkStatus(
             @Parameter(description = "Hex-encoded serial number", example = "00b59d41baf78afe0de1bbe7ae28c0450f")
             @PathVariable("serialHex") String serialHex) {

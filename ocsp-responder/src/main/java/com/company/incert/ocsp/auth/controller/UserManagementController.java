@@ -32,7 +32,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasPermission(null, 'USER_MANAGE')")
 @Tag(name = "User Management", description = "Admin-only user and RBAC role management endpoints")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
 @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)

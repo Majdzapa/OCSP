@@ -1,9 +1,7 @@
 package com.company.incert.ocsp.auth.config;
 
-import com.company.incert.ocsp.auth.entity.RoleEntity;
-import com.company.incert.ocsp.auth.entity.UserEntity;
+import com.company.incert.ocsp.auth.entity.AuthSource;
 import com.company.incert.ocsp.auth.security.InternalPrincipal;
-import com.company.incert.ocsp.auth.service.KeycloakSyncService;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -14,22 +12,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Extracts coarse roles from Keycloak JWT tokens, performs JIT provisioning/refresh
- * in the local DB replica via {@link KeycloakSyncService} (keyed by {@code sub}),
- * and produces a uniform {@link InternalPrincipal} containing {@code userId}, {@code roles},
- * and {@code tenantId}.
+ * Stateless converter extracting roles and claims directly from Keycloak JWT tokens
+ * into the uniform {@link InternalPrincipal} (no database synchronization).
  */
 public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
-
-    private final KeycloakSyncService syncService;
-
-    public KeycloakJwtAuthenticationConverter() {
-        this.syncService = null;
-    }
-
-    public KeycloakJwtAuthenticationConverter(KeycloakSyncService syncService) {
-        this.syncService = syncService;
-    }
 
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
@@ -77,50 +63,25 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
             tokenRoles.add("ROLE_ADMIN");
         }
 
-        String email = jwt.getClaimAsString("email");
-        boolean emailVerified = Boolean.TRUE.equals(jwt.getClaim("email_verified"));
-        String fullName = jwt.getClaimAsString("name");
-
-        InternalPrincipal principal;
-        if (syncService != null && jwt.getSubject() != null) {
-            UserEntity user = syncService.upsertFromTokenClaims(
-                    jwt.getSubject(), username, email, emailVerified, fullName, tokenRoles);
-            Set<String> dbRoles = user.getRoles().stream().map(RoleEntity::getName).collect(Collectors.toSet());
-            Set<String> combinedRoles = new HashSet<>(tokenRoles);
-            combinedRoles.addAll(dbRoles);
-            principal = new InternalPrincipal(
-                    user.getId(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getFullName(),
-                    user.getTenantId(),
-                    user.getAuthSource(),
-                    combinedRoles
-            );
-        } else {
-            principal = new InternalPrincipal(
-                    jwt.getSubject(), username, email, fullName, "default",
-                    com.company.incert.ocsp.auth.entity.AuthSource.KEYCLOAK, tokenRoles);
-        }
+        InternalPrincipal principal = new InternalPrincipal(
+                jwt.getSubject(),
+                username,
+                jwt.getClaimAsString("email"),
+                jwt.getClaimAsString("name"),
+                "default",
+                AuthSource.KEYCLOAK,
+                tokenRoles
+        );
 
         Collection<GrantedAuthority> authorities = principal.roles().stream()
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toSet());
 
         return new AbstractAuthenticationToken(authorities) {
-            {
-                setAuthenticated(true);
-            }
-
-            @Override
-            public Object getCredentials() {
-                return jwt;
-            }
-
-            @Override
-            public Object getPrincipal() {
-                return principal;
-            }
+            { setAuthenticated(true); }
+            @Override public Object getCredentials() { return jwt; }
+            @Override public Object getPrincipal() { return principal; }
+            @Override public String getName() { return principal.username(); }
         };
     }
 }

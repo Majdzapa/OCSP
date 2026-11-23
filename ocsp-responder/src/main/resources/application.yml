@@ -24,10 +24,6 @@ keycloak:
   client-id: ${KEYCLOAK_CLIENT_ID:ocsp-console}
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs}
   issuer-uri: ${KEYCLOAK_ISSUER_URI:${keycloak.auth-server-url}/realms/${keycloak.realm}}
-  webhook-secret: ${KEYCLOAK_WEBHOOK_SECRET:}
-  service-account:
-    client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:ocsp-user-sync}
-    client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:}
 
 spring:
   application:

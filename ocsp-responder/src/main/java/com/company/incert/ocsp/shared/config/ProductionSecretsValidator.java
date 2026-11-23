@@ -56,10 +56,7 @@ public class ProductionSecretsValidator implements InitializingBean {
 
         String authMode = environment.getProperty("app.auth.mode", "KEYCLOAK");
         boolean isKeycloak = "KEYCLOAK".equalsIgnoreCase(authMode) || "KEYCLOCK".equalsIgnoreCase(authMode);
-        if (isKeycloak) {
-            checkSecret("keycloak.webhook-secret", violations);
-            checkSecret("keycloak.service-account.client-secret", violations);
-        } else {
+        if (!isKeycloak) {
             checkSecret("admin.password", violations);
         }
 

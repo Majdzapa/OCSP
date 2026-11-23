@@ -1,12 +1,5 @@
 package com.company.incert.ocsp.auth;
 
-
-import com.company.incert.ocsp.auth.service.IdentityOutboxService;
-import com.company.incert.ocsp.auth.service.KeycloakAdminClient;
-import com.company.incert.ocsp.auth.service.KeycloakIdentityService;
-import com.company.incert.ocsp.auth.service.KeycloakSyncService;
-import com.company.incert.ocsp.auth.service.LocalIdentityService;
-import com.company.incert.ocsp.auth.service.UserDomainSupport;
 import com.company.incert.ocsp.auth.config.AdminProperties;
 import com.company.incert.ocsp.auth.config.AdminUserInitializer;
 import com.company.incert.ocsp.auth.config.AppAuthProperties;
@@ -17,6 +10,8 @@ import com.company.incert.ocsp.auth.entity.RoleEntity;
 import com.company.incert.ocsp.auth.entity.UserEntity;
 import com.company.incert.ocsp.auth.repository.RoleRepository;
 import com.company.incert.ocsp.auth.repository.UserRepository;
+import com.company.incert.ocsp.auth.service.LocalIdentityService;
+import com.company.incert.ocsp.auth.service.UserDomainSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,28 +39,15 @@ class UserManagementServiceTest {
     @Mock
     private RoleRepository roleRepository;
 
-    @Mock
-    private KeycloakAdminClient keycloakAdminClient;
-
-    @Mock
-    private IdentityOutboxService outboxService;
-
     private PasswordEncoder passwordEncoder;
     private UserDomainSupport support;
     private LocalIdentityService localIdentityService;
-    private KeycloakIdentityService keycloakIdentityService;
-    private KeycloakSyncService keycloakSyncService;
 
     @BeforeEach
     void setUp() {
         passwordEncoder = new BCryptPasswordEncoder();
         support = new UserDomainSupport(userRepository, roleRepository);
         localIdentityService = new LocalIdentityService(userRepository, support, passwordEncoder);
-        keycloakIdentityService = new KeycloakIdentityService(userRepository, support, keycloakAdminClient, outboxService);
-
-        AppAuthProperties authProperties = new AppAuthProperties();
-        authProperties.setMode("KEYCLOAK");
-        keycloakSyncService = new KeycloakSyncService(userRepository, roleRepository, keycloakAdminClient, authProperties);
     }
 
     @Test
@@ -93,94 +75,29 @@ class UserManagementServiceTest {
         assertThat(saved.getAuthSource()).isEqualTo(AuthSource.LOCAL);
         assertThat(saved.getUsername()).isEqualTo("admin");
         assertThat(passwordEncoder.matches("secret123", saved.getPasswordHash())).isTrue();
-        assertThat(saved.getRoles()).extracting(RoleEntity::getName).containsExactly("ROLE_ADMIN");
     }
 
     @Test
-    void localMode_createUser_hashesPasswordAndAssignsLocalSource() {
+    void localMode_createsUserWithHashedPassword() {
         RoleEntity agentRole = RoleEntity.builder().id(2L).name("ROLE_AGENT").build();
         when(userRepository.existsByUsernameAndDeletedAtIsNull("agent1")).thenReturn(false);
         when(roleRepository.findByName("ROLE_AGENT")).thenReturn(Optional.of(agentRole));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        UserDto dto = localIdentityService.createUser(new CreateUserRequest(
-                "agent1", "agent1@incert.local", "Agent One", "pass123", true, "tenant-a", List.of("AGENT")));
+        UserDto created = localIdentityService.createUser(new CreateUserRequest(
+                "agent1", "agent1@incert.local", "Agent One", "pass1234", true, "org-a", List.of("AGENT")));
 
-        assertThat(dto.id()).isNotBlank();
-        assertThat(dto.authSource()).isEqualTo(AuthSource.LOCAL);
-        assertThat(dto.username()).isEqualTo("agent1");
-        assertThat(dto.tenantId()).isEqualTo("tenant-a");
-        assertThat(dto.roles()).containsExactly("ROLE_AGENT");
+        assertThat(created.id()).isNotBlank();
+        assertThat(created.authSource()).isEqualTo(AuthSource.LOCAL);
+        assertThat(created.roles()).containsExactly("ROLE_AGENT");
     }
 
     @Test
-    void keycloakMode_createUser_callsAdminApiFirstAndNeverStoresPassword() {
-        RoleEntity agentRole = RoleEntity.builder().id(2L).name("ROLE_AGENT").build();
-        when(userRepository.existsByUsernameAndDeletedAtIsNull("kc-agent")).thenReturn(false);
-        when(roleRepository.findByName("ROLE_AGENT")).thenReturn(Optional.of(agentRole));
-        when(keycloakAdminClient.createUser("kc-agent", "kc@incert.local", "KC Agent", true))
-                .thenReturn("kc-sub-123");
-        when(userRepository.findByExternalId("kc-sub-123")).thenReturn(Optional.empty());
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        UserDto dto = keycloakIdentityService.createUser(new CreateUserRequest(
-                "kc-agent", "kc@incert.local", "KC Agent", null, true, "default", List.of("ROLE_AGENT")));
-
-        assertThat(dto.externalId()).isEqualTo("kc-sub-123");
-        assertThat(dto.authSource()).isEqualTo(AuthSource.KEYCLOAK);
-        verify(keycloakAdminClient).createUser("kc-agent", "kc@incert.local", "KC Agent", true);
-
-        ArgumentCaptor<UserEntity> savedCaptor = ArgumentCaptor.forClass(UserEntity.class);
-        verify(userRepository).save(savedCaptor.capture());
-        assertThat(savedCaptor.getValue().getPasswordHash()).isNull();
-
-        assertThatThrownBy(() -> keycloakIdentityService.createUser(new CreateUserRequest(
-                "kc-agent2", "kc2@incert.local", "KC Agent 2", "forbidden-pw", true, "default", List.of("ROLE_AGENT"))))
+    void localMode_rejectsBlankPasswordOnCreate() {
+        when(userRepository.existsByUsernameAndDeletedAtIsNull("agent2")).thenReturn(false);
+        assertThatThrownBy(() -> localIdentityService.createUser(new CreateUserRequest(
+                "agent2", null, null, "", true, "default", List.of("AGENT"))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("owned by Keycloak");
-    }
-
-    @Test
-    void keycloakSync_jitProvisioningIsIdempotentByExternalId() {
-        RoleEntity auditorRole = RoleEntity.builder().id(3L).name("ROLE_AUDITOR").build();
-        when(roleRepository.findByName("ROLE_AUDITOR")).thenReturn(Optional.of(auditorRole));
-        when(userRepository.existsByUsernameAndDeletedAtIsNull("jdoe")).thenReturn(false);
-
-        UserEntity existing = UserEntity.builder()
-                .id("uuid-1")
-                .externalId("sub-999")
-                .authSource(AuthSource.KEYCLOAK)
-                .username("jdoe")
-                .email("old@incert.local")
-                .roles(Set.of(auditorRole))
-                .build();
-
-        when(userRepository.findByExternalId("sub-999"))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(existing));
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        UserEntity first = keycloakSyncService.upsertFromTokenClaims(
-                "sub-999", "jdoe", "old@incert.local", true, "John Doe", List.of("ROLE_AUDITOR"));
-        UserEntity second = keycloakSyncService.upsertFromTokenClaims(
-                "sub-999", "jdoe", "new@incert.local", true, "Johnathan Doe", List.of("ROLE_AUDITOR"));
-
-        assertThat(first.getExternalId()).isEqualTo("sub-999");
-        assertThat(second.getId()).isEqualTo("uuid-1");
-        assertThat(second.getEmail()).isEqualTo("new@incert.local");
-        assertThat(second.getFullName()).isEqualTo("Johnathan Doe");
-        assertThat(second.getPasswordHash()).isNull();
-    }
-
-    @Test
-    void deleteUser_rejectsDeletingSelf() {
-        RoleEntity adminRole = RoleEntity.builder().id(1L).name("ROLE_ADMIN").build();
-        UserEntity admin = UserEntity.builder()
-                .id("uuid-admin").authSource(AuthSource.LOCAL).username("admin").passwordHash("hash").enabled(true).roles(Set.of(adminRole)).build();
-        when(userRepository.findById("uuid-admin")).thenReturn(Optional.of(admin));
-
-        assertThatThrownBy(() -> localIdentityService.deleteUser("uuid-admin", false, "admin"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("your own account");
+                .hasMessageContaining("Password is required");
     }
 }

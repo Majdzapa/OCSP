@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.status.controller;
 
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.company.incert.ocsp.shared.config.OpenApiConfig;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
 import com.company.incert.ocsp.status.service.CertificateStatusService;
@@ -38,6 +40,7 @@ public class RevocationFeedController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping({"/revocations", "/revocation-feed"})
+    @PreAuthorize("hasPermission(null, 'REVOCATION_READ')")
     public ResponseEntity<Map<String, Object>> getRevoked(
             @Parameter(description = "Page number (zero-based)", example = "0")
             @RequestParam(value = "page", defaultValue = "0") int page,

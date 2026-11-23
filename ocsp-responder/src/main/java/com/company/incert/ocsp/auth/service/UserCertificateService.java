@@ -8,6 +8,7 @@ import com.company.incert.ocsp.auth.repository.UserCertificateRepository;
 import com.company.incert.ocsp.auth.security.InternalPrincipal;
 import com.company.incert.ocsp.shared.usecase.CanonicalizeSerialHexUseCase;
 import com.company.incert.ocsp.shared.validation.PatternValidation;
+import com.company.incert.ocsp.trust.service.TrustedCaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ public class UserCertificateService {
 
     private final UserCertificateRepository certificateRepository;
     private final UserDomainSupport userDomainSupport;
+    private final TrustedCaService trustedCaService;
 
     @Transactional(readOnly = true)
     public List<UserCertificateDto> listUserCertificates(String userId) {
@@ -54,6 +56,10 @@ public class UserCertificateService {
         }
         UserEntity user = userDomainSupport.findActiveById(userId);
         X509Certificate x509 = parsePem(certificatePem);
+        if (!trustedCaService.isIssuedByTrustedCa(x509)) {
+            throw new IllegalArgumentException(
+                    "User certificate must be issued by an active Trusted CA. Import the issuing CA under Trusted CAs first.");
+        }
         String fingerprint = sha256Hex(x509);
         if (!PatternValidation.isValidSha256Fingerprint(fingerprint)) {
             throw new IllegalStateException("Computed invalid SHA-256 fingerprint");
@@ -99,7 +105,7 @@ public class UserCertificateService {
      */
     @Transactional(readOnly = true)
     public Optional<InternalPrincipal> authenticateByClientCertificate(X509Certificate cert) {
-        if (cert == null) {
+        if (cert == null || !trustedCaService.isIssuedByTrustedCa(cert)) {
             return Optional.empty();
         }
         String fingerprint = sha256Hex(cert);

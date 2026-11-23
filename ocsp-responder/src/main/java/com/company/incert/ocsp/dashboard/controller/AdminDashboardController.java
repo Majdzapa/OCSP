@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.dashboard.controller;
 
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.shared.config.OpenApiConfig;
 import com.company.incert.ocsp.rabbitmq.config.RabbitMqTlsProperties;
@@ -46,6 +48,7 @@ public class AdminDashboardController {
         @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid credentials)")
     })
     @GetMapping({"/dashboard", "/dashboard/stats"})
+    @PreAuthorize("hasPermission(null, 'DASHBOARD_READ')")
     public ResponseEntity<Map<String, Object>> getStats() {
         long totalCerts  = statusService.countAll();
         long revokedCerts = statusService.countByStatus(CertificateStatus.REVOKED);
@@ -86,6 +89,7 @@ public class AdminDashboardController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/health")
+    @PreAuthorize("hasPermission(null, 'DASHBOARD_READ')")
     public ResponseEntity<Map<String, Object>> getHealth() {
         return ResponseEntity.ok(Map.of(
             "status", "UP",

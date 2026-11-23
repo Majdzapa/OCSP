@@ -1,6 +1,5 @@
 package com.company.incert.ocsp.auth.service;
 
-import com.company.incert.ocsp.auth.config.OnSelfManagementModeCondition;
 import com.company.incert.ocsp.auth.dto.CreateUserRequest;
 import com.company.incert.ocsp.auth.dto.RoleDto;
 import com.company.incert.ocsp.auth.dto.UpdateUserRequest;
@@ -12,7 +11,6 @@ import com.company.incert.ocsp.auth.repository.UserRepository;
 import com.company.incert.ocsp.shared.validation.PatternValidation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Conditional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +20,10 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * {@link IdentityService} implementation for {@code app.auth.mode=SELF_MANAGEMENT}.
- * Owns credentials, identity, and app profile in the application database.
+ * {@link IdentityService} implementation managing local users and roles in the application database.
  */
 @Slf4j
 @Service
-@Conditional(OnSelfManagementModeCondition.class)
 @RequiredArgsConstructor
 public class LocalIdentityService implements IdentityService {
 

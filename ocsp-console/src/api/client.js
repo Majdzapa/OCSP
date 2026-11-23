@@ -136,3 +136,8 @@ export const deleteUser = (id) => api.delete(`/users/${id}`).then((r) => r.data)
 export const getUserCertificates = (userId) => api.get(`/users/${userId}/certificates`).then((r) => r.data);
 export const assignUserCertificate = (userId, certificatePem) => api.post(`/users/${userId}/certificates`, { certificatePem }).then((r) => r.data);
 export const removeUserCertificate = (userId, certId) => api.delete(`/users/${userId}/certificates/${certId}`).then((r) => r.data);
+// ---- Trusted CAs (Hot-reloaded mTLS Truststore) ----
+export const getTrustedCas = () => api.get('/trusted-cas').then((r) => r.data);
+export const importTrustedCa = (alias, certificatePem) => api.post('/trusted-cas', { alias, certificatePem }).then((r) => r.data);
+export const toggleTrustedCa = (id, enabled) => api.put(`/trusted-cas/${id}/enabled`, { enabled }).then((r) => r.data);
+export const deleteTrustedCa = (id) => api.delete(`/trusted-cas/${id}`).then((r) => r.data);

@@ -1,5 +1,7 @@
 package com.company.incert.ocsp.rabbitmq.controller;
 
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.company.incert.ocsp.shared.config.OpenApiConfig;
 import com.company.incert.ocsp.rabbitmq.entity.InboxEvent;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
@@ -42,6 +44,7 @@ public class InboxAdminController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/certificates")
+    @PreAuthorize("hasPermission(null, 'INBOX_READ')")
     public ResponseEntity<List<Map<String, Object>>> getCertificates() {
         HexFormat hex = HexFormat.of();
         List<Map<String, Object>> list = statusService.findAll().stream().map(r -> {
@@ -67,6 +70,7 @@ public class InboxAdminController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/inbox")
+    @PreAuthorize("hasPermission(null, 'INBOX_READ')")
     public ResponseEntity<Map<String, Object>> getInboxEvents(
             @Parameter(description = "Page number (zero-based)", example = "0")
             @RequestParam(value = "page", defaultValue = "0") int page,
@@ -103,6 +107,7 @@ public class InboxAdminController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/inbox/stats")
+    @PreAuthorize("hasPermission(null, 'INBOX_READ')")
     public ResponseEntity<Map<String, Object>> getInboxStats() {
         long total = inboxRepository.count();
         long processed = inboxRepository.countByProcessingStatus("PROCESSED");
@@ -126,6 +131,7 @@ public class InboxAdminController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @GetMapping("/reconciliation/verify")
+    @PreAuthorize("hasPermission(null, 'INBOX_READ')")
     public ResponseEntity<Map<String, Object>> verifyReconciliation() {
         return ResponseEntity.ok(reconciliationService.verifyReconciliation());
     }
@@ -137,6 +143,7 @@ public class InboxAdminController {
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @PostMapping("/reconciliation/replay")
+    @PreAuthorize("hasPermission(null, 'INBOX_REPLAY')")
     public ResponseEntity<Map<String, Object>> replayMissingEvents() {
         return ResponseEntity.ok(reconciliationService.triggerReplayViaRabbitMq());
     }

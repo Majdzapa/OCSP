@@ -50,6 +50,7 @@ public class SigningCertificateController {
 
     @Operation(summary = "List all signing certificates", description = "Retrieves all registered signing certificates and their active status")
     @GetMapping
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<List<SigningCertificateDto>> listAll() {
         return ResponseEntity.ok(certificateService.listAll());
     }
@@ -60,6 +61,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "404", description = "No active signing certificate found")
     })
     @GetMapping("/active")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<SigningCertificateDto> getActive() {
         return certificateService.getActiveCertificate()
                 .map(ResponseEntity::ok)
@@ -73,7 +75,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "403", description = "Forbidden — activateImmediately requires ROLE_ADMIN")
     })
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_IMPORT')")
     public ResponseEntity<?> addCertificate(
             @Valid @RequestBody AddSigningCertificateRequest request,
             Authentication auth) {
@@ -96,7 +98,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "403", description = "Forbidden — requires ROLE_ADMIN")
     })
     @PutMapping("/{id}/activate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_ACTIVATE')")
     public ResponseEntity<?> activate(
             @Parameter(description = "ID of the signing certificate to activate")
             @PathVariable Long id) {
@@ -115,7 +117,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "403", description = "Forbidden — requires ROLE_ADMIN")
     })
     @PutMapping("/{id}/deactivate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_DEACTIVATE')")
     public ResponseEntity<?> deactivate(
             @Parameter(description = "ID of the signing certificate to deactivate")
             @PathVariable Long id) {
@@ -129,6 +131,7 @@ public class SigningCertificateController {
 
     @Operation(summary = "Get HSM PKCS#11 configuration and token key labels", description = "Returns configured PKCS#11 library path, token label, slot index, and existing key labels")
     @GetMapping("/hsm-info")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<HsmInfoDto> getHsmInfo() {
         return ResponseEntity.ok(certificateService.getHsmInfo());
     }
@@ -139,7 +142,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "400", description = "Invalid request or HSM key conflict")
     })
     @PostMapping("/csr")
-    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_CREATE_CSR')")
     public ResponseEntity<?> generateCsr(@Valid @RequestBody GenerateCsrRequest request) {
         try {
             GenerateCsrResponse csr = certificateService.generateCsr(request);
@@ -157,7 +160,7 @@ public class SigningCertificateController {
         @ApiResponse(responseCode = "404", description = "Certificate not found")
     })
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_DELETE')")
     public ResponseEntity<?> delete(
             @Parameter(description = "ID of the signing certificate to delete")
             @PathVariable Long id) {
@@ -174,6 +177,7 @@ public class SigningCertificateController {
     @Operation(summary = "Get signing certificates validity report and 3-day expiry alerts",
                description = "Returns the current validity report for all signing certificates, including active alerts for certificates expiring within 3 days or already expired")
     @GetMapping("/validity")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<SigningCertValidityReportDto> getValidityReport() {
         return ResponseEntity.ok(validityService.getValidityReport());
     }
@@ -181,7 +185,7 @@ public class SigningCertificateController {
     @Operation(summary = "Run the daily signing certificate validity check now",
                description = "Triggers the daily validity check job immediately, logs alerts for certificates expiring within 3 days, and returns the updated report")
     @PostMapping("/validity/check")
-    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_VALIDITY_CHECK')")
     public ResponseEntity<SigningCertValidityReportDto> runValidityCheckNow() {
         return ResponseEntity.ok(validityService.runDailyValidityCheck());
     }
@@ -191,7 +195,7 @@ public class SigningCertificateController {
     @Operation(summary = "Create a renewal CSR for an existing signing certificate",
                description = "Generates a PKCS#10 renewal CSR for the specified signing certificate (ADMIN and AGENT)")
     @PostMapping("/{id}/renew-request")
-    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_RENEW')")
     public ResponseEntity<?> createRenewalRequest(
             @PathVariable Long id,
             @RequestBody(required = false) RenewalCsrRequest request) {

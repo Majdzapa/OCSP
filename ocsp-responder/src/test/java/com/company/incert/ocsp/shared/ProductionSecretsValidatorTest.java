@@ -44,8 +44,6 @@ class ProductionSecretsValidatorTest {
         env.setProperty("rabbitmq.tls.enabled", "true");
         env.setProperty("spring.rabbitmq.ssl.key-store-password", "ks-s3cr3t-v4l!");
         env.setProperty("spring.rabbitmq.ssl.trust-store-password", "ts-s3cr3t-v4l!");
-        env.setProperty("keycloak.webhook-secret", "wh-s3cr3t-v4l!");
-        env.setProperty("keycloak.service-account.client-secret", "sa-s3cr3t-v4l!");
 
         assertThatCode(() -> new ProductionSecretsValidator(env).validate()).doesNotThrowAnyException();
     }
