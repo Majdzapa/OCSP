@@ -22,15 +22,16 @@ ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf
 # Default values only — override all of these via environment variables in docker-compose or Kubernetes secrets.
 # Never ship production PIN values as Dockerfile defaults.
 ENV HSM_TOKEN_LABEL=ocsp-signing
+ENV HSM_SECONDARY_TOKEN_LABEL=ocsp-signing-2
 ENV HSM_PIN=changeme-pin
 ENV HSM_SO_PIN=changeme-sopin
 ENV HSM_PKCS11_LIBRARY=/usr/lib/softhsm/libsofthsm2.so
 
 WORKDIR /var/lib/softhsm
 
-# Healthy once the token exists (keys are created later by the user through the responder)
+# Healthy once the tokens exist (keys are created later by the user through the responder)
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=6 \
-  CMD softhsm2-util --show-slots | grep -q "Label:.*${HSM_TOKEN_LABEL}" || exit 1
+  CMD softhsm2-util --show-slots | grep -q "Label:.*${HSM_TOKEN_LABEL}" && ( [ -z "${HSM_SECONDARY_TOKEN_LABEL}" ] || softhsm2-util --show-slots | grep -q "Label:.*${HSM_SECONDARY_TOKEN_LABEL}" ) || exit 1
 
 ENTRYPOINT ["/scripts/init-hsm.sh"]
 

@@ -20,9 +20,21 @@ public record AddSigningCertificateRequest(
     Boolean activateImmediately,
 
     @Schema(description = "Signature algorithm to use when signing OCSP responses with this certificate (e.g. SHA256withRSA, SHA384withRSA, SHA512withRSA, SHA256withECDSA, SHA384withECDSA)", example = "SHA256withRSA")
-    String signatureAlgorithm
+    String signatureAlgorithm,
+
+    @Schema(description = "Signing provider/device ID in PkcsProviders (defaults to default provider if omitted)", example = "softhsm-primary")
+    String providerId
 ) {
     public AddSigningCertificateRequest(String alias, String keyLabel, String certificatePem, Boolean activateImmediately) {
-        this(alias, keyLabel, certificatePem, activateImmediately, null);
+        this(alias, keyLabel, certificatePem, activateImmediately, null, null);
+    }
+
+    public AddSigningCertificateRequest(
+            String alias,
+            String keyLabel,
+            String certificatePem,
+            Boolean activateImmediately,
+            String signatureAlgorithm) {
+        this(alias, keyLabel, certificatePem, activateImmediately, signatureAlgorithm, null);
     }
 }

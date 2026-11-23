@@ -2,8 +2,9 @@
 # OCSP Subsystem — .gitignore
 # ============================================================
 
-# Maven build output
+# Maven build output & native intermediate artifacts
 target/
+pkcs11j/native/build/
 *.class
 *.jar
 !**/src/main/resources/*.jar

@@ -99,7 +99,8 @@ public class SigningCertificateValidityService {
                 cert.getSubjectDn(),
                 keyAlg,
                 resolvedKeySize,
-                reuse
+                reuse,
+                cert.getProviderId()
         );
 
         log.info("Creating renewal CSR for signing certificate id={} alias='{}' keyLabel='{}' reuseKey={}",

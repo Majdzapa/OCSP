@@ -1,11 +1,34 @@
-= SoftHSM2 PKCS#11 On-Demand HSM Signing
+= Multi-Device PKCS11J, PkcsProviders & gRPC Signing
 :toc:
 
-The OCSP Responder performs all cryptographic response signing inside a SoftHSM2 PKCS#11 token (`ocsp-signing`). Private keys are generated with `CKA_EXTRACTABLE = FALSE` and never leave the HSM boundary.
+The OCSP Responder decouples RFC 6960 response signing from cryptographic devices using a **Ports & Adapters** architecture supporting multiple simultaneous HSMs, USB tokens, and SoftHSM2 slots via custom `pkcs11j` JNI bindings and gRPC.
+
+Private keys are generated with `CKA_EXTRACTABLE = FALSE` and never leave the token boundary.
+
+== Architecture: Ports, `PkcsProviders`, `PKCS11J` & gRPC
+
+[source]
+----
+ocsp-responder (pure Java)
+ └── OcspSigner (MultiProviderOcspSigner — per-CA certificate & device routing)
+      └── PkcsProviders (registry keyed by providerId)
+           ├── GrpcCryptoProviderAdapter  ──(gRPC / optional mTLS :9090)──▶ hsm-signer daemon
+           │                                                                 ├── PkcsProviders (ref-counted modules)
+           │                                                                 ├── Pkcs11SessionPool (CK_SESSION_HANDLEs)
+           │                                                                 └── pkcs11j (Pkcs11LibraryPort + libpkcs11j.so)
+           │                                                                      └── C_Initialize -> C_OpenSession -> C_Login
+           │                                                                          C_GenerateKeyPair -> C_CreateObject
+           │                                                                          C_SignInit -> C_Sign -> C_Finalize
+           └── SunPkcs11CryptoProviderAdapter (optional local fallback)
+----
+
+* **`Pkcs11LibraryPort` (`pkcs11j`)**: Clean port interface mapping 1:1 to OASIS PKCS#11 v2.40 Cryptoki C APIs (`C_Initialize` with `CKF_OS_LOCKING_OK`, `C_GetSlotList`, `C_GetTokenInfo`, `C_OpenSession`, `C_Login`, `C_FindObjects*`, `C_GetAttributeValue`, `C_GenerateKeyPair`, `C_CreateObject`, `C_SignInit`, `C_Sign`, `C_Logout`, `C_CloseSession`, `C_Finalize`).
+* **`PkcsProviders` (module ref-counting & multi-device registry)**: Calls `C_Initialize` once per `.so`/`.dylib` path (`CKR_CRYPTOKI_ALREADY_INITIALIZED` handled gracefully), pools thread-safe RO sessions per slot in `Pkcs11SessionPool`, and allows multiple devices (`softhsm-primary`, `softhsm-secondary`, vendor HSMs) to run concurrently.
+* **`CryptoProviderPort` (`ocsp-responder`)**: High-level port decoupling `ocsp-responder` from native drivers. Statically isolates `libpkcs11j` and vendor `.so` drivers inside `hsm-signer` behind a stateless gRPC contract (`hsm-signer-proto`).
 
 == Zero Pre-Seeded Keys at Startup
 
-In v5.0, `hsm/init-hsm.sh` initializes only an **empty** SoftHSM2 token (`ocsp-signing`) if one does not already exist:
+In Docker Compose, `hsm/init-hsm.sh` initializes two empty SoftHSM2 tokens (`ocsp-signing` for `softhsm-primary` and `ocsp-signing-2` for `softhsm-secondary`) if they do not already exist:
 
 [source,bash]
 ----
@@ -16,27 +39,28 @@ softhsm2-util --init-token --free \
 ----
 
 * **No keypair or self-signed certificate is generated on startup.**
-* When `ocsp-responder` boots against an unprovisioned HSM token, `Pkcs11OcspSigner` starts in an unconfigured state and logs:
-  `No signing key in HSM token 'ocsp-signing'. Generate a CSR, have it signed by your CA, then import and activate the certificate. OCSP requests answer tryLater until then.`
-* Any RFC 6960 request received before a signing certificate is activated receives a compliant `OCSPRespBuilder.TRY_LATER (3)` response.
+* When `ocsp-responder` boots before any signing certificate is activated, OCSP requests answer deterministically with RFC 6960 `OCSPRespBuilder.TRY_LATER (3)`.
 
-== On-Demand HSM Keypair & PKCS#10 CSR Workflow
+== On-Demand Keypair Generation, CSR & Multi-Device Selection
 
-Operators provision signing keys and certificates through the Admin Console (`http://localhost:3002/signing-certificates`) or REST API:
+Operators provision signing keys and certificates per device via the Admin Console (`http://localhost:3002/signing-certificates`) or REST API:
 
-1. **Generate HSM Keypair & CSR** (`POST /api/v1/admin/signing-certificates/csr`):
-   * Supports `RSA` (`2048`, `3072`, `4096`) and `EC` (`256` / `secp256r1`, `384` / `secp384r1`).
-   * If `reuseExistingKey` is `false` (or the key label does not exist yet), `Pkcs11OcspSigner` generates a new non-extractable keypair directly inside the SoftHSM2 token under the requested `keyLabel` along with a minimal self-signed bootstrap certificate object so SunPKCS11 exposes the private key entry.
-   * Builds and signs a PKCS#10 Certificate Signing Request (`-----BEGIN CERTIFICATE REQUEST-----`) inside the HSM.
-2. **Sign CSR in KMS Simulator** (`http://localhost:3001/certificates`):
-   * In KMS, select the target Root or Subordinate CA, paste the CSR PEM, and select profile **`OCSP_SIGNING`** (which adds `basicConstraints = CA:FALSE` and `extendedKeyUsage = id-kp-OCSPSigning` OID `1.3.6.1.5.5.7.3.9`).
-3. **Import & Public Key Verification** (`POST /api/v1/admin/signing-certificates`):
-   * `Pkcs11OcspSigner.importCertificateToToken(keyLabel, holder)` compares the uploaded X.509 certificate's `SubjectPublicKeyInfo` bytes against the HSM keypair's public key before binding the certificate to the PKCS#11 entry.
-   * If the certificate was signed for a different keypair, import fails immediately with a clear `IllegalArgumentException`.
-4. **Post-Commit Activation** (`PUT /api/v1/admin/signing-certificates/\{id\}/activate`):
-   * Marks the certificate active in `ocsp.signing_certificates` and publishes `SigningConfigurationChangedEvent`.
-   * `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` updates the in-memory `Pkcs11OcspSigner` table only after the database transaction commits.
+1. **Discover Connected Signing Devices** (`GET /api/v1/admin/signing-certificates/providers` and `/hsm-info`):
+   * Lists every active provider (`providerId`, `providerType`, `tokenLabel`, `slotId`, `healthy`, and key labels per device).
+2. **Generate Keypair & PKCS#10 CSR on Selected Device** (`POST /api/v1/admin/signing-certificates/csr`):
+   * Pass `providerId` (e.g. `softhsm-primary` or `softhsm-secondary`), `keyLabel`, `keyAlgorithm` (`RSA` or `EC`), `keySize`, and `reuseExistingKey`.
+   * Inside `hsm-signer`, `Pkcs11Provider.generateKeyPair` invokes `C_GenerateKeyPair` directly (`CKA_SENSITIVE=true`, `CKA_EXTRACTABLE=false`) without creating dummy certificates, then signs the PKCS#10 CSR via `C_SignInit` / `C_Sign` (converting ECDSA raw `r || s` output to ASN.1 DER automatically).
+3. **Sign CSR in KMS Simulator** (`http://localhost:3001/certificates`):
+   * Select the target CA, paste the CSR PEM, and issue with profile **`OCSP_SIGNING`** (`basicConstraints = CA:FALSE`, `extendedKeyUsage = id-kp-OCSPSigning`).
+4. **Import & Public Key Verification** (`POST /api/v1/admin/signing-certificates`):
+   * Supply `providerId`, `keyLabel`, and `certificatePem`.
+   * `Pkcs11Provider.importCertificate` verifies that the certificate public key matches the token's public key before storing the `CKO_CERTIFICATE` object via `C_CreateObject`.
+   * Flyway migration `V13` persists `provider_id` in `ocsp.signing_certificates`.
+5. **Post-Commit Activation & Multi-CA/Multi-Device Routing** (`PUT /api/v1/admin/signing-certificates/\{id\}/activate`):
+   * `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` updates `MultiProviderOcspSigner`.
+   * Before signing each OCSP response, `selectSigner(CertificateID)` matches the request's issuing CA (`IssuerNameHash` + `AuthorityKeyIdentifier`) to its active signing certificate and routes signing to that certificate's assigned `providerId` and `keyLabel` in 1 gRPC round-trip.
 
-== Multi-CA Signer Selection (`selectSigner(CertificateID)`)
+== Adding External Hardware HSMs or Multiple `hsm-signer` Hosts
 
-Multiple signing certificates (one per issuing CA) can be active simultaneously. When an OCSP request arrives, `Pkcs11OcspSigner.selectSigner(CertificateID requestCertId)` selects the active, non-expired signing certificate whose `subjectNameHash` / `publicKeyHash` or `issuerNameHash` matches the requested `CertID`, ensuring multi-CA RFC 6960 §4.2.2.2 compliance.
+* **Multiple local tokens/vendors in one `hsm-signer` instance**: Add entries under `hsm-signer.providers[]` with each device's `id`, `library-path` (e.g. Utimaco `/opt/utimaco/libcs_pkcs11_R2.so`, Thales Luna `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`, YubiHSM), `token-label` or `slot-id`, `pin`, and `prehash-in-jvm`.
+* **Multiple remote `hsm-signer` servers**: Add entries under `hsm.grpc.endpoints[]` in `ocsp-responder` (`host`, `port`, optional `id-prefix`, and optional PKCS#12 mTLS `key-store` / `trust-store`). All discovered providers appear simultaneously in `PkcsProviders` and the Admin Console.

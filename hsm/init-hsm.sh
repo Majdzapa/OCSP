@@ -15,12 +15,16 @@ set -euo pipefail
 # =============================================================================
 
 HSM_TOKEN_LABEL="${HSM_TOKEN_LABEL:-ocsp-signing}"
+HSM_SECONDARY_TOKEN_LABEL="${HSM_SECONDARY_TOKEN_LABEL:-ocsp-signing-2}"
 HSM_PIN="${HSM_PIN:-1234}"
 HSM_SO_PIN="${HSM_SO_PIN:-12345678}"
+HSM_SECONDARY_PIN="${HSM_SECONDARY_PIN:-${HSM_PIN}}"
+HSM_SECONDARY_SO_PIN="${HSM_SECONDARY_SO_PIN:-${HSM_SO_PIN}}"
 SOFTHSM2_CONF="${SOFTHSM2_CONF:-/etc/softhsm2/softhsm2.conf}"
 
 echo "=== [HSM Service] Initializing SoftHSM2 Container ==="
-echo "[*] Token Label:    ${HSM_TOKEN_LABEL}"
+echo "[*] Primary Token Label:   ${HSM_TOKEN_LABEL}"
+echo "[*] Secondary Token Label: ${HSM_SECONDARY_TOKEN_LABEL}"
 
 mkdir -p /etc/softhsm2 /var/lib/softhsm/tokens
 if [ ! -f "${SOFTHSM2_CONF}" ]; then
@@ -33,18 +37,28 @@ fi
 
 export SOFTHSM2_CONF
 
-# Initialize token if not present
-if softhsm2-util --show-slots | grep -q "Label:.*${HSM_TOKEN_LABEL}"; then
-    echo "[✓] SoftHSM2 token '${HSM_TOKEN_LABEL}' already exists."
-else
-    echo "[*] Initializing SoftHSM2 token '${HSM_TOKEN_LABEL}'..."
-    softhsm2-util --init-token --free --label "${HSM_TOKEN_LABEL}" --so-pin "${HSM_SO_PIN}" --pin "${HSM_PIN}"
-fi
+init_token_if_missing() {
+    local label="$1"
+    local so_pin="$2"
+    local pin="$3"
+    if [ -z "${label}" ]; then
+        return 0
+    fi
+    if softhsm2-util --show-slots | grep -q "Label:.*${label}"; then
+        echo "[✓] SoftHSM2 token '${label}' already exists."
+    else
+        echo "[*] Initializing SoftHSM2 token '${label}'..."
+        softhsm2-util --init-token --free --label "${label}" --so-pin "${so_pin}" --pin "${pin}"
+    fi
+}
+
+init_token_if_missing "${HSM_TOKEN_LABEL}" "${HSM_SO_PIN}" "${HSM_PIN}"
+init_token_if_missing "${HSM_SECONDARY_TOKEN_LABEL}" "${HSM_SECONDARY_SO_PIN}" "${HSM_SECONDARY_PIN}"
 
 # Ensure tokens directory is accessible
 chmod -R 777 /var/lib/softhsm/tokens /etc/softhsm2 2>/dev/null || true
 
-echo "=== [HSM Service] SoftHSM2 token ready. No keys or certificates are pre-provisioned. ==="
+echo "=== [HSM Service] SoftHSM2 tokens ready. No keys or certificates are pre-provisioned. ==="
 
 # Keep daemon running and healthy
 exec tail -f /dev/null

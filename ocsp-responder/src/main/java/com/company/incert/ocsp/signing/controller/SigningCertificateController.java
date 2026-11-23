@@ -7,6 +7,7 @@ import com.company.incert.ocsp.signing.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.signing.dto.HsmInfoDto;
 import com.company.incert.ocsp.signing.dto.SigningCertValidityReportDto;
 import com.company.incert.ocsp.signing.dto.SigningCertificateDto;
+import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.service.SigningCertificateService;
 import com.company.incert.ocsp.signing.service.SigningCertificateValidityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -129,11 +130,18 @@ public class SigningCertificateController {
         }
     }
 
-    @Operation(summary = "Get HSM PKCS#11 configuration and token key labels", description = "Returns configured PKCS#11 library path, token label, slot index, and existing key labels")
+    @Operation(summary = "Get HSM PKCS#11 configuration and token key labels", description = "Returns configured signing providers, PKCS#11 library path, token label, slot index, and existing key labels")
     @GetMapping("/hsm-info")
     @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<HsmInfoDto> getHsmInfo() {
         return ResponseEntity.ok(certificateService.getHsmInfo());
+    }
+
+    @Operation(summary = "List connected signing providers / devices", description = "Returns every PKCS#11 / gRPC / local signing device registered in PkcsProviders")
+    @GetMapping("/providers")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
+    public ResponseEntity<List<ProviderDeviceInfo>> listProviders() {
+        return ResponseEntity.ok(certificateService.listProviders());
     }
 
     @Operation(summary = "Generate a PKCS#10 CSR from the HSM", description = "Generates (or reuses) a non-extractable keypair in the HSM and returns a PEM-encoded PKCS#10 CSR (ADMIN and AGENT)")

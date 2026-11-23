@@ -96,9 +96,10 @@ class SigningCertificateServiceTest {
 
         assertThat(dto).isNotNull();
         assertThat(dto.alias()).isEqualTo("new-cert");
+        assertThat(dto.providerId()).isEqualTo("default");
         assertThat(dto.keyLabel()).isEqualTo("ocsp-signing-key");
         assertThat(dto.active()).isFalse();
-        verify(ocspSigner).importCertificateToToken(eq("ocsp-signing-key"), any(X509CertificateHolder.class));
+        verify(ocspSigner).importCertificateToToken(eq("default"), eq("ocsp-signing-key"), any(X509CertificateHolder.class));
         verify(repository).save(any(SigningCertificate.class));
     }
 
@@ -134,7 +135,7 @@ class SigningCertificateServiceTest {
         SigningCertificateDto result = service.activate(5L);
 
         assertThat(result.active()).isTrue();
-        verify(ocspSigner).updateActiveCertificate(eq("key-5"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
+        verify(ocspSigner).updateActiveCertificate(eq("default"), eq("key-5"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
     }
 
     @Test
@@ -169,7 +170,7 @@ class SigningCertificateServiceTest {
         SigningCertificateDto dto = service.deactivate(2L);
 
         assertThat(dto.active()).isFalse();
-        verify(ocspSigner).updateActiveCertificate(eq("key-1"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
+        verify(ocspSigner).updateActiveCertificate(eq("default"), eq("key-1"), any(X509CertificateHolder.class), eq("SHA256withRSA"));
     }
 
     @Test
@@ -214,15 +215,42 @@ class SigningCertificateServiceTest {
 
     @Test
     void generateCsr_delegatesToOcspSigner() {
-        when(ocspSigner.generateCsr("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false))
+        when(ocspSigner.generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false))
                 .thenReturn("-----BEGIN CERTIFICATE REQUEST-----\nMII...\n-----END CERTIFICATE REQUEST-----\n");
 
         var req = new GenerateCsrRequest("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
         GenerateCsrResponse res = service.generateCsr(req);
 
+        assertThat(res.providerId()).isEqualTo("default");
         assertThat(res.keyLabel()).isEqualTo("key-2");
         assertThat(res.csrPem()).contains("BEGIN CERTIFICATE REQUEST");
-        verify(ocspSigner).generateCsr("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
+        verify(ocspSigner).generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
+    }
+
+    @Test
+    void addAndCsrWithExplicitProviderIdRoutesToSelectedProvider() {
+        when(ocspSigner.generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false))
+                .thenReturn("-----BEGIN CERTIFICATE REQUEST-----\nEC...\n-----END CERTIFICATE REQUEST-----\n");
+
+        var csrReq = new GenerateCsrRequest("key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false, "softhsm-secondary");
+        GenerateCsrResponse csrRes = service.generateCsr(csrReq);
+
+        assertThat(csrRes.providerId()).isEqualTo("softhsm-secondary");
+        verify(ocspSigner).generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false);
+
+        when(repository.existsByAlias("sec-cert")).thenReturn(false);
+        when(repository.save(any(SigningCertificate.class))).thenAnswer(inv -> {
+            SigningCertificate c = inv.getArgument(0);
+            c.setId(22L);
+            return c;
+        });
+
+        var addReq = new AddSigningCertificateRequest(
+                "sec-cert", "key-sec", testCertPem, false, "SHA256withRSA", "softhsm-secondary");
+        SigningCertificateDto saved = service.addCertificate(addReq);
+
+        assertThat(saved.providerId()).isEqualTo("softhsm-secondary");
+        verify(ocspSigner).importCertificateToToken(eq("softhsm-secondary"), eq("key-sec"), any(X509CertificateHolder.class));
     }
 
     @Test

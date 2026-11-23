@@ -27,6 +27,10 @@ public class SigningCertificate {
     @Column(nullable = false, unique = true, length = 100)
     private String alias;
 
+    @Column(name = "provider_id", nullable = false, length = 100)
+    @Builder.Default
+    private String providerId = "default";
+
     @Column(name = "key_label", nullable = false, length = 100)
     private String keyLabel;
 

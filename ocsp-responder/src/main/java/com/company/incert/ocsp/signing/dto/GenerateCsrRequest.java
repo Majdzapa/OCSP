@@ -20,6 +20,13 @@ public record GenerateCsrRequest(
     Integer keySize,
 
     @Schema(description = "If true, reuse an existing private key in the HSM token instead of generating a new keypair", defaultValue = "false")
-    Boolean reuseExistingKey
-) {}
+    Boolean reuseExistingKey,
+
+    @Schema(description = "Target signing provider/device ID in PkcsProviders (defaults to default provider if omitted)", example = "softhsm-primary")
+    String providerId
+) {
+    public GenerateCsrRequest(String keyLabel, String subjectDn, String keyAlgorithm, Integer keySize, Boolean reuseExistingKey) {
+        this(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey, null);
+    }
+}
 

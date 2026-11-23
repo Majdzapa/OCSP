@@ -14,6 +14,9 @@ public record SigningCertificateDto(
     @Schema(description = "Human-readable unique alias", example = "ocsp-signing-2026")
     String alias,
 
+    @Schema(description = "Signing provider/device ID in PkcsProviders", example = "softhsm-primary")
+    String providerId,
+
     @Schema(description = "Key alias / label in the HSM", example = "ocsp-signing-key")
     String keyLabel,
 
@@ -52,5 +55,25 @@ public record SigningCertificateDto(
 
     @Schema(description = "Full PEM encoded certificate content")
     String certificatePem
-) {}
+) {
+    public SigningCertificateDto(
+            Long id,
+            String alias,
+            String keyLabel,
+            String subjectDn,
+            String issuerDn,
+            String serialNumber,
+            Instant notBefore,
+            Instant notAfter,
+            String signatureAlgorithm,
+            boolean active,
+            long daysUntilExpiry,
+            boolean expired,
+            Instant createdAt,
+            Instant activatedAt,
+            String certificatePem) {
+        this(id, alias, "default", keyLabel, subjectDn, issuerDn, serialNumber, notBefore, notAfter,
+                signatureAlgorithm, active, daysUntilExpiry, expired, createdAt, activatedAt, certificatePem);
+    }
+}
 

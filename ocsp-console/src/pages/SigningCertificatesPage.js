@@ -28,12 +28,14 @@ export const SigningCertificatesPage = () => {
     // Import/Add modal state
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [alias, setAlias] = useState('');
+    const [providerId, setProviderId] = useState('default');
     const [keyLabel, setKeyLabel] = useState('ocsp-signing-key');
     const [signatureAlgorithm, setSignatureAlgorithm] = useState('SHA256withRSA');
     const [certificatePem, setCertificatePem] = useState('');
     const [activateImmediately, setActivateImmediately] = useState(false);
     // Generate CSR modal state
     const [csrModalOpen, setCsrModalOpen] = useState(false);
+    const [csrProviderId, setCsrProviderId] = useState('default');
     const [csrKeyLabel, setCsrKeyLabel] = useState('ocsp-signing-key-2');
     const [csrSubjectDn, setCsrSubjectDn] = useState('CN=Incert Delegated OCSP Signer,O=Incert,C=CH');
     const [csrAlgorithm, setCsrAlgorithm] = useState('RSA');
@@ -53,6 +55,9 @@ export const SigningCertificatesPage = () => {
             ]);
             setCertificates(certs);
             setHsmInfo(hsm);
+            const fallbackProvider = hsm?.defaultProviderId || hsm?.providers?.[0]?.providerId || 'default';
+            setProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
+            setCsrProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
         }
         catch (err) {
             setError(err?.response?.data?.message || err?.message || 'Failed to load signing certificates');
@@ -123,15 +128,17 @@ export const SigningCertificatesPage = () => {
             setError(null);
             const payload = {
                 alias: alias.trim(),
+                providerId: providerId || hsmInfo?.defaultProviderId || 'default',
                 keyLabel: keyLabel.trim() || 'ocsp-signing-key',
                 certificatePem: certificatePem.trim(),
                 activateImmediately,
                 signatureAlgorithm,
             };
             await addSigningCertificate(payload);
-            setSuccess(`Signing certificate '${alias}' imported into HSM and registered${activateImmediately ? ' (activated)' : ''}.`);
+            setSuccess(`Signing certificate '${alias}' imported into provider '${payload.providerId}' and registered${activateImmediately ? ' (activated)' : ''}.`);
             setAddModalOpen(false);
             setAlias('');
+            setProviderId(hsmInfo?.defaultProviderId || hsmInfo?.providers?.[0]?.providerId || 'default');
             setKeyLabel(hsmInfo?.activeKeyLabel || 'ocsp-signing-key');
             setSignatureAlgorithm('SHA256withRSA');
             setCertificatePem('');
@@ -155,6 +162,7 @@ export const SigningCertificatesPage = () => {
             setActionLoading(true);
             setError(null);
             const res = await generateSigningCsr({
+                providerId: csrProviderId || hsmInfo?.defaultProviderId || 'default',
                 keyLabel: csrKeyLabel.trim(),
                 subjectDn: csrSubjectDn.trim(),
                 keyAlgorithm: csrAlgorithm,
@@ -162,7 +170,7 @@ export const SigningCertificatesPage = () => {
                 reuseExistingKey: csrReuseExisting,
             });
             setCsrResult(res);
-            setSuccess(`CSR generated in HSM for key '${res.keyLabel}'. Download the CSR, have your CA sign it, then import the certificate.`);
+            setSuccess(`CSR generated on provider '${res.providerId || csrProviderId}' for key '${res.keyLabel}'. Download the CSR, have your CA sign it, then import the certificate.`);
             await fetchAll();
         }
         catch (err) {
@@ -184,7 +192,17 @@ export const SigningCertificatesPage = () => {
         reader.readAsText(file);
     };
     const activeCerts = certificates.filter((c) => c.active);
-    const rawKeyAlg = hsmInfo?.keyAlgorithms?.[keyLabel] || 'RSA';
+    const providers = hsmInfo?.providers ?? [];
+    const providerOptions = providers.map((p) => ({
+        value: p.providerId,
+        label: `${p.providerId} (${p.providerType}${p.tokenLabel ? ' · ' + p.tokenLabel : ''})`,
+    }));
+    const selectedImportProvider = providers.find((p) => p.providerId === providerId) || providers[0];
+    const importKeyLabels = selectedImportProvider?.keyLabels ?? hsmInfo?.tokenAliases ?? [];
+    const importKeyAlgorithms = selectedImportProvider?.keyAlgorithms ?? hsmInfo?.keyAlgorithms ?? {};
+    const selectedCsrProvider = providers.find((p) => p.providerId === csrProviderId) || providers[0];
+    const csrExistingKeyLabels = selectedCsrProvider?.keyLabels ?? hsmInfo?.tokenAliases ?? [];
+    const rawKeyAlg = importKeyAlgorithms?.[keyLabel] || 'RSA';
     const normalizedKeyType = rawKeyAlg.toUpperCase().startsWith('EC') ? 'EC' : 'RSA';
     const compatibleAlgorithms = hsmInfo?.supportedSignatureAlgorithms?.[normalizedKeyType] ??
         (normalizedKeyType === 'EC'
@@ -233,25 +251,50 @@ export const SigningCertificatesPage = () => {
 
         {/* HSM Configuration Info Bar */}
         {hsmInfo && (<Paper withBorder p="sm" radius="md" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)' }}>
-            <Group justify="space-between" wrap="wrap" gap="sm">
-              <Group gap="xs" wrap="wrap">
-                <IconCpu size={18} color="#38bdf8"/>
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed">HSM Provider:</Text>
-                <Badge color={hsmInfo.signerType === 'PKCS11' ? 'teal' : 'yellow'} variant="light" size="sm">
-                  {hsmInfo.signerType}
+            <Stack gap="xs">
+              <Group justify="space-between" wrap="wrap" gap="sm">
+                <Group gap="xs" wrap="wrap">
+                  <IconCpu size={18} color="#38bdf8"/>
+                  <Text size="xs" fw={700} tt="uppercase" c="dimmed">HSM Signer:</Text>
+                  <Badge color={hsmInfo.signerType !== 'SOFTWARE' ? 'teal' : 'yellow'} variant="light" size="sm">
+                    {hsmInfo.signerType}
+                  </Badge>
+                  <Text size="xs" c="dimmed">Default Device:</Text>
+                  <Code>{hsmInfo.defaultProviderId || 'default'}</Code>
+                  <Text size="xs" c="dimmed">Library:</Text>
+                  <Code>{hsmInfo.pkcs11Library}</Code>
+                  <Text size="xs" c="dimmed">Token:</Text>
+                  <Code>{hsmInfo.tokenLabel} (slot {hsmInfo.slotIndex})</Code>
+                </Group>
+                <Badge variant="outline" color="cyan" size="xs">
+                  {providers.length > 0 ? `${providers.length} Device(s) Connected` : 'Single Provider'}
                 </Badge>
-                <Text size="xs" c="dimmed">Library:</Text>
-                <Code>{hsmInfo.pkcs11Library}</Code>
-                <Text size="xs" c="dimmed">Token:</Text>
-                <Code>{hsmInfo.tokenLabel} (slot {hsmInfo.slotIndex})</Code>
               </Group>
-              <Group gap={6} wrap="wrap">
-                <Text size="xs" c="dimmed">HSM Keys:</Text>
-                {hsmInfo.tokenAliases.map((a) => (<Badge key={a} size="xs" variant={a === hsmInfo.activeKeyLabel ? 'filled' : 'outline'} color="indigo">
-                    {a}
-                  </Badge>))}
-              </Group>
-            </Group>
+
+              {providers.length > 0 && (<SimpleGrid cols={{ base: 1, md: Math.min(3, providers.length) }} spacing="xs">
+                  {providers.map((p) => (<Paper key={p.providerId} withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}>
+                      <Group justify="space-between" mb={4}>
+                        <Group gap={6}>
+                          <Badge size="xs" color={p.providerId === hsmInfo.defaultProviderId ? 'blue' : 'gray'} variant="filled">
+                            {p.providerId}
+                          </Badge>
+                          <Badge size="xs" color="teal" variant="light">{p.providerType}</Badge>
+                        </Group>
+                        <Badge size="xs" color={p.healthy ? 'green' : 'red'} variant="dot">
+                          {p.healthy ? 'UP' : 'DOWN'}
+                        </Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        Token: <Code>{p.tokenLabel || 'n/a'}</Code> · Slot <Code>{p.slotId}</Code>
+                      </Text>
+                      <Group gap={4} mt={4} wrap="wrap">
+                        {(p.keyLabels || []).length === 0 ? (<Text size="xs" c="dimmed">No keys yet</Text>) : (p.keyLabels.map((k) => (<Badge key={k} size="xs" variant="outline" color="indigo">
+                              {k}{p.keyAlgorithms?.[k] ? ` (${p.keyAlgorithms[k]})` : ''}
+                            </Badge>)))}
+                      </Group>
+                    </Paper>))}
+                </SimpleGrid>)}
+            </Stack>
           </Paper>)}
 
         {/* Notifications */}
@@ -293,8 +336,9 @@ export const SigningCertificatesPage = () => {
                       <Code>{cert.serialNumber}</Code>
                     </Box>
                     <Box>
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>HSM Key / Algorithm / Expiry</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Device / HSM Key / Algorithm / Expiry</Text>
                       <Group gap="xs" mt={4}>
+                        <Badge variant="light" color="blue">{cert.providerId || 'default'}</Badge>
                         <Badge variant="outline" color="indigo">{cert.keyLabel}</Badge>
                         <Badge variant="light" color="cyan">{cert.signatureAlgorithm}</Badge>
                         <Badge color={cert.daysUntilExpiry < 7 ? 'red' : cert.daysUntilExpiry < 30 ? 'orange' : 'teal'} variant="light">
@@ -350,6 +394,9 @@ export const SigningCertificatesPage = () => {
                       </Table.Td>
                       <Table.Td>
                         <Group gap={4}>
+                          <Badge variant="light" color="blue" size="xs">
+                            {cert.providerId || 'default'}
+                          </Badge>
                           <Badge variant="outline" color="indigo" size="sm">
                             {cert.keyLabel}
                           </Badge>
@@ -405,18 +452,27 @@ export const SigningCertificatesPage = () => {
           </Group>} size="lg">
         {!csrResult ? (<form onSubmit={handleGenerateCsr}>
             <Stack gap="md">
-              <Switch label="Reuse existing HSM private key" description="Enable to generate a renewal CSR using an existing key label in the HSM token" checked={csrReuseExisting} onChange={(e) => {
+              {providerOptions.length > 0 && (<Select label="Signing Device / Provider" description="Select which HSM device/token generates and stores the private key" leftSection={<IconCpu size={16}/>} data={providerOptions} value={csrProviderId} onChange={(val) => {
+                    const nextProv = val || hsmInfo?.defaultProviderId || 'default';
+                    setCsrProviderId(nextProv);
+                    if (csrReuseExisting) {
+                        const target = providers.find((p) => p.providerId === nextProv);
+                        setCsrKeyLabel(target?.keyLabels?.[0] || '');
+                    }
+                }} required/>)}
+
+              <Switch label="Reuse existing HSM private key" description="Enable to generate a renewal CSR using an existing key label in the selected device" checked={csrReuseExisting} onChange={(e) => {
                 const checked = e.currentTarget.checked;
                 setCsrReuseExisting(checked);
-                if (checked && hsmInfo?.tokenAliases.length) {
-                    setCsrKeyLabel(hsmInfo.tokenAliases[0]);
+                if (checked && csrExistingKeyLabels.length) {
+                    setCsrKeyLabel(csrExistingKeyLabels[0]);
                 }
                 else if (!checked) {
                     setCsrKeyLabel(`ocsp-signing-key-${certificates.length + 1}`);
                 }
             }}/>
 
-              {csrReuseExisting && hsmInfo?.tokenAliases.length ? (<Select label="Existing HSM Key Label" data={hsmInfo.tokenAliases} value={csrKeyLabel} onChange={(val) => setCsrKeyLabel(val || '')} required/>) : (<TextInput label="New HSM Key Label" placeholder="ocsp-signing-key-2" description="A non-extractable keypair will be generated inside the HSM token under this label" leftSection={<IconKey size={16}/>} value={csrKeyLabel} onChange={(e) => setCsrKeyLabel(e.currentTarget.value)} required/>)}
+              {csrReuseExisting && csrExistingKeyLabels.length ? (<Select label="Existing HSM Key Label" data={csrExistingKeyLabels} value={csrKeyLabel} onChange={(val) => setCsrKeyLabel(val || '')} required/>) : (<TextInput label="New HSM Key Label" placeholder="ocsp-signing-key-2" description="A non-extractable keypair will be generated inside the selected HSM token under this label" leftSection={<IconKey size={16}/>} value={csrKeyLabel} onChange={(e) => setCsrKeyLabel(e.currentTarget.value)} required/>)}
 
               <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert Delegated OCSP Signer,O=Incert,C=CH" value={csrSubjectDn} onChange={(e) => setCsrSubjectDn(e.currentTarget.value)} required/>
 
@@ -476,6 +532,9 @@ export const SigningCertificatesPage = () => {
 
             <Group justify="space-between" mt="sm">
               <Button variant="light" color="indigo" onClick={() => {
+                if (csrResult.providerId) {
+                    setProviderId(csrResult.providerId);
+                }
                 setKeyLabel(csrResult.keyLabel);
                 setAlias(csrResult.keyLabel);
                 setCsrModalOpen(false);
@@ -499,10 +558,19 @@ export const SigningCertificatesPage = () => {
           <Stack gap="md">
             <TextInput label="Certificate Alias" placeholder="e.g. ocsp-signing-2027" value={alias} onChange={(e) => setAlias(e.currentTarget.value)} required/>
 
-            {hsmInfo?.tokenAliases.length ? (<Select label="HSM Key Label / Alias" description={`Detected key type for '${keyLabel}': ${normalizedKeyType}`} leftSection={<IconKey size={16}/>} data={hsmInfo.tokenAliases.map((a) => ({
+            {providerOptions.length > 0 && (<Select label="Signing Device / Provider" description="Device holding the corresponding private key" leftSection={<IconCpu size={16}/>} data={providerOptions} value={providerId} onChange={(val) => {
+                const nextProv = val || hsmInfo?.defaultProviderId || 'default';
+                setProviderId(nextProv);
+                const target = providers.find((p) => p.providerId === nextProv);
+                if (target?.keyLabels?.length) {
+                    setKeyLabel(target.keyLabels[0]);
+                }
+            }} required/>)}
+
+            {importKeyLabels.length ? (<Select label="HSM Key Label / Alias" description={`Detected key type for '${keyLabel}': ${normalizedKeyType}`} leftSection={<IconKey size={16}/>} data={importKeyLabels.map((a) => ({
                 value: a,
-                label: hsmInfo.keyAlgorithms?.[a] ? `${a} (${hsmInfo.keyAlgorithms[a]})` : a,
-            }))} value={keyLabel} onChange={(val) => setKeyLabel(val || hsmInfo.tokenAliases[0])} searchable required/>) : (<TextInput label="HSM Key Label / Alias" placeholder="ocsp-signing-key" description="The private key label in the HSM token corresponding to this certificate" leftSection={<IconKey size={16}/>} value={keyLabel} onChange={(e) => setKeyLabel(e.currentTarget.value)} required/>)}
+                label: importKeyAlgorithms?.[a] ? `${a} (${importKeyAlgorithms[a]})` : a,
+            }))} value={keyLabel} onChange={(val) => setKeyLabel(val || importKeyLabels[0])} searchable required/>) : (<TextInput label="HSM Key Label / Alias" placeholder="ocsp-signing-key" description="The private key label in the HSM token corresponding to this certificate" leftSection={<IconKey size={16}/>} value={keyLabel} onChange={(e) => setKeyLabel(e.currentTarget.value)} required/>)}
 
             <Select label="Signature Algorithm" description={`Compatible algorithms for ${normalizedKeyType} key '${keyLabel}'`} data={compatibleAlgorithms.map((alg) => ({ value: alg, label: alg }))} value={signatureAlgorithm} onChange={(val) => setSignatureAlgorithm(val || compatibleAlgorithms[0])} required/>
 

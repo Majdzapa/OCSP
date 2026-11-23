@@ -9,16 +9,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-echo "=== [1/4] Building KMS Simulator ==="
+echo "=== [1/6] Building PKCS11J Wrapper + Native JNI ==="
+(cd "${ROOT_DIR}/pkcs11j" && mvn clean install -DskipTests)
+
+echo "=== [2/6] Building HSM Signer Protobuf/gRPC Contract ==="
+(cd "${ROOT_DIR}/hsm-signer-proto" && mvn clean install -DskipTests)
+
+echo "=== [3/6] Building HSM Signer gRPC Service ==="
+(cd "${ROOT_DIR}/hsm-signer" && mvn clean package -DskipTests)
+
+echo "=== [4/6] Building KMS Simulator ==="
 (cd "${ROOT_DIR}/kms-simulator" && mvn clean package -DskipTests)
 
-echo "=== [2/4] Building OCSP Responder ==="
+echo "=== [5/6] Building OCSP Responder ==="
 (cd "${ROOT_DIR}/ocsp-responder" && mvn clean package -DskipTests)
 
-echo "=== [3/4] Building OCSP Client & Testing Service ==="
+echo "=== [6/6] Building OCSP Client & OCSP Console ==="
 (cd "${ROOT_DIR}/ocsp-client" && mvn clean package -DskipTests)
-
-echo "=== [4/4] Building OCSP Console (Yarn + Mantine v7) ==="
 (cd "${ROOT_DIR}/ocsp-console" && yarn build)
 
 echo "=== All standalone services built successfully! ==="

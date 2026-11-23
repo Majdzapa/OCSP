@@ -528,6 +528,23 @@ public class Pkcs11OcspSigner implements OcspSigner {
             .build(state.privateKey());
     }
 
+    /** Creates a {@link ContentSigner} bound directly to a specific key label and algorithm in this token. */
+    public ContentSigner createContentSigner(String targetKeyLabel, String signatureAlgorithm) throws Exception {
+        if (this.keyStore == null) {
+            load();
+        }
+        PrivateKey pk = (PrivateKey) keyStore.getKey(targetKeyLabel, pin);
+        if (pk == null) {
+            throw new IllegalStateException("Key '" + targetKeyLabel + "' not found in PKCS#11 keystore");
+        }
+        String alg = (signatureAlgorithm != null && !signatureAlgorithm.isBlank())
+                ? signatureAlgorithm.trim()
+                : ("EC".equalsIgnoreCase(pk.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA");
+        return new JcaContentSignerBuilder(alg)
+                .setProvider(this.provider)
+                .build(pk);
+    }
+
     @Override
     public X509CertificateHolder[] getSignerChain() {
         return requireState().chain();

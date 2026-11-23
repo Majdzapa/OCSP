@@ -6,9 +6,9 @@ import com.company.incert.ocsp.signing.dto.GenerateCsrResponse;
 import com.company.incert.ocsp.signing.dto.HsmInfoDto;
 import com.company.incert.ocsp.signing.dto.SigningCertificateDto;
 import com.company.incert.ocsp.signing.entity.SigningCertificate;
+import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.repository.SigningCertificateRepository;
 import com.company.incert.ocsp.signing.hsm.OcspSigner;
-import com.company.incert.ocsp.signing.hsm.Pkcs11OcspSigner;
 import com.company.incert.ocsp.signing.hsm.SigningAlgorithm;
 import com.company.incert.ocsp.signing.usecase.FindSigningCertificateUseCase;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +46,7 @@ public class SigningCertificateService {
 
     /** Publishes a "no active signer / just resync with the HSM" event (repeated across flows). */
     private void publishSignerStateRefresh() {
-        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, false));
+        eventPublisher.publishEvent(new SigningConfigurationChangedEvent(null, null, null, null, false));
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -61,9 +61,10 @@ public class SigningCertificateService {
             SigningCertificate primary = activeList.get(0);
             try {
                 X509CertificateHolder holder = parsePem(primary.getCertificatePem());
-                ocspSigner.updateActiveCertificate(primary.getKeyLabel(), holder, primary.getSignatureAlgorithm());
-                log.info("Synchronized {} active signing certificate(s) from database (primary alias='{}', keyLabel='{}', algorithm='{}')",
-                        activeList.size(), primary.getAlias(), primary.getKeyLabel(), primary.getSignatureAlgorithm());
+                ocspSigner.updateActiveCertificate(
+                        primary.getProviderId(), primary.getKeyLabel(), holder, primary.getSignatureAlgorithm());
+                log.info("Synchronized {} active signing certificate(s) from database (primary alias='{}', provider='{}', keyLabel='{}', algorithm='{}')",
+                        activeList.size(), primary.getAlias(), primary.getProviderId(), primary.getKeyLabel(), primary.getSignatureAlgorithm());
             } catch (Exception e) {
                 log.warn("Failed to synchronize active certificate from DB with signer: {}", e.getMessage());
             }
@@ -99,17 +100,19 @@ public class SigningCertificateService {
             throw new IllegalArgumentException("Cannot add an expired signing certificate (expired at: " + notAfter + ")");
         }
 
+        String providerId = resolveProviderId(request.providerId());
         String keyLabel = (request.keyLabel() != null && !request.keyLabel().isBlank())
                 ? request.keyLabel().trim()
                 : ocspSigner.getActiveKeyLabel();
 
         String signatureAlgorithm = resolveSignatureAlgorithm(request.signatureAlgorithm(), holder);
 
-        // Import and bind the signed certificate to its HSM private key if running with PKCS#11
-        ocspSigner.importCertificateToToken(keyLabel, holder);
+        // Import and bind the signed certificate to its HSM private key on the target provider
+        ocspSigner.importCertificateToToken(providerId, keyLabel, holder);
 
         SigningCertificate entity = SigningCertificate.builder()
                 .alias(request.alias().trim())
+                .providerId(providerId)
                 .keyLabel(keyLabel)
                 .certificatePem(request.certificatePem().trim())
                 .subjectDn(holder.getSubject().toString())
@@ -141,23 +144,23 @@ public class SigningCertificateService {
             throw new IllegalStateException("Cannot activate an expired certificate (expired at: " + target.getNotAfter() + ")");
         }
 
-        List<String> hsmKeys = ocspSigner.listKeyLabels();
+        List<String> hsmKeys = ocspSigner.listKeyLabels(target.getProviderId());
         if (!hsmKeys.isEmpty() && !hsmKeys.contains(target.getKeyLabel())) {
             throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
-                    + "': HSM key '" + target.getKeyLabel() + "' not found in token");
+                    + "': HSM key '" + target.getKeyLabel() + "' not found on provider '" + target.getProviderId() + "'");
         }
 
-        // Mark target active (multiple signing certificates can be active simultaneously, e.g. one per CA)
+        // Mark target active (multiple signing certificates can be active simultaneously, e.g. one per CA/device)
         target.setActive(true);
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
 
         X509CertificateHolder holder = parsePem(updated.getCertificatePem());
         eventPublisher.publishEvent(new SigningConfigurationChangedEvent(
-                updated.getKeyLabel(), holder, updated.getSignatureAlgorithm(), true));
+                updated.getProviderId(), updated.getKeyLabel(), holder, updated.getSignatureAlgorithm(), true));
 
-        log.info("Activated signing certificate: id={}, alias='{}', keyLabel='{}', notAfter={}",
-                updated.getId(), updated.getAlias(), updated.getKeyLabel(), updated.getNotAfter());
+        log.info("Activated signing certificate: id={}, alias='{}', provider='{}', keyLabel='{}', notAfter={}",
+                updated.getId(), updated.getAlias(), updated.getProviderId(), updated.getKeyLabel(), updated.getNotAfter());
 
         return toDto(updated);
     }
@@ -181,6 +184,7 @@ public class SigningCertificateService {
         SigningCertificate fallback = remainingActive.isEmpty() ? null : remainingActive.get(0);
         if (fallback != null) {
             eventPublisher.publishEvent(new SigningConfigurationChangedEvent(
+                    fallback.getProviderId(),
                     fallback.getKeyLabel(),
                     parsePem(fallback.getCertificatePem()),
                     fallback.getSignatureAlgorithm(),
@@ -209,19 +213,29 @@ public class SigningCertificateService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSigningConfigurationChanged(SigningConfigurationChangedEvent event) {
         if (event.activateDefault() && event.holder() != null) {
-            ocspSigner.updateActiveCertificate(event.keyLabel(), event.holder(), event.signatureAlgorithm());
-            log.info("Signer updated after DB commit: keyLabel={}, algorithm={}",
-                    event.keyLabel(), event.signatureAlgorithm());
+            ocspSigner.updateActiveCertificate(
+                    event.providerId(), event.keyLabel(), event.holder(), event.signatureAlgorithm());
+            log.info("Signer updated after DB commit: provider={}, keyLabel={}, algorithm={}",
+                    event.providerId(), event.keyLabel(), event.signatureAlgorithm());
         }
         syncAllSignersWithHsm();
     }
 
     public record SigningConfigurationChangedEvent(
+            String providerId,
             String keyLabel,
             X509CertificateHolder holder,
             String signatureAlgorithm,
             boolean activateDefault
-    ) {}
+    ) {
+        public SigningConfigurationChangedEvent(
+                String keyLabel,
+                X509CertificateHolder holder,
+                String signatureAlgorithm,
+                boolean activateDefault) {
+            this("default", keyLabel, holder, signatureAlgorithm, activateDefault);
+        }
+    }
 
     private void syncAllSignersWithHsm() {
         ocspSigner.syncRegisteredSigners(buildRegisteredSignerSnapshot());
@@ -235,6 +249,7 @@ public class SigningCertificateService {
                 .map(c -> {
                     try {
                         return new OcspSigner.RegisteredSigner(
+                                c.getProviderId(),
                                 c.getKeyLabel(),
                                 parsePem(c.getCertificatePem()),
                                 c.isActive(),
@@ -250,6 +265,7 @@ public class SigningCertificateService {
     }
 
     public GenerateCsrResponse generateCsr(GenerateCsrRequest request) {
+        String providerId = resolveProviderId(request.providerId());
         String alg = (request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
                 ? request.keyAlgorithm().trim().toUpperCase()
                 : "RSA";
@@ -259,6 +275,7 @@ public class SigningCertificateService {
         boolean reuse = Boolean.TRUE.equals(request.reuseExistingKey());
 
         String csrPem = ocspSigner.generateCsr(
+                providerId,
                 request.keyLabel().trim(),
                 request.subjectDn().trim(),
                 alg,
@@ -266,6 +283,7 @@ public class SigningCertificateService {
                 reuse
         );
         return new GenerateCsrResponse(
+                providerId,
                 request.keyLabel().trim(),
                 request.subjectDn().trim(),
                 alg,
@@ -273,18 +291,32 @@ public class SigningCertificateService {
         );
     }
 
+    public List<ProviderDeviceInfo> listProviders() {
+        return ocspSigner.listProviders();
+    }
+
     public HsmInfoDto getHsmInfo() {
         java.util.Map<String, java.util.List<String>> supportedByType = SigningAlgorithm.groupedByKeyType();
-        if (ocspSigner instanceof Pkcs11OcspSigner p11) {
+        List<ProviderDeviceInfo> providers = ocspSigner.listProviders();
+        String defaultProviderId = resolveProviderId(null);
+
+        ProviderDeviceInfo primaryInfo = providers.stream()
+                .filter(p -> defaultProviderId.equals(p.providerId()))
+                .findFirst()
+                .orElse(providers.isEmpty() ? null : providers.get(0));
+
+        if (primaryInfo != null) {
             return new HsmInfoDto(
-                    p11.type(),
-                    p11.getLibraryPath(),
-                    p11.getTokenLabel(),
-                    p11.getSlotListIndex(),
-                    p11.getActiveKeyLabel(),
-                    p11.listKeyLabels(),
-                    p11.getKeyAlgorithms(),
-                    supportedByType
+                    ocspSigner.type(),
+                    primaryInfo.libraryPath(),
+                    primaryInfo.tokenLabel(),
+                    (int) primaryInfo.slotId(),
+                    ocspSigner.getActiveKeyLabel(),
+                    primaryInfo.keyLabels() != null ? primaryInfo.keyLabels() : ocspSigner.listKeyLabels(),
+                    ocspSigner.getKeyAlgorithms(),
+                    supportedByType,
+                    defaultProviderId,
+                    providers
             );
         }
         return new HsmInfoDto(
@@ -295,8 +327,19 @@ public class SigningCertificateService {
                 ocspSigner.getActiveKeyLabel(),
                 ocspSigner.listKeyLabels(),
                 ocspSigner.getKeyAlgorithms(),
-                supportedByType
+                supportedByType,
+                defaultProviderId,
+                providers
         );
+    }
+
+    private String resolveProviderId(String requestedProviderId) {
+        if (requestedProviderId != null && !requestedProviderId.isBlank()
+                && !"default".equalsIgnoreCase(requestedProviderId.trim())) {
+            return requestedProviderId.trim();
+        }
+        String signerDefault = ocspSigner.getDefaultProviderId();
+        return (signerDefault != null && !signerDefault.isBlank()) ? signerDefault.trim() : "default";
     }
 
     private SigningCertificateDto toDto(SigningCertificate entity) {
@@ -309,6 +352,7 @@ public class SigningCertificateService {
         return SigningCertificateDto.builder()
                 .id(entity.getId())
                 .alias(entity.getAlias())
+                .providerId(entity.getProviderId())
                 .keyLabel(entity.getKeyLabel())
                 .subjectDn(entity.getSubjectDn())
                 .issuerDn(entity.getIssuerDn())

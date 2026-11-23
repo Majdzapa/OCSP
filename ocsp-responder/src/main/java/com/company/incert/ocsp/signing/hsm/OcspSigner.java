@@ -1,5 +1,6 @@
 package com.company.incert.ocsp.signing.hsm;
 
+import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.ocsp.CertificateID;
 import org.bouncycastle.operator.ContentSigner;
@@ -45,6 +46,27 @@ public interface OcspSigner {
         updateActiveCertificate(keyLabel, certificate);
     }
 
+    /**
+     * Dynamically updates the active signing certificate for a specific signing provider/device.
+     */
+    default void updateActiveCertificate(
+            String providerId,
+            String keyLabel,
+            X509CertificateHolder certificate,
+            String signatureAlgorithm) {
+        updateActiveCertificate(keyLabel, certificate, signatureAlgorithm);
+    }
+
+    /** Returns the default provider ID for this signer. */
+    default String getDefaultProviderId() {
+        return "default";
+    }
+
+    /** Lists all signing devices/providers available to this signer. */
+    default List<ProviderDeviceInfo> listProviders() {
+        return List.of();
+    }
+
     /** Returns the key label / alias currently active for signing. */
     default String getActiveKeyLabel() {
         return "ocsp-signing-key";
@@ -53,6 +75,11 @@ public interface OcspSigner {
     /** Returns all key aliases/labels currently stored in the HSM token. */
     default List<String> listKeyLabels() {
         return List.of(getActiveKeyLabel());
+    }
+
+    /** Returns all key aliases/labels currently stored in the specified provider/device. */
+    default List<String> listKeyLabels(String providerId) {
+        return listKeyLabels();
     }
 
     /** Returns a map of HSM keyLabel -> key algorithm (e.g. "RSA", "EC"). */
@@ -68,9 +95,29 @@ public interface OcspSigner {
     }
 
     /**
+     * Generates (or reuses) a keypair on the specified provider/device and returns a PEM-encoded PKCS#10 CSR.
+     */
+    default String generateCsr(
+            String providerId,
+            String keyLabel,
+            String subjectDn,
+            String keyAlgorithm,
+            int keySize,
+            boolean reuseExistingKey) {
+        return generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
+    }
+
+    /**
      * Imports a CA-signed X.509 certificate into the HSM token for the given key label.
      */
     default void importCertificateToToken(String keyLabel, X509CertificateHolder certificate) {}
+
+    /**
+     * Imports a CA-signed X.509 certificate into the specified provider/device under the given key label.
+     */
+    default void importCertificateToToken(String providerId, String keyLabel, X509CertificateHolder certificate) {
+        importCertificateToToken(keyLabel, certificate);
+    }
 
     /**
      * Synchronizes the full list of non-expired registered signing certificates
@@ -86,9 +133,19 @@ public interface OcspSigner {
         return new SigningSelection(getSignerChain(), createContentSigner());
     }
 
-    record RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred, String signatureAlgorithm) {
+    record RegisteredSigner(
+            String providerId,
+            String keyLabel,
+            X509CertificateHolder certificate,
+            boolean preferred,
+            String signatureAlgorithm) {
+
+        public RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred, String signatureAlgorithm) {
+            this("default", keyLabel, certificate, preferred, signatureAlgorithm);
+        }
+
         public RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred) {
-            this(keyLabel, certificate, preferred, null);
+            this("default", keyLabel, certificate, preferred, null);
         }
     }
 
