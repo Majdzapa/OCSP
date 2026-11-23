@@ -4,9 +4,11 @@ import com.company.incert.ocsp.shared.usecase.CanonicalizeSerialHexUseCase;
 import com.company.incert.ocsp.trust.dto.TrustedCaDto;
 import com.company.incert.ocsp.trust.entity.TrustedCaEntity;
 import com.company.incert.ocsp.trust.repository.TrustedCaRepository;
-import lombok.RequiredArgsConstructor;
+import com.company.incert.ocsp.trust.tls.TrustedCasReloadedEvent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,13 +31,23 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TrustedCaService {
 
     private static final HexFormat HEX = HexFormat.of();
 
     private final TrustedCaRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
     private final CopyOnWriteArrayList<X509Certificate> activeTrustedCas = new CopyOnWriteArrayList<>();
+
+    public TrustedCaService(TrustedCaRepository repository) {
+        this(repository, null);
+    }
+
+    @Autowired
+    public TrustedCaService(TrustedCaRepository repository, ApplicationEventPublisher eventPublisher) {
+        this.repository = repository;
+        this.eventPublisher = eventPublisher;
+    }
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
@@ -54,7 +66,14 @@ public class TrustedCaService {
         }
         activeTrustedCas.clear();
         activeTrustedCas.addAll(loaded);
-        log.info("Hot-reloaded {} active Trusted CA(s) into mTLS truststore (no restart required)", activeTrustedCas.size());
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new TrustedCasReloadedEvent(activeTrustedCas.size()));
+        }
+        log.info("Hot-reloaded {} active Trusted CA(s) into native TLS truststore (no restart required)", activeTrustedCas.size());
+    }
+
+    public List<X509Certificate> getActiveTrustedCas() {
+        return List.copyOf(activeTrustedCas);
     }
 
     @Transactional(readOnly = true)
