@@ -1,31 +1,130 @@
-= Trusted CAs & Mutual TLS (Hot-Reload, Zero Restart)
+= Mutual TLS (mTLS) Architecture, Nginx Termination & Hot-Reloaded Trusted CAs
 :toc:
+:toclevels: 3
 
-The Incert OCSP Responder supports optional **Mutual TLS (mTLS)** client-certificate authentication backed by a hot-reloaded in-memory Trusted CA truststore (`com.company.incert.ocsp.trust`).
+This technical guide explains **how Mutual TLS (mTLS) client-certificate authentication works** in the Incert OCSP Responder, **why Nginx is used at the edge**, and how **Trusted CAs hot-reload without restarting the application**.
 
-== 1. How Hot-Reload Works (No Application Restart)
+== 1. Why Nginx Is Used for mTLS
 
-* **Schema (`V11__trusted_cas.sql` & `V10__user_certificates.sql`):**
-  - `trusted_cas` stores imported CA certificates (`BasicConstraints CA:TRUE`), their SHA-256 fingerprints, validity dates, and `enabled` flag.
-  - `user_certificates` binds individual X.509 client certificates (by unique SHA-256 fingerprint) to a user in `ocsp.users`.
-* **In-Memory Truststore (`TrustedCaService`):**
-  - Loads all enabled CAs into a thread-safe `CopyOnWriteArrayList<X509Certificate>` on `ApplicationReadyEvent`.
-  - Every `importTrustedCa`, `setEnabled`, and `deleteTrustedCa` operation immediately reloads the in-memory truststore.
-  - **Result:** Newly imported or disabled CAs take effect immediately for both user-certificate assignment and mTLS verification without restarting `ocsp-responder`.
+In a browser-based PKI console, JavaScript **cannot** access the operating system or browser certificate store directly. Only the **TLS-terminating server** can trigger the browser's native certificate picker by sending a TLS `CertificateRequest` during the handshake.
 
-== 2. mTLS Client-Certificate Verification Flow
+Using **Nginx** in front of `ocsp-responder` (`ocsp-console/nginx.conf`) solves five architectural requirements at once:
 
-1. An administrator imports the issuing CA certificate via the Console UI (`/trusted-cas`) or `POST /api/v1/admin/trusted-cas`.
-2. An administrator assigns a user's X.509 client certificate via `POST /api/v1/admin/users/\{id\}/certificates`. `UserCertificateService` cryptographically verifies (`cert.verify(ca.getPublicKey())`) that the certificate is issued by an active Trusted CA before saving.
-3. When `security.tls.client-cert-auth-enabled=true`, `ClientCertificateAuthFilter` reads the presented client `X509Certificate`, verifies it against the hot-reloaded `TrustedCaService`, looks up the SHA-256 fingerprint in `user_certificates`, and populates the uniform `InternalPrincipal`.
+[cols="1,3",options="header"]
+|===
+| Requirement | Why Nginx Solves It Cleanly
 
-NOTE: Standard 1-way TLS (`security.tls.client-cert-auth-enabled=false`) does not require user certificates.
+| *Zero-Restart Trusted CA Management*
+| With `ssl_verify_client optional_no_ca;`, Nginx performs the TLS handshake and cryptographically verifies that the client **possesses the private key** matching the presented certificate (`CertificateVerify`), then forwards the certificate PEM in `X-Client-Cert: $ssl_client_escaped_cert`. CA trust verification is delegated to `TrustedCaService` inside `ocsp-responder` (hot-reloaded from MariaDB `trusted_cas`), so importing or disabling a Trusted CA takes effect **immediately with zero Nginx or JVM restart**.
 
-== 3. REST API Endpoints
+| *Graceful Fallback to Password / Keycloak*
+| Using `optional_no_ca` (instead of `on`) allows browsers **without** a client certificate—or users who cancel the browser picker—to still load `/login` and authenticate via Username/Password (`SELF_MANAGEMENT`) or Keycloak (`KEYCLOAK`).
+
+| *Anti-Spoofing Header Protection*
+| Because Nginx unconditionally sets `proxy_set_header X-Client-Cert $ssl_client_escaped_cert;` on `/api/`, any client-supplied `X-Client-Cert` header from the internet is overwritten (empty if no TLS client cert was presented). `ocsp-responder` should only be reachable on the private network behind Nginx.
+
+| *Public `/ocsp` Isolation*
+| RFC 6960 relying parties must reach `/ocsp` without client certificates. Nginx keeps `/ocsp` open while applying optional mTLS only to the console/admin HTTPS listener.
+
+| *Single Origin & Static SPA Serving*
+| Nginx serves the React 18 SPA (`ocsp-console`) and reverse-proxies `/api/` and `/ocsp` under one origin, avoiding CORS preflight overhead.
+|===
+
+== 2. End-to-End mTLS Authentication Flow
+
+[source]
+----
+Browser (OS/Browser Cert Store)          Nginx (HTTPS + optional_no_ca)          ocsp-responder (:8080)
+             │                                         │                                    │
+             │─── 1. TLS Handshake (HTTPS) ───────────▶│                                    │
+             │◀── 2. ServerHello + CertificateRequest ─│                                    │
+             │   [Browser shows native cert picker]    │                                    │
+             │─── 3. ClientCert + CertificateVerify ──▶│ (Verifies client owns private key) │
+             │                                         │                                    │
+             │─── 4. POST /api/v1/auth/login/mtls ────▶│── 5. Proxy + X-Client-Cert PEM ───▶│
+             │                                         │                                    │ 6. TrustedCaService:
+             │                                         │                                    │    cert.verify(ca.pubKey)
+             │                                         │                                    │    (hot-reloaded in memory)
+             │                                         │                                    │ 7. UserCertificateService:
+             │                                         │                                    │    lookup SHA-256 in
+             │                                         │                                    │    user_certificates
+             │                                         │                                    │ 8. Issue HS256 Bearer JWT
+             │◀─────────── 9. 200 OK { accessToken } ──│◀───────────────────────────────────│
+             │   (If 401: UI falls back to Password    │                                    │
+             │    or Keycloak login on /login)         │                                    │
+----
+
+=== Step-by-Step Verification in `ocsp-responder`
+
+1. **Certificate Extraction** (`ClientCertificateAuthFilter.extractClientCertificate`):
+   * Checks `jakarta.servlet.request.X509Certificate` (if Tomcat terminates mTLS directly), otherwise decodes the URL-encoded PEM from `X-Client-Cert`.
+2. **Trusted CA Signature Check** (`TrustedCaService.isIssuedByTrustedCa`):
+   * Iterates over the hot-reloaded `CopyOnWriteArrayList<X509Certificate>` of enabled, non-expired CAs from `trusted_cas`.
+   * Executes `clientCert.verify(ca.getPublicKey())`. Certificates not signed by an active Trusted CA are rejected immediately.
+3. **User Binding & Status Check** (`UserCertificateService.authenticateByClientCertificate`):
+   * Computes the certificate's SHA-256 fingerprint and looks up a non-revoked row in `user_certificates` (`V10__user_certificates.sql`).
+   * Verifies the certificate's `notBefore` / `notAfter` window and ensures the linked `users` row is `enabled = true` and `deleted_at IS NULL`.
+4. **Bearer JWT Issuance** (`POST /api/v1/auth/login/mtls`):
+   * `AuthenticationService.authenticateByClientCertificate(...)` issues a standard HS256 Bearer JWT (`LocalJwtTokenService`) containing `InternalPrincipal` (`userId`, `username`, `roles`, `tenantId`).
+   * Subsequent API calls use `Authorization: Bearer <token>` and are authorized via `@PreAuthorize("hasPermission(null, '<PERMISSION>')")`.
+
+== 3. Nginx HTTPS + mTLS Configuration
+
+In production HTTPS deployments, configure the Nginx server block with `ssl_verify_client optional_no_ca;` and forward `$ssl_client_escaped_cert`:
+
+[source,nginx]
+----
+server {
+    listen 443 ssl;
+    server_name <your-console-domain>;
+
+    ssl_certificate     <path-to-server-cert.pem>;
+    ssl_certificate_key <path-to-server-key.pem>;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # Request a client certificate without failing the TLS handshake if none is sent
+    # or if the CA is managed dynamically in ocsp-responder's hot-reloaded TrustedCaService.
+    ssl_verify_client optional_no_ca;
+
+    location /api/ {
+        proxy_pass http://ocsp-responder:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Always overwrite X-Client-Cert so external clients cannot spoof it
+        proxy_set_header X-Client-Cert     $ssl_client_escaped_cert;
+    }
+}
+----
+
+Enable mTLS verification in `ocsp-responder` via externalized configuration:
+
+[source,yaml]
+----
+security:
+  tls:
+    enabled: true
+    client-cert-auth-enabled: true # Env: SECURITY_TLS_CLIENT_CERT_AUTH_ENABLED=true
+----
+
+== 4. Hot-Reloaded Trusted CAs (Zero Restart)
+
+* **Database (`V11__trusted_cas.sql`)**: `trusted_cas` stores CA certificates (`BasicConstraints CA:TRUE`), SHA-256 fingerprints, validity dates, and `enabled` state.
+* **Console Screen (`/trusted-cas`)**: Administrators (`TRUSTED_CA_MANAGE`) can import a CA PEM, toggle enabled/disabled, or delete a CA. Every change calls `TrustedCaService.reloadTrustStore()`, updating the in-memory `CopyOnWriteArrayList<X509Certificate>` immediately.
+* **Assignment Guard**: `POST /api/v1/admin/users/\{id\}/certificates` refuses to assign any user certificate that is not cryptographically signed by an active Trusted CA.
+
+== 5. Security Hardening Checklist
+
+* **Network isolation**: Never expose `ocsp-responder` (`:8080`) directly to untrusted networks when `security.tls.client-cert-auth-enabled=true`; all traffic must pass through Nginx so `X-Client-Cert` cannot be forged.
+* **1-Way TLS compatibility**: When `security.tls.client-cert-auth-enabled=false`, user certificates are not required and `/login` displays only the configured mode (`SELF_MANAGEMENT` Bearer JWT login or `KEYCLOAK` OIDC).
+
+== 6. REST API Endpoints
 
 [cols="1,2,2,3",options="header"]
 |===
 | Method | Endpoint | Required Permission | Description
+| `POST` | `/api/v1/auth/login/mtls` | Public (mTLS cert) | Authenticates browser client cert against Trusted CAs + `user_certificates` and returns a Bearer JWT
 | `GET` | `/api/v1/admin/trusted-cas` | `TRUSTED_CA_READ` | List all Trusted CAs and expiry/trust status
 | `POST` | `/api/v1/admin/trusted-cas` | `TRUSTED_CA_MANAGE` | Import a CA PEM (`CA:TRUE`) and hot-reload immediately
 | `PUT` | `/api/v1/admin/trusted-cas/\{id\}/enabled` | `TRUSTED_CA_MANAGE` | Enable or disable a Trusted CA and hot-reload
@@ -34,4 +133,3 @@ NOTE: Standard 1-way TLS (`security.tls.client-cert-auth-enabled=false`) does no
 | `POST` | `/api/v1/admin/users/\{id\}/certificates` | `USER_MANAGE` | Assign a Trusted-CA-issued X.509 certificate to a user
 | `DELETE` | `/api/v1/admin/users/\{id\}/certificates/\{certId\}` | `USER_MANAGE` | Remove a user certificate assignment
 |===
-
