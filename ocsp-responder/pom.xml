@@ -101,11 +101,11 @@
             <version>${bouncycastle.version}</version>
         </dependency>
 
-        <!-- HSM Signer gRPC Contract (multi-device PKCS11J RPC adapter) -->
+        <!-- Maven Central PKCS#11 Wrapper (prebuilt linux-x86_64/aarch64, macos-universal, win-x86_64) -->
         <dependency>
-            <groupId>com.company.incert</groupId>
-            <artifactId>hsm-signer-proto</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <groupId>org.xipki</groupId>
+            <artifactId>ipkcs11wrapper</artifactId>
+            <version>1.0.9</version>
         </dependency>
 
         <!-- Observability -->
@@ -185,12 +185,6 @@
             <version>1.5.1</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-inprocess</artifactId>
-            <version>1.71.0</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
@@ -212,6 +206,17 @@
                             <version>1.18.48</version>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+                    <environmentVariables>
+                        <SOFTHSM2_CONF>${project.build.directory}/test-softhsm/softhsm2.conf</SOFTHSM2_CONF>
+                    </environmentVariables>
                 </configuration>
             </plugin>
             <plugin>

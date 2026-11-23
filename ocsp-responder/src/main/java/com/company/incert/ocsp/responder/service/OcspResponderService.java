@@ -8,6 +8,7 @@ import com.company.incert.ocsp.status.entity.RevocationReason;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
 import com.company.incert.ocsp.signing.hsm.OcspSigner;
 import com.company.incert.ocsp.signing.hsm.SignerNotConfiguredException;
+import com.company.incert.ocsp.signing.port.DeviceLockedException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
@@ -61,8 +62,8 @@ public class OcspResponderService {
             log.warn("Malformed OCSP request: {}", e.getMessage());
             meterRegistry.counter("ocsp.request.error", "reason", "malformed").increment();
             return buildErrorResponse(OCSPRespBuilder.MALFORMED_REQUEST);
-        } catch (SignerNotConfiguredException e) {
-            // RFC 6960 tryLater: the responder is up but has no signing certificate yet.
+        } catch (SignerNotConfiguredException | DeviceLockedException e) {
+            // RFC 6960 tryLater: responder is up but signing certificate is missing or HSM device is LOCKED.
             log.warn("OCSP request not answered: {}", e.getMessage());
             meterRegistry.counter("ocsp.request.error", "reason", "no_signer").increment();
             return buildErrorResponse(OCSPRespBuilder.TRY_LATER);

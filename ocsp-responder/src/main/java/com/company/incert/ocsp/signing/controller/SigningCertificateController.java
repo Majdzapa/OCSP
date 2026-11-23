@@ -87,7 +87,7 @@ public class SigningCertificateController {
         try {
             SigningCertificateDto created = certificateService.addCertificate(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(created);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }

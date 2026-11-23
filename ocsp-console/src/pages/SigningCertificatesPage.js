@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, Textarea, Switch, Select, Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, } from '@mantine/core';
-import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, } from '@tabler/icons-react';
-import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, generateSigningCsr, } from '../api/client';
+import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, Textarea, PasswordInput, Switch, Select, Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, } from '@mantine/core';
+import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, IconLockOpen, } from '@tabler/icons-react';
+import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, generateSigningCsr, activateCryptoDevice, } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 function downloadTextFile(content, filename) {
     const blob = new Blob([content], { type: 'application/x-pem-file' });
@@ -45,6 +45,9 @@ export const SigningCertificatesPage = () => {
     // View PEM modal state
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [selectedCert, setSelectedCert] = useState(null);
+    // Inline quick unlock modal for LOCKED devices
+    const [unlockDeviceId, setUnlockDeviceId] = useState(null);
+    const [unlockPin, setUnlockPin] = useState('');
     const fetchAll = async () => {
         try {
             setLoading(true);
@@ -191,6 +194,27 @@ export const SigningCertificatesPage = () => {
         };
         reader.readAsText(file);
     };
+    const handleQuickUnlock = async (e) => {
+        e.preventDefault();
+        if (!unlockDeviceId || !unlockPin)
+            return;
+        const pinToUse = unlockPin;
+        setUnlockPin('');
+        try {
+            setActionLoading(true);
+            setError(null);
+            await activateCryptoDevice(unlockDeviceId, pinToUse);
+            setSuccess(`HSM device '${unlockDeviceId}' unlocked cleanly via C_Login and is now ACTIVE.`);
+            setUnlockDeviceId(null);
+            await fetchAll();
+        }
+        catch (err) {
+            setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to unlock HSM device');
+        }
+        finally {
+            setActionLoading(false);
+        }
+    };
     const activeCerts = certificates.filter((c) => c.active);
     const providers = hsmInfo?.providers ?? [];
     const providerOptions = providers.map((p) => ({
@@ -280,9 +304,14 @@ export const SigningCertificatesPage = () => {
                           </Badge>
                           <Badge size="xs" color="teal" variant="light">{p.providerType}</Badge>
                         </Group>
-                        <Badge size="xs" color={p.healthy ? 'green' : 'red'} variant="dot">
-                          {p.healthy ? 'UP' : 'DOWN'}
-                        </Badge>
+                        <Group gap={6}>
+                          <Badge size="xs" color={(p.activationState || (p.healthy ? 'ACTIVE' : 'LOCKED')) === 'ACTIVE' ? 'green' : (p.activationState === 'ERROR' ? 'red' : 'orange')} variant="dot">
+                            {p.activationState || (p.healthy ? 'ACTIVE' : 'LOCKED')}
+                          </Badge>
+                          {isAdmin && (p.activationState === 'LOCKED' || (!p.activationState && !p.healthy)) && (<Button size="compact-xs" variant="light" color="green" leftSection={<IconLockOpen size={12}/>} onClick={() => { setError(null); setUnlockPin(''); setUnlockDeviceId(p.providerId); }}>
+                              Unlock
+                            </Button>)}
+                        </Group>
                       </Group>
                       <Text size="xs" c="dimmed">
                         Token: <Code>{p.tokenLabel || 'n/a'}</Code> · Slot <Code>{p.slotId}</Code>
@@ -623,6 +652,22 @@ export const SigningCertificatesPage = () => {
               {selectedCert.certificatePem}
             </Code>
           </Stack>)}
+      </Modal>
+
+      {/* Modal: Quick Unlock LOCKED Device */}
+      <Modal opened={Boolean(unlockDeviceId)} onClose={() => { setUnlockPin(''); setUnlockDeviceId(null); }} title={<Group gap="xs"><IconLockOpen size={20} color="#22c55e"/><Text fw={700}>Unlock HSM Device: {unlockDeviceId}</Text></Group>}>
+        <form onSubmit={handleQuickUnlock}>
+          <Stack gap="md">
+            <Alert color="cyan" variant="light">
+              Enter the token user PIN for <Code>{unlockDeviceId}</Code>. PIN is used once for <Code>C_Login</Code> and immediately wiped from memory.
+            </Alert>
+            <PasswordInput label="PKCS#11 User PIN" placeholder="Enter PIN" value={unlockPin} onChange={(e) => setUnlockPin(e.currentTarget.value)} autoFocus required/>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => { setUnlockPin(''); setUnlockDeviceId(null); }}>Cancel</Button>
+              <Button type="submit" color="green" loading={actionLoading} leftSection={<IconLockOpen size={16}/>}>Unlock</Button>
+            </Group>
+          </Stack>
+        </form>
       </Modal>
     </Container>);
 };

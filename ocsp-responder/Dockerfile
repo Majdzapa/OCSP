@@ -1,11 +1,7 @@
-# Stage 1: Install shared hsm-signer-proto contract & build ocsp-responder JAR
+# Stage 1: Pure Java Maven build of ocsp-responder (uses Maven Central org.xipki:ipkcs11wrapper)
 FROM maven:3.9-eclipse-temurin-25 AS build
-WORKDIR /workspace
-
-COPY hsm-signer-proto /workspace/hsm-signer-proto
-RUN mvn -f /workspace/hsm-signer-proto/pom.xml install -DskipTests --batch-mode
-
 WORKDIR /build
+
 COPY ocsp-responder/pom.xml ./pom.xml
 COPY ocsp-responder/src ./src
 RUN mvn package -DskipTests --batch-mode
@@ -23,9 +19,9 @@ WORKDIR /app
 COPY --from=build /build/target/ocsp-responder-*.jar /app/app.jar
 
 ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf
-ENV HSM_PKCS11_LIBRARY=/usr/lib/softhsm/libsofthsm2.so
 
 ENTRYPOINT ["java", \
+  "--enable-native-access=ALL-UNNAMED", \
   "-XX:+UseContainerSupport", \
   "-XX:MaxRAMPercentage=75.0", \
   "-Djava.security.egd=file:/dev/./urandom", \

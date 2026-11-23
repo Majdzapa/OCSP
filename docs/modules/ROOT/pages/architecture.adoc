@@ -25,7 +25,7 @@ The Incert OCSP Subsystem v5.0 separates CA lifecycle operations (`kms-simulator
   │  • OutboxReconciliationService          │ │    (3s Manifest & Replay Synthesis)   │
   │  • SigningCertificateValidityService    │ └───────────────────┬───────────────────┘
   └─────────┬─────────────────────┬─────────┘                     │
-            │ SunPKCS11           │ AMQPS (:5671 Strict mTLS)     │ AMQPS (:5671)
+            │ ipkcs11wrapper (PKCS#11)  │ AMQPS (:5671 Strict mTLS) │ AMQPS (:5671)
             ▼                     ▼                               ▼
   ┌───────────────────┐ ┌─────────────────────────────────────────────────────────────┐
   │  SoftHSM2 Token   │ │       RabbitMQ Broker (Exchange: incert.certificate.status) │
@@ -53,7 +53,7 @@ Domain boundaries and cycle-freedom are enforced automatically at test time via 
 | Public RFC 6960 `/ocsp` endpoint (`OcspResponderController`, `OcspResponderService`, `OcspResponderProperties`) — direct signing with no response cache.
 
 | `signing`
-| SoftHSM2 PKCS#11 multi-CA signers (`Pkcs11OcspSigner`, `SoftwareKeyOcspSigner`), `SigningCertificateService`, `SigningCertificateValidityService`, and `FindSigningCertificateUseCase`.
+| In-process PKCS#11 (`ipkcs11wrapper`) multi-CA signers (`MultiProviderOcspSigner`, `Pkcs11Engine`, `SoftwareKeyOcspSigner`), `SigningCertificateService`, `SigningCertificateValidityService`, and `FindSigningCertificateUseCase`.
 
 | `status`
 | Certificate revocation status inventory (`CertificateStatusService`, `CertificateStatusUpdateCommand`, `RevocationStatusRepository`, `CertCheckController`, `RevocationFeedController`).

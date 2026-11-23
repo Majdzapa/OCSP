@@ -3,6 +3,8 @@ package com.company.incert.ocsp.signing.config;
 import com.company.incert.ocsp.signing.hsm.MultiProviderOcspSigner;
 import com.company.incert.ocsp.signing.hsm.OcspSigner;
 import com.company.incert.ocsp.signing.hsm.SoftwareFallbackSignerFactory;
+import com.company.incert.ocsp.signing.pkcs11.Pkcs11Engine;
+import com.company.incert.ocsp.signing.provider.LibraryPathAllowlist;
 import com.company.incert.ocsp.signing.provider.PkcsProviders;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +18,8 @@ import java.security.Security;
 import java.util.List;
 
 /**
- * Composes {@link PkcsProviders} and {@link OcspSigner} via Open-Closed {@link CryptoProviderLoader} strategies.
+ * Composes the in-process {@code pkcs11j} engine, {@link LibraryPathAllowlist},
+ * DB/config {@link CryptoProviderLoader} strategies, {@link PkcsProviders}, and {@link OcspSigner}.
  */
 @Slf4j
 @Configuration
@@ -30,13 +33,22 @@ public class SigningConfig {
     }
 
     private final HsmProperties hsm;
-    private final List<CryptoProviderLoader> loaders;
+
+    @Bean
+    public LibraryPathAllowlist libraryPathAllowlist() {
+        return new LibraryPathAllowlist(hsm.getAllowedLibraryDirs());
+    }
+
+    @Bean(name = "pkcs11Engine", destroyMethod = "close")
+    public Pkcs11Engine pkcs11Engine() {
+        return new Pkcs11Engine();
+    }
 
     @Bean(destroyMethod = "close")
     @ConditionalOnProperty(name = "hsm.enabled", havingValue = "true", matchIfMissing = true)
-    public PkcsProviders pkcsProviders() {
+    public PkcsProviders pkcsProviders(List<CryptoProviderLoader> loaders) {
         PkcsProviders providers = new PkcsProviders();
-        String mode = hsm.getMode() != null ? hsm.getMode().trim().toUpperCase() : "SUN_PKCS11";
+        String mode = hsm.getMode() != null ? hsm.getMode().trim().toUpperCase() : "DATABASE";
 
         List<CryptoProviderLoader> matching = loaders.stream()
                 .filter(loader -> loader.supports(mode))
@@ -51,10 +63,9 @@ public class SigningConfig {
             providers.setDefaultProviderId(hsm.getDefaultProviderId().trim());
         }
 
-        log.info("PkcsProviders ready with {} device(s): {} (default={})",
-                providers.listProviderIds().size(),
-                providers.listProviderIds(),
-                providers.getDefaultProviderId());
+        log.info("PkcsProviders ready in mode={} with {} device(s): {} (default={})",
+                mode, providers.listProviderIds().size(),
+                providers.listProviderIds(), providers.getDefaultProviderId());
         return providers;
     }
 

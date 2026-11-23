@@ -10,8 +10,7 @@
 #   mariadb          MariaDB 10.11 (schema: ocsp)       (host 3307, internal 3306)
 #   rabbitmq         RabbitMQ 3.13 + Management UI      (host 5672, 15672)
 #   hsm              SoftHSM2 Dedicated HSM Container   (PKCS#11 Tokens: ocsp-signing, ocsp-signing-2)
-#   hsm-signer       PKCS11J + PkcsProviders gRPC Signer (host 9092 -> internal 9090 gRPC, 9091 actuator)
-#   ocsp-responder   RFC 6960 OCSP Responder + Auth    (host 8080, internal 8080)
+#   ocsp-responder   RFC 6960 OCSP Responder + PKCS11J  (host 8080, internal 8080)
 #   ocsp-client      RFC 6960 Client + Test Web UI      (host 8082, internal 8082)
 #   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3002)
 # =============================================================================
@@ -111,49 +110,7 @@ services:
       retries: 6
 
   # ============================================================
-  # Isolated Multi-Device PKCS11J Signing Microservice (gRPC)
-  # Wraps libpkcs11j.so (C_Initialize / C_OpenSession / C_Sign)
-  # ============================================================
-  hsm-signer:
-    build:
-      context: .
-      dockerfile: hsm-signer/Dockerfile
-    image: ocsp/hsm-signer:local
-    container_name: ocsp-hsm-signer
-    restart: unless-stopped
-    networks: [ocsp-net]
-    depends_on:
-      hsm:
-        condition: service_healthy
-    ports:
-      - "${HSM_SIGNER_GRPC_HOST_PORT:-9092}:9090"
-      - "${HSM_SIGNER_HTTP_HOST_PORT:-9091}:9091"
-    environment:
-      <<: *spring-opts
-      HSM_SIGNER_GRPC_PORT: 9090
-      HSM_SIGNER_HTTP_PORT: 9091
-      HSM_DEFAULT_PROVIDER_ID: ${HSM_DEFAULT_PROVIDER_ID:-softhsm-primary}
-      HSM_PROVIDER_1_ENABLED: "true"
-      HSM_PROVIDER_2_ENABLED: ${HSM_PROVIDER_2_ENABLED:-true}
-      HSM_PKCS11_LIBRARY: ${HSM_PKCS11_LIBRARY:-/usr/lib/softhsm/libsofthsm2.so}
-      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
-      HSM_SECONDARY_TOKEN_LABEL: ${HSM_SECONDARY_TOKEN_LABEL:-ocsp-signing-2}
-      HSM_PIN: ${HSM_PIN:-1234}
-      HSM_SECONDARY_PIN: ${HSM_SECONDARY_PIN:-${HSM_PIN:-1234}}
-      HSM_POOL_SIZE: ${HSM_POOL_SIZE:-4}
-      SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
-    volumes:
-      - hsm-tokens:/var/lib/softhsm/tokens
-      - hsm-conf:/etc/softhsm2
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9091/actuator/health || exit 1"]
-      start_period: 25s
-      interval: 5s
-      timeout: 5s
-      retries: 8
-
-  # ============================================================
-  # OCSP Responder (RFC 6960 Responder + Multi-Device PkcsProviders via gRPC)
+  # OCSP Responder (RFC 6960 Responder + In-Process PKCS11J Multi-Device)
   # ============================================================
   ocsp-responder:
     build:
@@ -168,7 +125,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      hsm-signer:
+      hsm:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -204,17 +161,9 @@ services:
       KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET:-ocsp-user-sync-secret}
       KEYCLOAK_WEBHOOK_SECRET: ${KEYCLOAK_WEBHOOK_SECRET:-incert-keycloak-webhook-secret}
       HSM_ENABLED: "true"
-      HSM_MODE: ${HSM_MODE:-GRPC}
-      HSM_DEFAULT_PROVIDER_ID: ${HSM_DEFAULT_PROVIDER_ID:-softhsm-primary}
-      HSM_GRPC_HOST: ${HSM_GRPC_HOST:-hsm-signer}
-      HSM_GRPC_PORT: ${HSM_GRPC_PORT:-9090}
-      HSM_GRPC_TIMEOUT_SECONDS: ${HSM_GRPC_TIMEOUT_SECONDS:-10}
-      HSM_PKCS11_LIBRARY: ${HSM_PKCS11_LIBRARY:-/usr/lib/softhsm/libsofthsm2.so}
-      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-ocsp-signing}
-      HSM_PIN: ${HSM_PIN:-1234}
+      HSM_MODE: ${HSM_MODE:-DATABASE}
+      HSM_ALLOWED_LIBRARY_DIRS: ${HSM_ALLOWED_LIBRARY_DIRS:-/usr/lib/softhsm,/usr/lib/x86_64-linux-gnu/softhsm,/usr/lib/aarch64-linux-gnu/softhsm,/opt/pkcs11j,/opt/hsm,/usr/safenet,/opt/utimaco}
       HSM_KEY_LABEL: ${HSM_KEY_LABEL:-ocsp-signing-key}
-      HSM_SLOT_INDEX: ${HSM_SLOT_INDEX:-0}
-      HSM_CONFIG_PATH: ${HSM_CONFIG_PATH:-}
       SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
     volumes:
       - hsm-tokens:/var/lib/softhsm/tokens

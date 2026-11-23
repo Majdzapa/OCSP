@@ -1,6 +1,7 @@
 package com.company.incert.ocsp.signing.hsm;
 
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
+import com.company.incert.ocsp.signing.port.DeviceLockedException;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.provider.PkcsProviders;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +63,9 @@ public class MultiProviderOcspSigner implements OcspSigner {
 
     @Override
     public String type() {
+        if (pkcsProviders.listProviderIds().isEmpty()) {
+            return "PKCS11J";
+        }
         return pkcsProviders.getDefaultProvider().providerType();
     }
 
@@ -86,7 +90,14 @@ public class MultiProviderOcspSigner implements OcspSigner {
 
     @Override
     public List<String> listKeyLabels() {
-        return pkcsProviders.getDefaultProvider().listKeyLabels();
+        if (pkcsProviders.listProviderIds().isEmpty()) {
+            return List.of();
+        }
+        try {
+            return pkcsProviders.getDefaultProvider().listKeyLabels();
+        } catch (DeviceLockedException e) {
+            return List.of();
+        }
     }
 
     @Override

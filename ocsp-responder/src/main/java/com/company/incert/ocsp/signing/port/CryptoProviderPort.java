@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Hexagonal port abstracting a cryptographic signing device (remote PKCS11J over gRPC,
- * local SunPKCS11 token, hardware HSM, or software fallback).
+ * Hexagonal port abstracting a cryptographic signing device (in-process PKCS#11 via {@code ipkcs11wrapper},
+ * external KMS/KMIP provider, or software fallback).
  */
 public interface CryptoProviderPort extends AutoCloseable {
 

@@ -27,9 +27,11 @@ class OcspPermissionEvaluatorTest {
         var auth = new UsernamePasswordAuthenticationToken("agent", null, List.of(new SimpleGrantedAuthority("ROLE_AGENT")));
         assertThat(evaluator.hasPermission(auth, null, "SIGNING_CERT_CREATE_CSR")).isTrue();
         assertThat(evaluator.hasPermission(auth, null, "SIGNING_CERT_IMPORT")).isTrue();
+        assertThat(evaluator.hasPermission(auth, null, "CRYPTO_DEVICE_READ")).isTrue();
         assertThat(evaluator.hasPermission(auth, null, "TRUSTED_CA_READ")).isTrue();
 
         assertThat(evaluator.hasPermission(auth, null, "SIGNING_CERT_ACTIVATE")).isFalse();
+        assertThat(evaluator.hasPermission(auth, null, "CRYPTO_DEVICE_MANAGE")).isFalse();
         assertThat(evaluator.hasPermission(auth, null, "USER_MANAGE")).isFalse();
         assertThat(evaluator.hasPermission(auth, null, "TRUSTED_CA_MANAGE")).isFalse();
     }
@@ -38,7 +40,9 @@ class OcspPermissionEvaluatorTest {
     void auditorHasReadOnlyPermissions() {
         var auth = new UsernamePasswordAuthenticationToken("auditor", null, List.of(new SimpleGrantedAuthority("ROLE_AUDITOR")));
         assertThat(evaluator.hasPermission(auth, null, "DASHBOARD_READ")).isTrue();
+        assertThat(evaluator.hasPermission(auth, null, "CRYPTO_DEVICE_READ")).isTrue();
         assertThat(evaluator.hasPermission(auth, null, "TRUSTED_CA_READ")).isTrue();
+        assertThat(evaluator.hasPermission(auth, null, "CRYPTO_DEVICE_MANAGE")).isFalse();
         assertThat(evaluator.hasPermission(auth, null, "SIGNING_CERT_CREATE_CSR")).isFalse();
         assertThat(evaluator.hasPermission(auth, null, "INBOX_REPLAY")).isFalse();
     }

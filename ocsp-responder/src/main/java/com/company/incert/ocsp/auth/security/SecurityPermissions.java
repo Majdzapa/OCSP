@@ -26,6 +26,10 @@ public enum SecurityPermissions {
     SIGNING_CERT_VALIDITY_CHECK,
     SIGNING_CERT_RENEW,
 
+    // Cryptographic Providers & HSM Devices (DB + Runtime Activation)
+    CRYPTO_DEVICE_READ,
+    CRYPTO_DEVICE_MANAGE,
+
     // Trusted CAs (mTLS client-certificate truststore)
     TRUSTED_CA_READ,
     TRUSTED_CA_MANAGE,
@@ -40,6 +44,7 @@ public enum SecurityPermissions {
             INBOX_READ,
             CERT_CHECK_READ,
             SIGNING_CERT_READ,
+            CRYPTO_DEVICE_READ,
             TRUSTED_CA_READ
     );
 
@@ -54,6 +59,7 @@ public enum SecurityPermissions {
             SIGNING_CERT_IMPORT,
             SIGNING_CERT_VALIDITY_CHECK,
             SIGNING_CERT_RENEW,
+            CRYPTO_DEVICE_READ,
             TRUSTED_CA_READ
     );
 

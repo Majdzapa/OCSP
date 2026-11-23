@@ -1,10 +1,12 @@
 package com.company.incert.ocsp.signing.provider;
 
+import com.company.incert.ocsp.signing.port.ActivatableCryptoProvider;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,9 +15,8 @@ import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Multi-device registry of {@link CryptoProviderPort} implementations inside {@code ocsp-responder}.
- * Allows multiple HSM tokens, remote gRPC {@code PKCS11J} endpoints, and local PKCS#11 devices to operate
- * simultaneously and routes CSR generation, key lookup, certificate import, and OCSP response signing per {@code providerId}.
+ * Multi-device runtime registry of {@link CryptoProviderPort} implementations inside {@code ocsp-responder}.
+ * Supports dynamic registration, replacement, unregistration, and Pattern 2 runtime activation/deactivation.
  */
 @Slf4j
 public class PkcsProviders implements AutoCloseable {
@@ -35,6 +36,64 @@ public class PkcsProviders implements AutoCloseable {
             defaultProviderId = id;
         }
         log.info("Registered signing provider '{}' (type={})", id, port.providerType());
+    }
+
+    public synchronized void replace(CryptoProviderPort port) {
+        Objects.requireNonNull(port, "port must not be null");
+        String id = port.providerId().trim();
+        CryptoProviderPort previous = providersById.put(id, port);
+        if (previous != null && previous != port) {
+            safeClose(previous, id);
+        }
+        if (defaultProviderId == null) {
+            defaultProviderId = id;
+        }
+        log.info("Updated runtime registration for signing provider '{}' (type={})", id, port.providerType());
+    }
+
+    public synchronized boolean unregister(String providerId) {
+        if (providerId == null || providerId.isBlank()) {
+            return false;
+        }
+        String clean = providerId.trim();
+        CryptoProviderPort removed = providersById.remove(clean);
+        if (removed == null) {
+            return false;
+        }
+        if (clean.equals(defaultProviderId)) {
+            defaultProviderId = providersById.keySet().stream().findFirst().orElse(null);
+        }
+        safeClose(removed, clean);
+        log.info("Unregistered signing provider '{}'", clean);
+        return true;
+    }
+
+    public boolean hasProvider(String providerId) {
+        return providerId != null && !providerId.isBlank() && providersById.containsKey(providerId.trim());
+    }
+
+    public void activate(String providerId, char[] pin) {
+        try {
+            CryptoProviderPort port = getProvider(providerId);
+            if (!(port instanceof ActivatableCryptoProvider activatable)) {
+                throw new UnsupportedOperationException(
+                        "Device '" + port.providerId() + "' (" + port.providerType() + ") does not support runtime activation");
+            }
+            activatable.activate(pin);
+        } finally {
+            if (pin != null) {
+                Arrays.fill(pin, '\0');
+            }
+        }
+    }
+
+    public void deactivate(String providerId) {
+        CryptoProviderPort port = getProvider(providerId);
+        if (!(port instanceof ActivatableCryptoProvider activatable)) {
+            throw new UnsupportedOperationException(
+                    "Device '" + port.providerId() + "' (" + port.providerType() + ") does not support runtime deactivation");
+        }
+        activatable.deactivate();
     }
 
     public void trackManagedClient(AutoCloseable client) {
@@ -103,11 +162,7 @@ public class PkcsProviders implements AutoCloseable {
             defaultProviderId = null;
         }
         for (CryptoProviderPort p : snapshot) {
-            try {
-                p.close();
-            } catch (Exception e) {
-                log.warn("Error closing provider '{}': {}", p.providerId(), e.getMessage());
-            }
+            safeClose(p, p.providerId());
         }
         for (AutoCloseable client : managedClients) {
             try {
@@ -118,5 +173,12 @@ public class PkcsProviders implements AutoCloseable {
         }
         managedClients.clear();
     }
-}
 
+    private static void safeClose(CryptoProviderPort port, String id) {
+        try {
+            port.close();
+        } catch (Exception e) {
+            log.warn("Error closing provider '{}': {}", id, e.getMessage());
+        }
+    }
+}

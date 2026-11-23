@@ -9,6 +9,7 @@ import com.company.incert.ocsp.status.entity.RevocationReason;
 import com.company.incert.ocsp.status.entity.RevocationStatus;
 import com.company.incert.ocsp.signing.hsm.OcspSigner;
 import com.company.incert.ocsp.signing.hsm.SignerNotConfiguredException;
+import com.company.incert.ocsp.signing.port.DeviceLockedException;
 import com.company.incert.ocsp.signing.hsm.SoftwareKeyOcspSigner;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
@@ -216,6 +217,23 @@ class OcspResponderServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(OCSPRespBuilder.TRY_LATER);
         assertThat(meterRegistry.counter("ocsp.request.error", "reason", "no_signer").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void shouldAnswerTryLaterWhenHsmDeviceIsLocked() throws Exception {
+        OcspSigner locked = org.mockito.Mockito.mock(OcspSigner.class);
+        when(locked.selectSigner(any())).thenThrow(new DeviceLockedException("Crypto device 'softhsm-primary' is LOCKED"));
+        OcspResponderService lockedService =
+                new OcspResponderService(statusService, locked, meterRegistry, responderProperties());
+
+        DigestCalculatorProvider digCalcProv = new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        CertificateID certId = new CertificateID(digCalcProv.get(CertificateID.HASH_SHA1), caCertHolder, BigInteger.valueOf(5151));
+        OCSPReqBuilder reqBuilder = new OCSPReqBuilder();
+        reqBuilder.addRequest(certId);
+
+        OCSPResp response = new OCSPResp(lockedService.handle(reqBuilder.build().getEncoded()));
+
+        assertThat(response.getStatus()).isEqualTo(OCSPRespBuilder.TRY_LATER);
     }
 
 

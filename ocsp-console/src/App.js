@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import { AppShell, Box, Group, Stack, Text, ThemeIcon, Tooltip, Button, Badge, Avatar, Divider, } from '@mantine/core';
-import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, IconUsers, IconShieldCheck, } from '@tabler/icons-react';
+import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, IconUsers, IconShieldCheck, IconCpu, } from '@tabler/icons-react';
 import { DashboardPage } from './pages/DashboardPage';
 import { RevocationFeed } from './pages/RevocationFeed';
 import { SigningCertificatesPage } from './pages/SigningCertificatesPage';
@@ -9,6 +9,7 @@ import { CertCheckerPage } from './pages/CertCheckerPage';
 import { InboxAuditPage } from './pages/InboxAuditPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { TrustedCasPage } from './pages/TrustedCasPage';
+import { CryptoDevicesPage } from './pages/CryptoDevicesPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -25,6 +26,7 @@ const navItems = [
     { label: 'Responder Inbox', path: '/inbox', icon: IconInbox },
     { label: 'Revocation Feed', path: '/revocations', icon: IconShieldX },
     { label: 'Signing Cert', path: '/signing-cert', icon: IconCertificate },
+    { label: 'HSM Devices', path: '/hsm-devices', icon: IconCpu },
     { label: 'Cert Validity', path: '/signing-validity', icon: IconClock },
     { label: 'Cert Checker', path: '/cert-checker', icon: IconSearch },
     { label: 'Trusted CAs', path: '/trusted-cas', icon: IconShieldCheck },
@@ -247,6 +249,7 @@ function MainLayout() {
           <Route path="/revocations" element={<RevocationFeed />}/>
           <Route path="/signing-cert" element={<SigningCertificatesPage />}/>
           <Route path="/signing-certificates" element={<SigningCertificatesPage />}/>
+          <Route path="/hsm-devices" element={<CryptoDevicesPage />}/>
           <Route path="/signing-validity" element={<SigningCertValidityPage />}/>
           <Route path="/cert-checker" element={<CertCheckerPage />}/>
           <Route path="/trusted-cas" element={<TrustedCasPage />}/>

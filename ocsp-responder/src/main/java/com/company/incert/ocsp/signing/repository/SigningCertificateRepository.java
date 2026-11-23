@@ -17,4 +17,6 @@ public interface SigningCertificateRepository extends JpaRepository<SigningCerti
     Optional<SigningCertificate> findByAlias(String alias);
 
     boolean existsByAlias(String alias);
+
+    boolean existsByProviderIdAndActiveTrue(String providerId);
 }

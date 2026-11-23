@@ -33,7 +33,7 @@ All `/api/v1/admin/**` endpoints require `ROLE_ADMIN` (Keycloak Bearer JWT or HT
 * `GET /api/v1/admin/signing-certificates/hsm`: Returns SoftHSM2 token metadata and key labels.
 * `POST /api/v1/admin/signing-certificates/csr`: Generates an on-demand HSM keypair (`RSA` or `EC`) and returns a PKCS#10 CSR PEM.
 * `POST /api/v1/admin/signing-certificates`: Verifies public-key match with the HSM key, imports the signed certificate to the PKCS#11 token, and registers it in MariaDB.
-* `PUT /api/v1/admin/signing-certificates/\{id\}/activate`: Activates a signing certificate and syncs `Pkcs11OcspSigner` post-commit.
+* `PUT /api/v1/admin/signing-certificates/\{id\}/activate`: Activates a signing certificate and syncs `MultiProviderOcspSigner` post-commit.
 * `PUT /api/v1/admin/signing-certificates/\{id\}/deactivate`: Deactivates a signing certificate.
 * `DELETE /api/v1/admin/signing-certificates/\{id\}`: Deletes an inactive signing certificate.
 * `GET /api/v1/admin/signing-certificates/validity`: Returns the daily validity check report, `alertThresholdDays` (`3`), `cron` (`0 0 0 * * *`), per-certificate countdowns, and active alerts (`EXPIRING_SOON`, `EXPIRED`).

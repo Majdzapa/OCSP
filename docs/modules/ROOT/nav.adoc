@@ -2,7 +2,7 @@
 * Core Architecture
 ** xref:blueprint-sequence-diagrams.adoc[System Blueprint & Sequence Diagrams]
 ** xref:architecture.adoc[System Design, Clean Config & Use Cases]
-** xref:hsm-pkcs11.adoc[SoftHSM2 PKCS#11 On-Demand HSM Signing]
+** xref:hsm-pkcs11.adoc[PKCS#11 Engine Architecture (ipkcs11wrapper)]
 ** xref:messaging-rabbitmq.adoc[RabbitMQ mTLS & Zero-REST Reconciliation]
 ** xref:jobs-and-reconciliation.adoc[Scheduled Jobs & Self-Healing Replay]
 ** xref:signing-certificate-rotation.adoc[Multi-CA Signing Certificates & Validity Monitor]
@@ -11,6 +11,7 @@
 ** xref:urls-and-rbac.adoc[URLs & Role-Based Access Control (RBAC)]
 ** xref:tls-management.adoc[TLS Security Configuration]
 * Configuration & Operations
+** xref:hsm-operations-guide.adoc[HSM Operations & Production Deployment Guide]
 ** xref:configuration-properties.adoc[Configuration Properties & Profiles (dev / local / prod)]
 ** xref:deployment-docker.adoc[Docker Deployment & Compose]
 ** xref:api-reference.adoc[REST & RFC 6960 API Reference]

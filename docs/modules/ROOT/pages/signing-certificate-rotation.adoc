@@ -8,7 +8,7 @@ The OCSP Responder supports multi-CA delegated OCSP signing certificates (`id-kp
 Unlike legacy single-CA responders:
 
 * **Multiple signing certificates can be active simultaneously** (e.g., one RSA signing certificate issued by `Root CA A` and one ECDSA P-256 signing certificate issued by `Subordinate CA B`).
-* When an RFC 6960 request arrives, `Pkcs11OcspSigner.selectSigner(CertificateID)` inspects the request's `CertID` (`issuerNameHash` and `issuerKeyHash`) and selects the active, non-expired signing certificate issued by that CA.
+* When an RFC 6960 request arrives, `MultiProviderOcspSigner.selectSigner(CertificateID)` inspects the request's `CertID` (`issuerNameHash` and `issuerKeyHash`) and selects the active, non-expired signing certificate issued by that CA.
 * Operators cannot deactivate or delete the last remaining active signing certificate while it is active.
 
 == Post-Commit In-Memory Signer Synchronization
@@ -17,7 +17,7 @@ When an administrator imports, activates, deactivates, or deletes a signing cert
 
 1. `SigningCertificateService` updates `ocsp.signing_certificates` inside a `@Transactional` boundary (using `FindSigningCertificateUseCase` for lookups) and publishes a `SigningConfigurationChangedEvent`.
 2. `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)` runs `onSigningConfigurationChanged(...)` only **after** the database transaction commits.
-3. It calls `ocspSigner.updateActiveCertificate(...)` and `syncAllSignersWithHsm()`, which reloads all non-expired active certificates into `Pkcs11OcspSigner`.
+3. It calls `ocspSigner.updateActiveCertificate(...)` and `syncAllSignersWithHsm()`, which reloads all non-expired active certificates into `MultiProviderOcspSigner`.
 
 == Daily Signing Certificate Validity Check & 3-Day Alert Monitor
 

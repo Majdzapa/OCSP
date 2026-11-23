@@ -1,0 +1,441 @@
+= HSM Operations & Production Deployment Guide
+:toc:
+:toclevels: 3
+
+This operational guide explains how PKCS#11 HSM integration works inside `ocsp-responder`, why devices use runtime PIN activation (**Pattern 2**), how **`LOCKED`** and **`ACTIVE`** states behave, how to add hardware HSMs (Thales Luna, Utimaco CryptoServer, etc.), how to strip **SoftHSM2** cleanly for production, and how to execute your first production deployment and post-restart recovery.
+
+---
+
+== 1. How the HSM Subsystem Works
+
+`ocsp-responder` loads **multiple PKCS#11 vendor drivers and HSM slots in-process** inside the JVM via Maven Central's `org.xipki:ipkcs11wrapper:1.0.9` — with no external `hsm-signer` microservice and no C compiler step during Docker builds.
+
+[source,mermaid]
+----
+flowchart TD
+    REQ["Incoming RFC 6960 Request (/ocsp)\nCertID(issuerNameHash, issuerKeyHash, serial)"]
+    RESP["OcspResponderService"]
+    MATCH["MultiProviderOcspSigner + CaSignerMatcher\nMatches active SigningCertificate.providerId + keyLabel"]
+    REG["PkcsProviders Runtime Registry\n(maps deviceId -> CryptoProviderPort)"]
+    ADAPTER["Pkcs11jCryptoProviderAdapter\nPattern 2 Guard (LOCKED vs ACTIVE)"]
+    ENGINE["Pkcs11Engine + Pkcs11ModuleRegistry\nC_Initialize(CKF_OS_LOCKING_OK) once per .so"]
+    POOL["Pkcs11SessionPool + XiPkiPkcs11Library\nPooled RO Sessions / On-Demand RW Sessions"]
+    BRIDGE["libraryWrapperPath\nDefault: 'embedded' (libpkcs11wrapper in JAR)\nor allowlisted host .so"]
+    HSM1["libraryPath: SoftHSM2 / Test\n/usr/lib/softhsm/libsofthsm2.so"]
+    HSM2["libraryPath: Thales Luna\n/usr/safenet/lunaclient/lib/libCryptoki2_64.so"]
+    HSM3["libraryPath: Utimaco CryptoServer\n/opt/utimaco/libcs_pkcs11_R2.so"]
+
+    REQ --> RESP --> MATCH --> REG --> ADAPTER --> ENGINE --> POOL --> BRIDGE
+    BRIDGE -->|dlopen| HSM1
+    BRIDGE -->|dlopen| HSM2
+    BRIDGE -->|dlopen| HSM3
+----
+
+=== `libraryPath` vs `libraryWrapperPath`
+
+Every PKCS#11 driver entry in `crypto_providers` specifies two paths:
+
+[cols="1,2,3", options="header"]
+|===
+| Field | Scope | Purpose & Typical Value
+
+| `libraryPath`
+| **Per vendor / HSM provider**
+| Absolute path inside `hsm.allowed-library-dirs` pointing to the vendor's native Cryptoki shared library (`.so` / `.dylib`):
+e.g. `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`, `/opt/utimaco/libcs_pkcs11_R2.so`, or `/usr/lib/softhsm/libsofthsm2.so`.
+
+| `libraryWrapperPath`
+| **Shared across the JVM**
+| Path to the JNI bridge (`libpkcs11wrapper`) connecting Java to C Cryptoki calls.
+Default is **`embedded`** (extracts and loads the OS/architecture-specific native binary bundled inside `ipkcs11wrapper-1.0.9.jar`).
+Only supply an explicit allowlisted file path (e.g. `/opt/pkcs11j/libpkcs11wrapper.so`) if `/tmp` is mounted `noexec` or your OS requires a custom build.
+|===
+
+[IMPORTANT]
+.One JNI Bridge Opens Many Vendor Drivers (`LibraryPathAllowlist`)
+====
+Java can only bind one `libpkcs11wrapper` JNI binary per JVM for `PKCS11Implementation`, and that single bridge can simultaneously `dlopen()` multiple different vendor `libraryPath` drivers (for example, Thales Luna + Utimaco at the same time). Attempting to load two conflicting `libraryWrapperPath` binaries in the same JVM is rejected by `XiPkiPkcs11Library`. Both `libraryPath` and explicit `libraryWrapperPath` paths are strictly validated against `hsm.allowed-library-dirs` (`HSM_ALLOWED_LIBRARY_DIRS`) by `LibraryPathAllowlist` to block path traversal (`..`) and arbitrary native code loading.
+====
+
+=== Database Model (Flyway `V14`) & Multi-HSM Signing Routing
+
+When `hsm.mode=DATABASE` (default), HSM topology lives in MariaDB across two tables (`V14__crypto_providers_and_devices.sql`) with **zero PIN columns**:
+
+* **`crypto_providers`**: Driver metadata (`code`, `name`, `wrapper_type` = `PKCS11J`, `library_path`, `library_wrapper_path`, `enabled`).
+* **`crypto_devices`**: Slot/partition metadata (`device_id`, FK `provider_id`, `token_label`, `slot_id`, `slot_list_index`, `pool_size`, `prehash_in_jvm`, `is_default`, `enabled`).
+* **`signing_certificates.provider_id`**: Binds each active OCSP signing certificate to the exact `device_id` and `key_label` that hold its private key.
+
+When `/ocsp` receives a status check, `CaSignerMatcher.selectBest(...)` inspects the request's `CertID`:
+
+1. Computes the Issuer DN hash of each active, non-expired `SigningCertificate` and matches it against `CertID.issuerNameHash`.
+2. For SHA-1 `CertID` requests where the signing certificate contains an `AuthorityKeyIdentifier` (AKI), verifies `cert.AKI == CertID.issuerKeyHash` so two CAs sharing a Subject DN never cross-sign.
+3. Breaks ties using `preferred` (the primary active certificate), then routes signing directly to `pkcsProviders.getProvider(providerId)` and its `keyLabel`.
+4. If the matched device is `LOCKED`, `Pkcs11jCryptoProviderAdapter` throws `DeviceLockedException` (it **never** falls back to a different HSM).
+
+[TIP]
+.HSM-Level High Availability (HA)
+====
+`CaSignerMatcher` selects one winning `(providerId, keyLabel)` per issuing CA. For active-active HA and automatic failover across two physical HSMs for the **same CA**, configure vendor HSM clustering (**Thales Luna HA Group** or **Utimaco Cluster**) so multiple physical appliances appear as a single virtual `tokenLabel` to `crypto_devices`.
+====
+
+---
+
+== 2. `LOCKED` vs `ACTIVE` States (and `ERROR`)
+
+Every DB-configured device implements `ActivatableCryptoProvider` (`Pkcs11jCryptoProviderAdapter`) with three states defined in `DeviceActivationState`:
+
+[source,mermaid]
+----
+stateDiagram-v2
+    [*] --> LOCKED : App Boot / Device Created\n(DatabaseCryptoProviderLoader)\nZero PKCS#11 sessions, zero PIN
+    LOCKED --> ACTIVE : POST /crypto-devices/{deviceId}/activate\nwith transient admin PIN\n(C_Initialize -> C_Login -> wipe PIN)
+    ACTIVE --> LOCKED : POST /crypto-devices/{deviceId}/deactivate\n(C_Logout -> close sessions -> unregister)
+    ACTIVE --> LOCKED : Token reports CKR_USER_NOT_LOGGED_IN\n(no silent re-login)
+    ACTIVE --> ERROR : Native/token communication failure
+    LOCKED --> ERROR : Fatal driver health failure
+----
+
+[cols="1,2,2,2", options="header"]
+|===
+| State | HSM Sessions & Keys | `/ocsp` & Admin CSR Behavior | `/actuator/health` Status
+
+| **`LOCKED`**
+| Normal boot state after container startup or admin lock. Zero PKCS#11 sessions opened; `keyLabels` is empty.
+| Requests targeting this device throw `DeviceLockedException`. `/ocsp` returns RFC 6960 **`TRY_LATER (3)`**. CSR generation & key listing return HTTP `400` (`Crypto device '...' is LOCKED`).
+| **`UP`** (by design, so containers pass liveness/readiness probes without storing PINs)
+
+| **`ACTIVE`**
+| `C_Initialize(CKF_OS_LOCKING_OK)` completed, slot resolved, `C_Login(CKU_USER)` succeeded, and `Pkcs11SessionPool` maintains `poolSize` open RO sessions.
+| Signs OCSP responses (`C_Sign`), generates keys/CSRs (`C_GenerateKeyPair` on a temporary RW session), imports certs (`C_CreateObject`), and lists keys. If a pooled session invalidates (`CKR_SESSION_HANDLE_INVALID`), it reopens and retries once.
+| **`UP`**
+
+| **`ERROR`**
+| Hardware communication error or driver failure on an unlocked device.
+| Operations fail with diagnostic status message (`ERROR: ...`).
+| **`DOWN`** (`errorCount > 0` in `cryptoDevicesHealthIndicator`)
+|===
+
+---
+
+== 3. Why the HSM PIN Is Supplied Only at Runtime (Pattern 2)
+
+Storing an HSM partition PIN anywhere on disk or in container configuration compromises hardware key protection even when keys are marked `CKA_EXTRACTABLE = FALSE`: anyone who obtains the persisted PIN plus host/network access to the HSM driver can sign unauthorized OCSP responses or reset keys.
+
+[cols="1,1,1,2", options="header"]
+|===
+| Approach | Exposed via DB Backups / Git | Exposed via `docker inspect` / Env | Security & Audit Outcome
+
+| **Static PIN in DB (`crypto_devices`)**
+| Yes (SQL dumps, replicas)
+| No
+| Rejected — `V14` omits all PIN columns.
+
+| **Static PIN in Env Var / Config (`HSM_PIN`)**
+| Often leaked in Compose/Helm repos
+| Yes (`env`, process table, K8s manifests)
+| Rejected — automated silent login after container breach.
+
+| **Pattern 2: Runtime Activation** *(Used here)*
+| **No**
+| **No**
+| Explicit human or ceremony unlock (`CRYPTO_DEVICE_MANAGE`); zero persisted PIN.
+|===
+
+=== How PIN Wiping Works in Memory
+When a `ROLE_ADMIN` operator unlocks a device via `POST /api/v1/admin/crypto-devices/\{deviceId\}/activate`:
+
+1. `ActivateCryptoDeviceRequest.toString()` masks the payload (`ActivateCryptoDeviceRequest[pin=***]`) so Spring/exception logs never capture the PIN.
+2. `CryptoDeviceController.activateDevice` passes a transient `char[]` buffer into `CryptoDeviceService.activateDevice` -> `Pkcs11jCryptoProviderAdapter.activate` -> `Pkcs11SessionPool` -> `XiPkiPkcs11Library.cLogin`.
+3. Every layer wipes its local `char[]` buffer with `Arrays.fill(pin, '\0')` inside a `finally` block **immediately** after `C_Login` completes (even if login fails).
+4. Once `C_Login` succeeds, `Pkcs11SessionPool` keeps authenticated PKCS#11 sessions open in memory — it **never** caches the PIN for silent re-login. If the HSM logs the session out (`CKR_USER_NOT_LOGGED_IN`), the adapter flips immediately back to `LOCKED` and awaits administrator unlock.
+
+=== RBAC Separation (`SecurityPermissions`)
+* `CRYPTO_DEVICE_READ` (`GET /crypto-providers`, `GET /crypto-devices`, `GET /crypto-providers/allowed-dirs`): granted to `ROLE_ADMIN`, `ROLE_AGENT`, `ROLE_OPERATOR`, and `ROLE_AUDITOR`.
+* `CRYPTO_DEVICE_MANAGE` (Create/Update/Delete providers & devices, **`activate`**, **`deactivate`**): granted **only** to `ROLE_ADMIN`.
+
+---
+
+[[add-hsm-device]]
+== 4. How to Add a New HSM Provider & Device
+
+Adding a new HSM vendor or additional HSM partition requires **zero code changes or restarts**.
+
+=== Step 4.1: Prepare Vendor Driver & Allowlist Inside `ocsp-responder`
+
+Mount the vendor PKCS#11 client library (and any vendor configuration/NTLS files) into `ocsp-responder`, and ensure the `.so` directory is listed in `HSM_ALLOWED_LIBRARY_DIRS` (`hsm.allowed-library-dirs`).
+
+[cols="1,2,3", options="header"]
+|===
+| Vendor HSM | Example `libraryPath` | Vendor Client Files & Env Needed in Container
+
+| **Thales Luna / ProtectServer**
+| `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`
+| Mount Luna client libs, `/etc/Chrystoki.conf`, and NTLS client/server certs (`/usr/safenet/lunaclient/cert/...`); set `ChrystokiConfigurationPath=/etc` if non-default.
+
+| **Utimaco CryptoServer**
+| `/opt/utimaco/libcs_pkcs11_R2.so` *(or R3)*
+| Mount Utimaco client lib and `cs_pkcs11_R2.cfg` (`Device = 3001@<hsm-ip>`); set `CS_PKCS11_R2_CFG=/opt/utimaco/cs_pkcs11_R2.cfg`.
+
+| **Entrust nShield / CloudHSM / YubiHSM2**
+| Vendor `.so` path (e.g. `/opt/nfast/toolkits/pkcs11/libcknfast.so`)
+| Add the parent directory to `HSM_ALLOWED_LIBRARY_DIRS` and mount required client daemons/configs.
+|===
+
+[NOTE]
+.Allowed Directories Verification
+====
+Default `hsm.allowed-library-dirs` in `application.yml` already permits `/usr/safenet` and `/opt/utimaco` alongside SoftHSM paths. Always inspect active allowlisted folders via `GET /api/v1/admin/crypto-providers/allowed-dirs` (or visible at the top of the **HSM Devices** page).
+====
+
+=== Step 4.2: Register & Unlock via OCSP Console UI
+
+1. Sign in as a `ROLE_ADMIN` user at `http://localhost:3002` and open **HSM Devices** (`/hsm-devices`).
+2. Click **Add Provider**:
+   * **Provider Code**: e.g. `thales-luna`
+   * **Display Name**: e.g. `Thales Luna Network HSM`
+   * **Wrapper Strategy**: `PKCS11J (In-Process ipkcs11wrapper)`
+   * **PKCS#11 Vendor Library Path (`libraryPath`)**: e.g. `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`
+   * **JNI Library Wrapper Path (`libraryWrapperPath`)**: `embedded` *(leave as `embedded` unless `/tmp` is `noexec`)*
+3. Click **Add Device**:
+   * **Device ID**: unique identifier referenced by signing certificates, e.g. `luna-ca1` *(cannot be `default`)*
+   * **Provider**: select `thales-luna`
+   * **Token Label**: partition label from `C_GetTokenInfo().label` *(recommended over `slotListIndex`)*, or set explicit numeric `slotId`
+   * **Pool Size**: e.g. `4`
+   * **Prehash in JVM (`prehashInJvm`)**: enable only if network round-trip payloads should be hashed in JVM before `CKM_RSA_PKCS` (keep `false` on strict FIPS partitions disallowing raw `CKM_RSA_PKCS`)
+4. Click **Unlock (PIN)** on `luna-ca1`, enter the HSM partition Crypto Officer / User PIN, and confirm status changes to **`ACTIVE`**.
+
+=== Step 4.3: Register & Unlock via REST API (`curl`)
+
+[source,bash]
+----
+# 0. Authenticate as ROLE_ADMIN (SELF_MANAGEMENT example; use Keycloak Bearer token in KEYCLOAK mode)
+TOKEN=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<ADMIN_PASSWORD>"}' | jq -r '.accessToken')
+
+# 1. Create the cryptographic provider (returns provider id, e.g. id=2)
+curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-providers \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "thales-luna",
+    "name": "Thales Luna Network HSM",
+    "wrapperType": "PKCS11J",
+    "libraryPath": "/usr/safenet/lunaclient/lib/libCryptoki2_64.so",
+    "libraryWrapperPath": "embedded",
+    "enabled": true
+  }'
+
+# 2. Register an HSM partition/device in LOCKED state (zero PIN persisted)
+curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-devices \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deviceId": "luna-ca1",
+    "providerId": 2,
+    "tokenLabel": "ocsp-ca1-partition",
+    "slotId": null,
+    "slotListIndex": 0,
+    "poolSize": 4,
+    "prehashInJvm": false,
+    "isDefault": true,
+    "enabled": true
+  }'
+
+# 3. Runtime unlock with transient PIN (wiped immediately after C_Login)
+curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-devices/luna-ca1/activate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pin": "<HSM_PARTITION_PIN>"}'
+
+# 4. Lock device anytime (executes C_Logout and closes pooled sessions)
+curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-devices/luna-ca1/deactivate \
+  -H "Authorization: Bearer $TOKEN"
+----
+
+=== Configuration Reference (`CryptoProviderRequest` & `CryptoDeviceRequest`)
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Semantics & Resolution Order
+
+| `code` *(Provider)*
+| Yes
+| Unique short slug (e.g. `thales-luna`, `utimaco`).
+
+| `wrapperType` *(Provider)*
+| No (default `PKCS11J`)
+| Strategy matching a Spring `CryptoDeviceAdapterFactory` (`PKCS11J` uses `XiPkiPkcs11Library` / `ipkcs11wrapper`).
+
+| `libraryPath` *(Provider)*
+| Yes
+| Absolute path inside `hsm.allowed-library-dirs` to vendor `.so` driver.
+
+| `libraryWrapperPath` *(Provider)*
+| No (default `embedded`)
+| `embedded` (bundled JAR native bridge) or an allowlisted absolute file path to `libpkcs11wrapper.so`.
+
+| `deviceId` *(Device)*
+| Yes
+| Unique ID stored in `signing_certificates.provider_id` (e.g. `luna-ca1`). `"default"` is reserved.
+
+| `tokenLabel` / `slotId` / `slotListIndex` *(Device)*
+| At least one recommended
+| Resolution priority in `Pkcs11Provider.resolveSlot`:
+1) explicit numeric `slotId` -> 2) matching `C_GetTokenInfo().label == tokenLabel` -> 3) `slots[slotListIndex]`.
+**Always prefer `tokenLabel` or `slotId` in multi-HSM deployments** because `slotListIndex` can shift if partitions attach/detach.
+
+| `poolSize` *(Device)*
+| No (default `4`)
+| Number of concurrent RO PKCS#11 sessions kept open once `ACTIVE`.
+
+| `prehashInJvm` *(Device)*
+| No (default `false`)
+| When `true`, RSA PKCS#1 v1.5 signing computes the SHA digest in JVM and sends `DigestInfo` to `CKM_RSA_PKCS` (reduces HSM network traffic; keep `false` if FIPS policy forbids `CKM_RSA_PKCS`).
+
+| `isDefault` *(Device)*
+| No (default `false`)
+| Sets this device as the default fallback target in `PkcsProviders`.
+|===
+
+---
+
+[[provision-signing-cert]]
+== 5. Generating Keys / CSRs & Activating Signing Certificates
+
+Once your target device (`luna-ca1`, `utimaco-ca2`, etc.) is **`ACTIVE`**:
+
+1. **Generate Keypair & PKCS#10 CSR** (`POST /api/v1/admin/signing-certificates/csr` or **Signing Cert** page):
+   * Set `providerId` to `"luna-ca1"`, specify `keyLabel`, `subjectDn`, `keyAlgorithm` (`RSA` or `EC`), and `keySize` (`2048`/`3072`/`4096` for RSA; `256`/`384` for EC).
+   * Keep `reuseExistingKey: false` to generate a new non-extractable keypair inside the HSM (`CKA_SENSITIVE=true`, `CKA_EXTRACTABLE=false`), **or** set `reuseExistingKey: true` to use a keypair you pre-created using vendor HSM tools (recommended on strict Thales FIPS partitions that restrict `CKM_RSA_PKCS_KEY_PAIR_GEN`).
+2. **Issue Delegated OCSP Certificate from Your CA**:
+   * Sign the CSR with Extended Key Usage **`id-kp-OCSPSigning` (`1.3.6.1.5.5.7.3.9`)**.
+3. **Import & Activate Certificate** (`POST /api/v1/admin/signing-certificates` with `providerId`, `keyLabel`, `certificatePem`, `activateImmediately: true`, or via `PUT /api/v1/admin/signing-certificates/\{id\}/activate`):
+   * Verifies the certificate's public key matches the key in the HSM, imports the certificate object into the token (`C_CreateObject`), persists `signing_certificates.provider_id`, and synchronizes `MultiProviderOcspSigner` post-commit (`@TransactionalEventListener(AFTER_COMMIT)`).
+
+---
+
+[[remove-softhsm2]]
+== 6. How to Remove SoftHSM2 Completely for Production
+
+SoftHSM2 is a software PKCS#11 emulator meant only for local development and CI tests (`XiPkiSoftHsmIntegrationTest`). Before production go-live, remove both its runtime rows and its container/OS footprint:
+
+=== Step 1: Deactivate & Delete Any SoftHSM Signing Certificates
+`CryptoDeviceService` blocks deleting a device (`HTTP 400`) while an active row in `signing_certificates` references `provider_id = 'softhsm-primary'` or `'softhsm-secondary'`. Ensure your real HSM signing certificate(s) are active first, then deactivate/remove any SoftHSM test certificates on the **Signing Cert** page.
+
+=== Step 2: Delete Seeded SoftHSM2 Devices & Provider
+Flyway `V14` seeds `softhsm-primary`, `softhsm-secondary`, and `softhsm2` in MariaDB. Because `crypto_devices.provider_id` has foreign key `ON DELETE RESTRICT`, **delete devices before deleting the provider** (either via **HSM Devices** UI or REST):
+
+[source,bash]
+----
+# Inspect IDs from GET /api/v1/admin/crypto-devices and GET /api/v1/admin/crypto-providers
+curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-devices | jq '.[] | {id, deviceId, providerId}'
+curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-providers | jq '.[] | {id, code}'
+
+# 1. Delete SoftHSM devices (replace <devId1>, <devId2> with numeric id values)
+curl -sf -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-devices/<devId1>
+curl -sf -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-devices/<devId2>
+
+# 2. Delete SoftHSM provider (replace <provId> with numeric id of code='softhsm2')
+curl -sf -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-providers/<provId>
+----
+
+[NOTE]
+Do **not** delete or edit `V14__crypto_providers_and_devices.sql` after Flyway has applied it; deleting the SoftHSM rows via UI/API ensures Flyway checksum verification stays intact across upgrades.
+
+=== Step 3: Restrict `HSM_ALLOWED_LIBRARY_DIRS`
+Remove all SoftHSM directories so `LibraryPathAllowlist` permits **only** your production HSM client directory (or directories):
+
+[source,yaml]
+----
+# Production example (Thales Luna only, or /opt/utimaco for Utimaco)
+HSM_ALLOWED_LIBRARY_DIRS: /usr/safenet/lunaclient/lib
+----
+
+=== Step 4: Remove the `hsm` Container & SoftHSM2 Package from Production Manifests
+In your production Compose / Kubernetes deployment:
+
+1. **Docker Compose**: Remove the `hsm` service, `depends_on.hsm`, `SOFTHSM2_CONF`, and the `hsm-tokens` / `hsm-conf` volume mounts/declarations from `docker-compose.yml`. Mount your hardware HSM client files instead (read-only where possible).
+2. **`ocsp-responder/Dockerfile` (Stage 2)**: Remove `softhsm2` from `apt-get install` and remove `ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf`. Keep `--enable-native-access=ALL-UNNAMED` in `ENTRYPOINT` (required by Java 25 for JNI `ipkcs11wrapper`) and install or mount your vendor HSM client SDK.
+
+=== Step 5: Verify Production Footprint
+Confirm only production paths and HSM devices exist:
+
+[source,bash]
+----
+curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-providers/allowed-dirs
+curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/admin/crypto-devices
+----
+
+---
+
+== 7. First Production Deployment Runbook
+
+Follow this end-to-end checklist on a fresh production environment:
+
+1. **Configure Production Profile & Mandatory Secrets (`ProductionSecretsValidator`)**:
+   * Set `SPRING_PROFILES_ACTIVE=prod` and `HSM_MODE=DATABASE`.
+   * Provide non-default values for all mandatory production secrets (boot refuses to start with known dev defaults like `changeme` or `rootpassword`):
+     * `spring.datasource.password` (`MARIADB_PASSWORD`)
+     * `spring.rabbitmq.password` (`RABBITMQ_PASSWORD`)
+     * `spring.rabbitmq.ssl.key-store-password` and `trust-store-password` (when `rabbitmq.tls.enabled=true`)
+     * `admin.password` and `app.auth.jwt.secret` (when `app.auth.mode` is not `KEYCLOAK`)
+2. **Provision HSM Client & Allowlist**:
+   * Mount the vendor PKCS#11 `.so` and configuration/NTLS certs into `ocsp-responder`.
+   * Set `HSM_ALLOWED_LIBRARY_DIRS` exclusively to the vendor library folder(s) (plus `/opt/pkcs11j` if supplying a custom wrapper outside `/tmp`).
+3. **Start Core Infrastructure & `ocsp-responder`**:
+   * Start MariaDB, RabbitMQ (mTLS `:5671`), Keycloak (if using OIDC), and `ocsp-responder`.
+   * Verify Flyway completes cleanly through `V14` and `/actuator/health` returns `200` (`"status":"UP"`). At this stage, devices report `LOCKED` (`cryptoDevicesHealthIndicator` reports `"mode":"RUNTIME_ACTIVATION"` and `"status":"UP"`).
+4. **Remove SoftHSM2 Seed Rows & Add Production HSM(s)**:
+   * Follow <<remove-softhsm2,Section 6>> to remove `softhsm-primary`, `softhsm-secondary`, and `softhsm2`.
+   * Follow <<add-hsm-device,Section 4>> to add each hardware provider and device partition.
+5. **Unlock HSM Device(s) at Runtime**:
+   * Unlock each production device via **HSM Devices** UI (`/hsm-devices`) or `POST /api/v1/admin/crypto-devices/\{deviceId\}/activate` with the partition PIN.
+   * Confirm `activationState` changes to **`ACTIVE`** and `slotId` / `tokenLabel` resolve cleanly.
+6. **Provision & Activate Delegated OCSP Signing Certificate(s)**:
+   * Follow <<provision-signing-cert,Section 5>> for each issuing CA you serve (binding each signing certificate to its target `providerId` / `deviceId`).
+7. **Smoke-Test Live RFC 6960 Signing**:
+   * Send an OCSP status check (`ocsp-client` or `openssl ocsp`) for a known certificate issued by your CA and verify a signed RFC 6960 `successful (0)` response (not `TRY_LATER (3)`).
+
+[IMPORTANT]
+.Post-Restart Standard Operating Procedure (SOP)
+====
+Because Pattern 2 never persists the HSM PIN, **every restart, container recreate, or rolling deployment boots `ocsp-responder` cleanly (`UP`) with all HSM devices in `LOCKED` state**. Until an administrator unlocks each active device via `/hsm-devices` or `POST /api/v1/admin/crypto-devices/\{deviceId\}/activate`, `/ocsp` responds with standard RFC 6960 **`TRY_LATER (3)`**. Build this unlock step into your deployment runbook and alert on `lockedCount > 0` in `/actuator/health` or `ocsp.request.error\{reason="no_signer"\}`.
+====
+
+---
+
+== 8. Troubleshooting Quick Reference
+
+[cols="2,2,3", options="header"]
+|===
+| Error / Symptom | Root Cause | Resolution
+
+| `libraryPath '...' is outside hsm.allowed-library-dirs [...]`
+| Vendor `.so` or wrapper directory missing from `HSM_ALLOWED_LIBRARY_DIRS` (or contains `..` / relative path).
+| Supply an absolute path without `..` and add its parent directory to `HSM_ALLOWED_LIBRARY_DIRS`.
+
+| `Crypto device '...' is LOCKED — unlock it with the HSM PIN first` / `/ocsp` returns `TRY_LATER (3)`
+| Device has not been unlocked after startup/restart, was locked by admin, or the token logged out (`CKR_USER_NOT_LOGGED_IN`).
+| Unlock the device with its PIN on **HSM Devices** (`/hsm-devices`) or `POST /api/v1/admin/crypto-devices/\{deviceId\}/activate`.
+
+| `CKR_PIN_INCORRECT` / `CKR_PIN_LOCKED` on unlock
+| Wrong HSM User/CO PIN supplied, or token PIN retry counter exhausted.
+| Stop retrying before lockout; verify partition PIN or reset User PIN using HSM Security Officer (`SO`) ceremony.
+
+| `No PKCS#11 token found with label '...'` or `slotListIndex=... out of range`
+| `tokenLabel` / `slotId` mismatch, or HSM client daemon/NTLS/network connection not established inside container.
+| Verify vendor config inside `ocsp-responder` (e.g. `Chrystoki.conf`, `CS_PKCS11_R2_CFG`), check HSM network connectivity, and confirm exact `C_GetTokenInfo().label`.
+
+| `Cannot delete crypto device '...' while an active signing certificate references it`
+| One or more active rows in `signing_certificates` still reference `provider_id = deviceId`.
+| Activate replacement signing certificate(s) on the new HSM first, deactivate the old cert(s), then delete the device.
+
+| `Failed loading PKCS#11 module` / `UnsatisfiedLinkError` in `/tmp`
+| Container mounts `/tmp` with `noexec`, blocking extraction of `embedded` `libpkcs11wrapper.so`.
+| Pre-stage `libpkcs11wrapper.so` inside an allowlisted executable directory (e.g. `/opt/pkcs11j/libpkcs11wrapper.so`) and set `libraryWrapperPath` to that path.
+
+| `CKR_MECHANISM_INVALID` during RSA key generation on Thales Luna
+| Strict FIPS Luna partition disables `CKM_RSA_PKCS_KEY_PAIR_GEN`.
+| Pre-generate the keypair in Luna (`lunacm`/`cmu`) under `keyLabel`, then call `/signing-certificates/csr` with `reuseExistingKey: true`.
+|===

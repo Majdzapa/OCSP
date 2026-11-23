@@ -26,7 +26,7 @@ flowchart TB
         StatusService["CertificateStatusService\nStrict 3-Tuple CertID Lookup\n(issuerNameHash, issuerKeyHash, serial)"]
         CertRotator["SigningCertificateService\n& SigningCertificateValidityService\n(AFTER_COMMIT Reload & Daily Cron)"]
         Reconciler["OutboxReconciliationService\n(3s Manifest Diff & RabbitMQ Replay)"]
-        Pkcs11Engine["Pkcs11OcspSigner\n(Multi-CA CertID Signer Selection)"]
+        Pkcs11Engine["MultiProviderOcspSigner\n(Multi-CA CertID Signer Selection)"]
 
         OcspEndpoint --> StatusService --> Pkcs11Engine
         CertRotator --> UseCases
@@ -37,7 +37,7 @@ flowchart TB
 
     subgraph LayerHsm["🔒 Cryptographic Hardware Tier"]
         SoftHSM["SoftHSM2 PKCS#11 Token (ocsp-signing)\n• Zero Pre-Seeded Keys\n• On-Demand RSA / ECDSA Keygen\n• CKA_EXTRACTABLE = FALSE"]
-        Pkcs11Engine -.->|SunPKCS11| SoftHSM
+        Pkcs11Engine -.->|ipkcs11wrapper PKCS#11| SoftHSM
     end
 
     subgraph LayerBroker["📨 RabbitMQ Strict mTLS Broker (:5671)"]
@@ -106,7 +106,7 @@ sequenceDiagram
     participant Responder as OcspResponderService (:8080)
     participant StatusSvc as CertificateStatusService
     participant DB as OCSP MariaDB (revocation_status)
-    participant HSM as Pkcs11OcspSigner / SoftHSM2
+    participant HSM as MultiProviderOcspSigner / SoftHSM2
 
     Verifier->>ClientSvc: POST /api/v1/client/check { serialNumberHex, caPem, useNonce: true }
     ClientSvc->>ClientSvc: Compute CertID(SHA-1(caSubject), SHA-1(caPublicKey), serial) + 8B Nonce

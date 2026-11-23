@@ -134,6 +134,18 @@ export const deleteUser = (id) => api.delete(`/users/${id}`).then((r) => r.data)
 export const getUserCertificates = (userId) => api.get(`/users/${userId}/certificates`).then((r) => r.data);
 export const assignUserCertificate = (userId, certificatePem) => api.post(`/users/${userId}/certificates`, { certificatePem }).then((r) => r.data);
 export const removeUserCertificate = (userId, certId) => api.delete(`/users/${userId}/certificates/${certId}`).then((r) => r.data);
+// ---- Cryptographic Providers & HSM Devices (DB + Pattern 2 Runtime Activation) ----
+export const getCryptoProviders = () => api.get('/crypto-providers').then((r) => r.data);
+export const getAllowedLibraryDirs = () => api.get('/crypto-providers/allowed-dirs').then((r) => r.data);
+export const createCryptoProvider = (req) => api.post('/crypto-providers', req).then((r) => r.data);
+export const updateCryptoProvider = (id, req) => api.put(`/crypto-providers/${id}`, req).then((r) => r.data);
+export const deleteCryptoProvider = (id) => api.delete(`/crypto-providers/${id}`).then((r) => r.data);
+export const getCryptoDevices = () => api.get('/crypto-devices').then((r) => r.data);
+export const createCryptoDevice = (req) => api.post('/crypto-devices', req).then((r) => r.data);
+export const updateCryptoDevice = (id, req) => api.put(`/crypto-devices/${id}`, req).then((r) => r.data);
+export const deleteCryptoDevice = (id) => api.delete(`/crypto-devices/${id}`).then((r) => r.data);
+export const activateCryptoDevice = (deviceId, pin) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/activate`, { pin }).then((r) => r.data);
+export const deactivateCryptoDevice = (deviceId) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/deactivate`).then((r) => r.data);
 // ---- Trusted CAs (Hot-reloaded mTLS Truststore) ----
 export const getTrustedCas = () => api.get('/trusted-cas').then((r) => r.data);
 export const importTrustedCa = (alias, certificatePem) => api.post('/trusted-cas', { alias, certificatePem }).then((r) => r.data);
