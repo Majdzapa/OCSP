@@ -1,5 +1,6 @@
 package com.company.incert.pkcs11j;
 
+import com.company.incert.pkcs11j.crypto.EcdsaSignatureStrategy;
 import com.company.incert.pkcs11j.port.Pkcs11LibraryPort;
 import com.company.incert.pkcs11j.provider.Pkcs11Provider;
 import com.company.incert.pkcs11j.provider.Pkcs11ProviderConfig;
@@ -119,13 +120,42 @@ class PkcsProvidersTest {
         raw[32] = (byte) 0xFF;
         raw[63] = 0x22;
 
-        byte[] der = Pkcs11Provider.rawEcdsaToDer(raw);
+        byte[] der = EcdsaSignatureStrategy.rawEcdsaToDer(raw);
         ASN1Sequence seq = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
         assertThat(seq.size()).isEqualTo(2);
         assertThat(ASN1Integer.getInstance(seq.getObjectAt(0)).getPositiveValue())
                 .isEqualTo(new BigInteger(1, java.util.Arrays.copyOfRange(raw, 0, 32)));
         assertThat(ASN1Integer.getInstance(seq.getObjectAt(1)).getPositiveValue())
                 .isEqualTo(new BigInteger(1, java.util.Arrays.copyOfRange(raw, 32, 64)));
+    }
+
+    @Test
+    void openClosedSignatureStrategyExtensionWorksWithoutModifyingProvider() {
+        AtomicInteger initCalls = new AtomicInteger();
+        AtomicInteger finalizeCalls = new AtomicInteger();
+        AtomicInteger closeCalls = new AtomicInteger();
+        FakePkcs11Library fake = new FakePkcs11Library(
+                "/tmp/libocp.so", Pkcs11Constants.CKR_OK, initCalls, finalizeCalls, closeCalls);
+
+        try (PkcsProviders providers = new PkcsProviders(path -> fake)) {
+            providers.getSignatureStrategies().register(new com.company.incert.pkcs11j.crypto.SignatureStrategy() {
+                @Override
+                public boolean supports(String alg) {
+                    return "Ed25519".equalsIgnoreCase(alg);
+                }
+
+                @Override
+                public byte[] sign(Pkcs11LibraryPort lib, long session, long keyHandle,
+                                   String signatureAlgorithm, byte[] data, boolean prehashInJvm) {
+                    return new byte[]{9, 9, 9};
+                }
+            });
+
+            Pkcs11Provider provider = providers.register(new Pkcs11ProviderConfig(
+                    "ocp-dev", "/tmp/libocp.so", "token-a", null, 0, "1234".toCharArray(), 1, false));
+            byte[] sig = provider.sign("key-a", "Ed25519", "msg".getBytes(StandardCharsets.UTF_8));
+            assertThat(sig).isEqualTo(new byte[]{9, 9, 9});
+        }
     }
 
     private static final class FakePkcs11Library implements Pkcs11LibraryPort {

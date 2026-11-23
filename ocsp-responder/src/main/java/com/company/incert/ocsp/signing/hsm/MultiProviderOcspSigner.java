@@ -4,20 +4,13 @@ import com.company.incert.ocsp.signing.port.CryptoProviderPort;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.provider.PkcsProviders;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
-import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
-import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
-import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.ocsp.CertificateID;
 import org.bouncycastle.operator.ContentSigner;
 
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,9 +18,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Multi-device {@link OcspSigner} delegating all hardware/token operations to {@link PkcsProviders}.
- * Supports multiple concurrent signing devices (PKCS11J over gRPC, local SunPKCS11, etc.) and
- * automatically selects the matching issuing CA's signing certificate and target device per OCSP request.
+ * Multi-device {@link OcspSigner} delegating cryptographic operations to {@link PkcsProviders}
+ * and CA-specific certificate matching to {@link CaSignerMatcher}.
  */
 @Slf4j
 public class MultiProviderOcspSigner implements OcspSigner {
@@ -37,7 +29,7 @@ public class MultiProviderOcspSigner implements OcspSigner {
     private volatile String activeKeyLabel;
 
     private final AtomicReference<DefaultSignerState> stateRef = new AtomicReference<>();
-    private final List<RegisteredSignerEntry> registeredSigners = new CopyOnWriteArrayList<>();
+    private final List<CaSignerMatcher.MatchedSigner<ProviderKeyRef>> registeredSigners = new CopyOnWriteArrayList<>();
 
     public MultiProviderOcspSigner(PkcsProviders pkcsProviders, String defaultKeyLabel) {
         this.pkcsProviders = pkcsProviders;
@@ -48,10 +40,10 @@ public class MultiProviderOcspSigner implements OcspSigner {
     }
 
     @Override
-    public ContentSigner createContentSigner() throws Exception {
+    public ContentSigner createContentSigner() {
         DefaultSignerState state = requireState();
-        return pkcsProviders.getProvider(state.providerId())
-                .createContentSigner(state.keyLabel(), state.algorithm());
+        return pkcsProviders.getProvider(state.target().providerId())
+                .createContentSigner(state.target().keyLabel(), state.algorithm());
     }
 
     @Override
@@ -114,11 +106,6 @@ public class MultiProviderOcspSigner implements OcspSigner {
     }
 
     @Override
-    public String generateCsr(String keyLabel, String subjectDn, String keyAlgorithm, int keySize, boolean reuseExistingKey) {
-        return generateCsr(null, keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
-    }
-
-    @Override
     public String generateCsr(
             String providerId,
             String keyLabel,
@@ -126,13 +113,8 @@ public class MultiProviderOcspSigner implements OcspSigner {
             String keyAlgorithm,
             int keySize,
             boolean reuseExistingKey) {
-        CryptoProviderPort provider = pkcsProviders.getProvider(providerId);
-        return provider.generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
-    }
-
-    @Override
-    public void importCertificateToToken(String keyLabel, X509CertificateHolder certificate) {
-        importCertificateToToken(null, keyLabel, certificate);
+        return pkcsProviders.getProvider(providerId)
+                .generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
     }
 
     @Override
@@ -140,18 +122,7 @@ public class MultiProviderOcspSigner implements OcspSigner {
         if (keyLabel == null || keyLabel.isBlank() || certificate == null) {
             return;
         }
-        CryptoProviderPort provider = pkcsProviders.getProvider(providerId);
-        provider.importCertificate(keyLabel.trim(), certificate);
-    }
-
-    @Override
-    public void updateActiveCertificate(String keyLabel, X509CertificateHolder certificate) {
-        updateActiveCertificate(null, keyLabel, certificate, null);
-    }
-
-    @Override
-    public void updateActiveCertificate(String keyLabel, X509CertificateHolder certificate, String signatureAlgorithm) {
-        updateActiveCertificate(null, keyLabel, certificate, signatureAlgorithm);
+        pkcsProviders.getProvider(providerId).importCertificate(keyLabel.trim(), certificate);
     }
 
     @Override
@@ -174,11 +145,10 @@ public class MultiProviderOcspSigner implements OcspSigner {
         }
         String algorithm = (signatureAlgorithm != null && !signatureAlgorithm.isBlank())
                 ? signatureAlgorithm.trim()
-                : detectSignatureAlgorithm(certificate);
+                : CaSignerMatcher.detectSignatureAlgorithm(certificate);
 
         stateRef.set(new DefaultSignerState(
-                resolvedProviderId,
-                this.activeKeyLabel,
+                new ProviderKeyRef(resolvedProviderId, this.activeKeyLabel),
                 new X509CertificateHolder[]{certificate},
                 algorithm,
                 certificate.getNotAfter().toInstant()
@@ -192,29 +162,20 @@ public class MultiProviderOcspSigner implements OcspSigner {
         if (signers == null) {
             return;
         }
-        List<RegisteredSignerEntry> updated = new ArrayList<>();
+        List<CaSignerMatcher.MatchedSigner<ProviderKeyRef>> updated = new ArrayList<>();
+        Instant now = Instant.now();
         for (RegisteredSigner rs : signers) {
             try {
                 X509CertificateHolder holder = rs.certificate();
-                if (holder == null || Instant.now().isAfter(holder.getNotAfter().toInstant())) {
+                if (holder == null || now.isAfter(holder.getNotAfter().toInstant())) {
                     continue;
                 }
                 CryptoProviderPort port = pkcsProviders.getProvider(rs.providerId());
-                String alg = (rs.signatureAlgorithm() != null && !rs.signatureAlgorithm().isBlank())
-                        ? rs.signatureAlgorithm().trim()
-                        : detectSignatureAlgorithm(holder);
-                byte[] issuerEncoded = holder.getIssuer().getEncoded();
-                byte[] aki = extractAuthorityKeyId(holder);
-                updated.add(new RegisteredSignerEntry(
-                        port.providerId(),
-                        rs.keyLabel(),
-                        new X509CertificateHolder[]{holder},
-                        alg,
-                        holder.getNotAfter().toInstant(),
-                        issuerEncoded,
-                        aki,
-                        rs.preferred()
-                ));
+                updated.add(CaSignerMatcher.MatchedSigner.of(
+                        new ProviderKeyRef(port.providerId(), rs.keyLabel()),
+                        holder,
+                        rs.signatureAlgorithm(),
+                        rs.preferred()));
             } catch (Exception e) {
                 log.warn("Failed registering signer (provider='{}', keyLabel='{}'): {}",
                         rs.providerId(), rs.keyLabel(), e.getMessage());
@@ -232,55 +193,18 @@ public class MultiProviderOcspSigner implements OcspSigner {
             throw new SignerNotConfiguredException(
                     "No active signing certificate is configured (activate one under Signing Certificates)");
         }
-        if (certId != null) {
-            Instant now = Instant.now();
-            byte[] reqIssuerNameHash = certId.getIssuerNameHash();
-            byte[] reqIssuerKeyHash = certId.getIssuerKeyHash();
-            ASN1ObjectIdentifier hashAlgOid = certId.getHashAlgOID();
-            String digestName = resolveDigestName(hashAlgOid);
-
-            if (digestName != null && reqIssuerNameHash != null) {
-                MessageDigest md = MessageDigest.getInstance(digestName);
-                RegisteredSignerEntry bestMatch = null;
-                int bestScore = -1;
-
-                for (RegisteredSignerEntry entry : registeredSigners) {
-                    if (now.isAfter(entry.notAfter())) {
-                        continue;
-                    }
-                    byte[] entryNameHash = md.digest(entry.issuerEncoded());
-                    if (!Arrays.equals(entryNameHash, reqIssuerNameHash)) {
-                        continue;
-                    }
-
-                    int score = 1;
-                    if (entry.authorityKeyId() != null && OIWObjectIdentifiers.idSHA1.equals(hashAlgOid)) {
-                        if (Arrays.equals(entry.authorityKeyId(), reqIssuerKeyHash)) {
-                            score = 3;
-                        } else {
-                            continue;
-                        }
-                    }
-                    if (entry.preferred()) {
-                        score += 1;
-                    }
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestMatch = entry;
-                    }
-                }
-
-                if (bestMatch != null) {
-                    CryptoProviderPort port = pkcsProviders.getProvider(bestMatch.providerId());
-                    ContentSigner cs = port.createContentSigner(bestMatch.keyLabel(), bestMatch.algorithm());
-                    return new SigningSelection(bestMatch.chain(), cs);
-                }
-            }
+        CaSignerMatcher.MatchedSigner<ProviderKeyRef> selected =
+                CaSignerMatcher.selectBest(registeredSigners, certId).orElse(null);
+        if (selected != null) {
+            ProviderKeyRef ref = selected.target();
+            ContentSigner cs = pkcsProviders.getProvider(ref.providerId())
+                    .createContentSigner(ref.keyLabel(), selected.algorithm());
+            return new SigningSelection(selected.chain(), cs);
         }
 
         DefaultSignerState fallback = requireState();
-        CryptoProviderPort port = pkcsProviders.getProvider(fallback.providerId());
-        ContentSigner cs = port.createContentSigner(fallback.keyLabel(), fallback.algorithm());
+        ContentSigner cs = pkcsProviders.getProvider(fallback.target().providerId())
+                .createContentSigner(fallback.target().keyLabel(), fallback.algorithm());
         return new SigningSelection(fallback.chain(), cs);
     }
 
@@ -292,51 +216,12 @@ public class MultiProviderOcspSigner implements OcspSigner {
         return state;
     }
 
-    private static String detectSignatureAlgorithm(X509CertificateHolder holder) {
-        try {
-            if (holder.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId().contains("1.2.840.10045")) {
-                return "SHA256withECDSA";
-            }
-        } catch (Exception ignored) {}
-        return "SHA256withRSA";
-    }
-
-    private static byte[] extractAuthorityKeyId(X509CertificateHolder holder) {
-        try {
-            Extension ext = holder.getExtension(Extension.authorityKeyIdentifier);
-            if (ext != null) {
-                AuthorityKeyIdentifier aki = AuthorityKeyIdentifier.getInstance(ext.getParsedValue());
-                return aki.getKeyIdentifier();
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
-
-    private static String resolveDigestName(ASN1ObjectIdentifier oid) {
-        if (OIWObjectIdentifiers.idSHA1.equals(oid)) return "SHA-1";
-        if (NISTObjectIdentifiers.id_sha256.equals(oid)) return "SHA-256";
-        if (NISTObjectIdentifiers.id_sha384.equals(oid)) return "SHA-384";
-        if (NISTObjectIdentifiers.id_sha512.equals(oid)) return "SHA-512";
-        return null;
-    }
+    private record ProviderKeyRef(String providerId, String keyLabel) {}
 
     private record DefaultSignerState(
-            String providerId,
-            String keyLabel,
+            ProviderKeyRef target,
             X509CertificateHolder[] chain,
             String algorithm,
             Instant notAfter
     ) {}
-
-    private record RegisteredSignerEntry(
-            String providerId,
-            String keyLabel,
-            X509CertificateHolder[] chain,
-            String algorithm,
-            Instant notAfter,
-            byte[] issuerEncoded,
-            byte[] authorityKeyId,
-            boolean preferred
-    ) {}
 }
-

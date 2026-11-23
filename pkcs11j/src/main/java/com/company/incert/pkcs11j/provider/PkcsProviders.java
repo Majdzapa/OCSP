@@ -1,13 +1,12 @@
 package com.company.incert.pkcs11j.provider;
 
-import com.company.incert.pkcs11j.Pkcs11Constants;
-import com.company.incert.pkcs11j.Pkcs11Exception;
+import com.company.incert.pkcs11j.crypto.KeyPairStrategies;
+import com.company.incert.pkcs11j.crypto.SignatureStrategies;
 import com.company.incert.pkcs11j.nativebridge.JniPkcs11Library;
 import com.company.incert.pkcs11j.port.Pkcs11LibraryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -15,29 +14,45 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * Multi-device PKCS#11 registry that initializes each native shared library ({@code C_Initialize})
- * once per process, shares the initialized {@link Pkcs11LibraryPort} across multiple slots/tokens,
- * and finalizes ({@code C_Finalize}) cleanly via reference counting on shutdown.
+ * Multi-device PKCS#11 registry delegating shared library ref-counting and {@code C_Initialize}/{@code C_Finalize}
+ * lifecycle to {@link Pkcs11ModuleRegistry}.
  */
 public final class PkcsProviders implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PkcsProviders.class);
 
-    private final Function<String, Pkcs11LibraryPort> libraryFactory;
-    private final Map<String, LoadedModule> modulesByPath = new ConcurrentHashMap<>();
+    private final Pkcs11ModuleRegistry moduleRegistry;
+    private final KeyPairStrategies keyPairStrategies;
+    private final SignatureStrategies signatureStrategies;
     private final Map<String, Pkcs11Provider> providersById = Collections.synchronizedMap(new LinkedHashMap<>());
     private volatile String defaultProviderId;
 
     public PkcsProviders() {
-        this(JniPkcs11Library::new);
+        this(JniPkcs11Library::new, new KeyPairStrategies(), new SignatureStrategies());
     }
 
     public PkcsProviders(Function<String, Pkcs11LibraryPort> libraryFactory) {
-        this.libraryFactory = Objects.requireNonNull(libraryFactory, "libraryFactory must not be null");
+        this(libraryFactory, new KeyPairStrategies(), new SignatureStrategies());
+    }
+
+    public PkcsProviders(
+            Function<String, Pkcs11LibraryPort> libraryFactory,
+            KeyPairStrategies keyPairStrategies,
+            SignatureStrategies signatureStrategies) {
+        this.moduleRegistry = new Pkcs11ModuleRegistry(libraryFactory);
+        this.keyPairStrategies = Objects.requireNonNull(keyPairStrategies, "keyPairStrategies must not be null");
+        this.signatureStrategies = Objects.requireNonNull(signatureStrategies, "signatureStrategies must not be null");
+    }
+
+    public KeyPairStrategies getKeyPairStrategies() {
+        return keyPairStrategies;
+    }
+
+    public SignatureStrategies getSignatureStrategies() {
+        return signatureStrategies;
     }
 
     public synchronized Pkcs11Provider register(Pkcs11ProviderConfig config) {
@@ -47,14 +62,17 @@ public final class PkcsProviders implements AutoCloseable {
             throw new IllegalArgumentException("PKCS#11 provider already registered with id '" + id + "'");
         }
 
-        String canonicalLibPath = canonicalizePath(config.libraryPath());
-        Pkcs11LibraryPort library = acquireModule(canonicalLibPath);
-
+        Pkcs11LibraryPort library = moduleRegistry.acquire(config.libraryPath());
         Pkcs11Provider provider;
         try {
-            provider = new Pkcs11Provider(config, library, () -> releaseModule(canonicalLibPath));
+            provider = new Pkcs11Provider(
+                    config,
+                    library,
+                    keyPairStrategies,
+                    signatureStrategies,
+                    () -> moduleRegistry.release(config.libraryPath()));
         } catch (RuntimeException e) {
-            releaseModule(canonicalLibPath);
+            moduleRegistry.release(config.libraryPath());
             throw e;
         }
 
@@ -112,7 +130,7 @@ public final class PkcsProviders implements AutoCloseable {
     }
 
     public int loadedModuleCount() {
-        return modulesByPath.size();
+        return moduleRegistry.loadedModuleCount();
     }
 
     @Override
@@ -129,66 +147,6 @@ public final class PkcsProviders implements AutoCloseable {
             } catch (Exception e) {
                 log.warn("Error closing PKCS#11 provider '{}': {}", p.getProviderId(), e.getMessage());
             }
-        }
-    }
-
-    private Pkcs11LibraryPort acquireModule(String canonicalPath) {
-        LoadedModule entry = modulesByPath.compute(canonicalPath, (path, existing) -> {
-            if (existing != null) {
-                existing.refCount++;
-                return existing;
-            }
-            Pkcs11LibraryPort port = libraryFactory.apply(path);
-            try {
-                long rv = port.cInitialize(Pkcs11Constants.CKF_OS_LOCKING_OK);
-                if (rv != Pkcs11Constants.CKR_OK && rv != Pkcs11Constants.CKR_CRYPTOKI_ALREADY_INITIALIZED) {
-                    throw new Pkcs11Exception("C_Initialize", rv);
-                }
-                log.info("Initialized PKCS#11 native module '{}' via C_Initialize (rv={})",
-                        path, Pkcs11Constants.errorName(rv));
-            } catch (RuntimeException e) {
-                try {
-                    port.close();
-                } catch (Exception ignored) {}
-                throw e;
-            }
-            return new LoadedModule(port, 1);
-        });
-        return entry.port;
-    }
-
-    private synchronized void releaseModule(String canonicalPath) {
-        modulesByPath.computeIfPresent(canonicalPath, (path, existing) -> {
-            existing.refCount--;
-            if (existing.refCount <= 0) {
-                try {
-                    long rv = existing.port.cFinalize();
-                    log.info("Finalized PKCS#11 native module '{}' via C_Finalize (rv={})",
-                            path, Pkcs11Constants.errorName(rv));
-                } catch (Exception e) {
-                    log.warn("C_Finalize failed for module '{}': {}", path, e.getMessage());
-                } finally {
-                    try {
-                        existing.port.close();
-                    } catch (Exception ignored) {}
-                }
-                return null;
-            }
-            return existing;
-        });
-    }
-
-    private static String canonicalizePath(String path) {
-        return Path.of(path.trim()).toAbsolutePath().normalize().toString();
-    }
-
-    private static final class LoadedModule {
-        final Pkcs11LibraryPort port;
-        int refCount;
-
-        LoadedModule(Pkcs11LibraryPort port, int refCount) {
-            this.port = port;
-            this.refCount = refCount;
         }
     }
 }

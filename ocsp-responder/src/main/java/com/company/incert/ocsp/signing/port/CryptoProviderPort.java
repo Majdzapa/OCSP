@@ -28,7 +28,9 @@ public interface CryptoProviderPort extends AutoCloseable {
 
     byte[] sign(String keyLabel, String signatureAlgorithm, byte[] data);
 
-    ContentSigner createContentSigner(String keyLabel, String signatureAlgorithm);
+    default ContentSigner createContentSigner(String keyLabel, String signatureAlgorithm) {
+        return new BufferedContentSigner(signatureAlgorithm, bytes -> sign(keyLabel, signatureAlgorithm, bytes));
+    }
 
     @Override
     default void close() {}

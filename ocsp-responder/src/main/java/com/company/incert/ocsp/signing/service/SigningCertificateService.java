@@ -306,6 +306,11 @@ public class SigningCertificateService {
                 .orElse(providers.isEmpty() ? null : providers.get(0));
 
         if (primaryInfo != null) {
+            java.util.Map<String, String> mergedKeyAlgs = new java.util.LinkedHashMap<>();
+            providers.stream()
+                    .map(ProviderDeviceInfo::keyAlgorithms)
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(mergedKeyAlgs::putAll);
             return new HsmInfoDto(
                     ocspSigner.type(),
                     primaryInfo.libraryPath(),
@@ -313,7 +318,7 @@ public class SigningCertificateService {
                     (int) primaryInfo.slotId(),
                     ocspSigner.getActiveKeyLabel(),
                     primaryInfo.keyLabels() != null ? primaryInfo.keyLabels() : ocspSigner.listKeyLabels(),
-                    ocspSigner.getKeyAlgorithms(),
+                    mergedKeyAlgs,
                     supportedByType,
                     defaultProviderId,
                     providers

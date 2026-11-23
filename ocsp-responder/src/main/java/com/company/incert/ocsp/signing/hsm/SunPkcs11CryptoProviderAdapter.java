@@ -1,6 +1,5 @@
-package com.company.incert.ocsp.signing.provider;
+package com.company.incert.ocsp.signing.hsm;
 
-import com.company.incert.ocsp.signing.hsm.Pkcs11OcspSigner;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
@@ -10,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@link CryptoProviderPort} adapter wrapping the local {@code SunPKCS11}-based {@link Pkcs11OcspSigner}.
+ * {@link CryptoProviderPort} adapter wrapping a local {@code SunPKCS11}-based {@link Pkcs11OcspSigner}.
  */
 public class SunPkcs11CryptoProviderAdapter implements CryptoProviderPort {
 
@@ -34,8 +33,6 @@ public class SunPkcs11CryptoProviderAdapter implements CryptoProviderPort {
 
     @Override
     public ProviderDeviceInfo getDeviceInfo() {
-        List<String> labels = delegate.listKeyLabels();
-        Map<String, String> algs = delegate.getKeyAlgorithms();
         return new ProviderDeviceInfo(
                 providerId,
                 delegate.type(),
@@ -44,8 +41,8 @@ public class SunPkcs11CryptoProviderAdapter implements CryptoProviderPort {
                 delegate.getSlotListIndex(),
                 true,
                 "UP (SunPKCS11 slotIndex=" + delegate.getSlotListIndex() + ")",
-                labels,
-                algs
+                delegate.listKeyLabels(),
+                delegate.getKeyAlgorithms()
         );
     }
 

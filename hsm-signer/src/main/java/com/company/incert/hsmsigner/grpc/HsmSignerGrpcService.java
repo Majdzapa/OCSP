@@ -31,53 +31,48 @@ import java.util.List;
 
 /**
  * gRPC facade exposing all registered PKCS11J providers in {@link PkcsProviders} as stateless RPCs.
- * Session pooling, login, and {@code C_Initialize}/{@code C_Finalize} stay isolated inside {@code PkcsProviders}.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class HsmSignerGrpcService extends HsmSignerServiceGrpc.HsmSignerServiceImplBase {
 
+    @FunctionalInterface
+    private interface RpcAction<T> {
+        T run() throws Exception;
+    }
+
     private final PkcsProviders pkcsProviders;
 
     @Override
-    public void listProviders(ListProvidersRequest request, StreamObserver<ListProvidersResponse> responseObserver) {
-        try {
-            List<ProviderDescriptor> descriptors = pkcsProviders.listProviders().stream()
-                    .map(this::toDescriptor)
-                    .toList();
+    public void listProviders(ListProvidersRequest request, StreamObserver<ListProvidersResponse> observer) {
+        executeUnary(observer, () -> {
             ListProvidersResponse.Builder builder = ListProvidersResponse.newBuilder()
-                    .addAllProviders(descriptors);
+                    .addAllProviders(buildProviderDescriptors());
             if (pkcsProviders.getDefaultProviderId() != null) {
                 builder.setDefaultProviderId(pkcsProviders.getDefaultProviderId());
             }
-            responseObserver.onNext(builder.build());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
-        }
+            return builder.build();
+        });
     }
 
     @Override
-    public void listKeys(ListKeysRequest request, StreamObserver<ListKeysResponse> responseObserver) {
-        try {
+    public void listKeys(ListKeysRequest request, StreamObserver<ListKeysResponse> observer) {
+        executeUnary(observer, () -> {
             Pkcs11Provider provider = pkcsProviders.getProvider(request.getProviderId());
             List<KeyDescriptor> keys = provider.listKeys().stream()
                     .map(HsmSignerGrpcService::toKeyDescriptor)
                     .toList();
-            responseObserver.onNext(ListKeysResponse.newBuilder()
+            return ListKeysResponse.newBuilder()
                     .setProviderId(provider.getProviderId())
                     .addAllKeys(keys)
-                    .build());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
-        }
+                    .build();
+        });
     }
 
     @Override
-    public void generateCsr(GenerateCsrRpcRequest request, StreamObserver<GenerateCsrRpcResponse> responseObserver) {
-        try {
+    public void generateCsr(GenerateCsrRpcRequest request, StreamObserver<GenerateCsrRpcResponse> observer) {
+        executeUnary(observer, () -> {
             Pkcs11Provider provider = pkcsProviders.getProvider(request.getProviderId());
             String csrPem = provider.generateCsr(
                     request.getKeyLabel(),
@@ -85,75 +80,74 @@ public class HsmSignerGrpcService extends HsmSignerServiceGrpc.HsmSignerServiceI
                     request.getKeyAlgorithm(),
                     request.getKeySize(),
                     request.getReuseExistingKey());
-
             String keyAlg = (request.getKeyAlgorithm() != null && !request.getKeyAlgorithm().isBlank())
                     ? request.getKeyAlgorithm()
                     : "RSA";
-
-            responseObserver.onNext(GenerateCsrRpcResponse.newBuilder()
+            return GenerateCsrRpcResponse.newBuilder()
                     .setProviderId(provider.getProviderId())
                     .setKeyLabel(request.getKeyLabel().trim())
                     .setSubjectDn(request.getSubjectDn().trim())
                     .setKeyAlgorithm(keyAlg)
                     .setCsrPem(csrPem)
-                    .build());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
-        }
+                    .build();
+        });
     }
 
     @Override
     public void importCertificate(
             ImportCertificateRpcRequest request,
-            StreamObserver<ImportCertificateRpcResponse> responseObserver) {
-        try {
+            StreamObserver<ImportCertificateRpcResponse> observer) {
+        executeUnary(observer, () -> {
             Pkcs11Provider provider = pkcsProviders.getProvider(request.getProviderId());
             X509CertificateHolder holder = new X509CertificateHolder(request.getCertificateDer().toByteArray());
             provider.importCertificate(request.getKeyLabel(), holder);
-            responseObserver.onNext(ImportCertificateRpcResponse.newBuilder()
+            return ImportCertificateRpcResponse.newBuilder()
                     .setImported(true)
                     .setMessage("Imported certificate under keyLabel='" + request.getKeyLabel()
                             + "' on provider '" + provider.getProviderId() + "'")
-                    .build());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
-        }
+                    .build();
+        });
     }
 
     @Override
-    public void sign(SignRpcRequest request, StreamObserver<SignRpcResponse> responseObserver) {
-        try {
+    public void sign(SignRpcRequest request, StreamObserver<SignRpcResponse> observer) {
+        executeUnary(observer, () -> {
             Pkcs11Provider provider = pkcsProviders.getProvider(request.getProviderId());
             byte[] signature = provider.sign(
                     request.getKeyLabel(),
                     request.getSignatureAlgorithm(),
                     request.getData().toByteArray());
-            responseObserver.onNext(SignRpcResponse.newBuilder()
+            return SignRpcResponse.newBuilder()
                     .setSignature(ByteString.copyFrom(signature))
-                    .build());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
-        }
+                    .build();
+        });
     }
 
     @Override
-    public void health(HealthRpcRequest request, StreamObserver<HealthRpcResponse> responseObserver) {
-        try {
-            List<ProviderDescriptor> descriptors = pkcsProviders.listProviders().stream()
-                    .map(this::toDescriptor)
-                    .toList();
+    public void health(HealthRpcRequest request, StreamObserver<HealthRpcResponse> observer) {
+        executeUnary(observer, () -> {
+            List<ProviderDescriptor> descriptors = buildProviderDescriptors();
             boolean allHealthy = !descriptors.isEmpty() && descriptors.stream().allMatch(ProviderDescriptor::getHealthy);
-            responseObserver.onNext(HealthRpcResponse.newBuilder()
+            return HealthRpcResponse.newBuilder()
                     .setHealthy(allHealthy)
                     .addAllProviders(descriptors)
-                    .build());
-            responseObserver.onCompleted();
+                    .build();
+        });
+    }
+
+    private <T> void executeUnary(StreamObserver<T> observer, RpcAction<T> action) {
+        try {
+            observer.onNext(action.run());
+            observer.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(toGrpcError(e));
+            observer.onError(toGrpcError(e));
         }
+    }
+
+    private List<ProviderDescriptor> buildProviderDescriptors() {
+        return pkcsProviders.listProviders().stream()
+                .map(this::toDescriptor)
+                .toList();
     }
 
     private ProviderDescriptor toDescriptor(Pkcs11Provider provider) {
@@ -205,4 +199,3 @@ public class HsmSignerGrpcService extends HsmSignerServiceGrpc.HsmSignerServiceI
         return Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException();
     }
 }
-

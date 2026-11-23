@@ -13,6 +13,10 @@ import com.company.incert.hsm.grpc.v1.ListProvidersResponse;
 import com.company.incert.hsm.grpc.v1.ProviderDescriptor;
 import com.company.incert.hsm.grpc.v1.SignRpcRequest;
 import com.company.incert.hsm.grpc.v1.SignRpcResponse;
+import com.company.incert.ocsp.signing.config.CryptoProviderLoader;
+import com.company.incert.ocsp.signing.config.HsmProperties;
+import com.company.incert.ocsp.signing.config.SigningConfig;
+import com.company.incert.ocsp.signing.hsm.CaSignerMatcher;
 import com.company.incert.ocsp.signing.hsm.MultiProviderOcspSigner;
 import com.company.incert.ocsp.signing.hsm.OcspSigner;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
@@ -26,8 +30,6 @@ import io.grpc.Server;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
-import org.bouncycastle.asn1.ASN1OctetString;
-import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
@@ -43,8 +45,6 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -240,6 +240,65 @@ class MultiProviderOcspSignerTest {
         }
     }
 
+    @Test
+    void caSignerMatcherSelectsPreferredNonExpiredCandidateByIssuerAndAki() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair caKp = kpg.generateKeyPair();
+        KeyPair otherCaKp = kpg.generateKeyPair();
+        KeyPair signerKp = kpg.generateKeyPair();
+
+        X509CertificateHolder targetCa = buildSelfSignedCa("CN=Shared CA Name,O=Incert,C=CH", caKp);
+        X509CertificateHolder sameDnWrongKeyCa = buildSelfSignedCa("CN=Shared CA Name,O=Incert,C=CH", otherCaKp);
+
+        X509CertificateHolder wrongKeySigner = buildDelegatedSigner(sameDnWrongKeyCa, otherCaKp, "CN=Wrong Key", signerKp, 1L);
+        X509CertificateHolder nonPreferred = buildDelegatedSigner(targetCa, caKp, "CN=NonPreferred", signerKp, 2L);
+        X509CertificateHolder preferred = buildDelegatedSigner(targetCa, caKp, "CN=Preferred", signerKp, 3L);
+
+        DigestCalculatorProvider dcp = new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        CertificateID reqId = new CertificateID(dcp.get(CertificateID.HASH_SHA1), targetCa, BigInteger.TEN);
+
+        var candidates = List.of(
+                CaSignerMatcher.MatchedSigner.of("wrong-key", wrongKeySigner, "SHA256withRSA", true),
+                CaSignerMatcher.MatchedSigner.of("non-preferred", nonPreferred, "SHA256withRSA", false),
+                CaSignerMatcher.MatchedSigner.of("preferred", preferred, "SHA256withRSA", true)
+        );
+        var match = CaSignerMatcher.selectBest(candidates, reqId);
+        assertThat(match).isPresent();
+        assertThat(match.get().target()).isEqualTo("preferred");
+    }
+
+    @Test
+    void signingConfigDispatchesCustomCryptoProviderLoaderViaOcp() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair kp = kpg.generateKeyPair();
+
+        HsmProperties props = new HsmProperties();
+        props.setEnabled(true);
+        props.setMode("AWS_KMS");
+        props.setKeyLabel("kms-key");
+
+        CryptoProviderLoader awsLoader = new CryptoProviderLoader() {
+            @Override
+            public boolean supports(String mode) {
+                return "AWS_KMS".equalsIgnoreCase(mode);
+            }
+
+            @Override
+            public void loadInto(PkcsProviders registry, HsmProperties properties) {
+                registry.register(new InMemoryProvider("aws-kms-1", "AWS_KMS", Map.of("kms-key", kp)));
+            }
+        };
+
+        SigningConfig cfg = new SigningConfig(props, List.of(awsLoader));
+        try (PkcsProviders providers = cfg.pkcsProviders()) {
+            OcspSigner signer = cfg.multiProviderOcspSigner(providers);
+            assertThat(providers.listProviderIds()).containsExactly("aws-kms-1");
+            assertThat(signer.type()).isEqualTo("AWS_KMS");
+        }
+    }
+
     private static boolean verifySignature(KeyPair kp, byte[] payload, byte[] sigBytes) throws Exception {
         Signature s = Signature.getInstance("SHA256withRSA");
         s.initVerify(kp.getPublic());
@@ -337,29 +396,6 @@ class MultiProviderOcspSignerTest {
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
-        }
-
-        @Override
-        public ContentSigner createContentSigner(String keyLabel, String signatureAlgorithm) {
-            var algFinder = new org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder();
-            return new ContentSigner() {
-                private final ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-                @Override
-                public org.bouncycastle.asn1.x509.AlgorithmIdentifier getAlgorithmIdentifier() {
-                    return algFinder.find(signatureAlgorithm);
-                }
-
-                @Override
-                public OutputStream getOutputStream() {
-                    return out;
-                }
-
-                @Override
-                public byte[] getSignature() {
-                    return sign(keyLabel, signatureAlgorithm, out.toByteArray());
-                }
-            };
         }
     }
 }
