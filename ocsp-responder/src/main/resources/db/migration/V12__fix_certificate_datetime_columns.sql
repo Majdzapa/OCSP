@@ -17,3 +17,4 @@ ALTER TABLE user_certificates
 ALTER TABLE signing_certificates
     MODIFY COLUMN not_before DATETIME(3) NULL,
     MODIFY COLUMN not_after  DATETIME(3) NULL;
+
