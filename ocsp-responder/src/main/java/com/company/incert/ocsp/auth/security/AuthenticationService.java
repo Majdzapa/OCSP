@@ -4,6 +4,7 @@ import com.company.incert.ocsp.auth.config.AppAuthProperties;
 import com.company.incert.ocsp.shared.config.AppSecurityProperties;
 import com.company.incert.ocsp.auth.config.AuthenticationMode;
 import com.company.incert.ocsp.auth.config.KeycloakProperties;
+import com.company.incert.ocsp.auth.service.UserCertificateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -12,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
 
+import java.security.cert.X509Certificate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,7 @@ public class AuthenticationService {
     private final KeycloakProperties keycloakProperties;
     private final AuthenticationManager authenticationManager;
     private final LocalJwtTokenService localJwtTokenService;
+    private final UserCertificateService userCertificateService;
 
     public AuthenticationMode resolvedMode() {
         return authProperties.resolvedMode();
@@ -41,6 +44,7 @@ public class AuthenticationService {
                 "authMode", mode.name(),
                 "isKeycloak", mode.isKeycloak(),
                 "tlsEnabled", securityProperties.getTls().isEnabled(),
+                "clientCertAuthEnabled", securityProperties.getTls().isClientCertAuthEnabled(),
                 "keycloak", Map.of(
                         "authServerUrl", keycloakProperties.effectivePublicUrl(),
                         "realm", keycloakProperties.getRealm(),
@@ -91,6 +95,21 @@ public class AuthenticationService {
         }
         log.warn("Authentication attempt failed: authMode={}", mode);
         return Optional.empty();
+    }
+
+    public Optional<Map<String, Object>> authenticateByClientCertificate(X509Certificate clientCert) {
+        if (!securityProperties.getTls().isClientCertAuthEnabled() || clientCert == null) {
+            return Optional.empty();
+        }
+        AuthenticationMode mode = resolvedMode();
+        return userCertificateService.authenticateByClientCertificate(clientCert).map(principal -> {
+            String accessToken = localJwtTokenService.issueToken(principal);
+            Map<String, Object> payload = buildSuccessPayload(mode, principal, "MTLS");
+            payload.put("accessToken", accessToken);
+            payload.put("tokenType", "Bearer");
+            payload.put("expiresIn", localJwtTokenService.expiresInSeconds());
+            return payload;
+        });
     }
 
     public static boolean isAuthenticated(Authentication auth) {

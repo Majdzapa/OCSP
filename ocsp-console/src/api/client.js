@@ -44,6 +44,10 @@ export const loginWithCredentials = async (username, password) => {
     const res = await authApi.post('/login', { username, password });
     return res.data;
 };
+export const loginWithMtlsCert = async () => {
+    const res = await authApi.post('/login/mtls');
+    return res.data;
+};
 export const loginWithBearerToken = async (token) => {
     // The responder authenticates the Bearer token from the Authorization header.
     // The token is not in localStorage yet at this point, so it must be sent explicitly.

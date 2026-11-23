@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginWithCredentials, loginWithBearerToken, getAuthMe, getAuthConfig, clearAuthStorage, } from '../api/client';
+import { loginWithCredentials, loginWithBearerToken, loginWithMtlsCert, getAuthMe, getAuthConfig, clearAuthStorage, } from '../api/client';
 const AuthContext = createContext(undefined);
 export const AuthProvider = ({ children }) => {
     const [authConfig, setAuthConfig] = useState(null);
@@ -123,6 +123,23 @@ export const AuthProvider = ({ children }) => {
             token,
         });
     };
+    const loginWithClientCert = async () => {
+        const res = await loginWithMtlsCert();
+        if (!res.authenticated || !res.accessToken) {
+            throw new Error(res.message || 'Client certificate authentication failed');
+        }
+        localStorage.removeItem('ocsp_basic_auth');
+        localStorage.setItem('ocsp_bearer_token', res.accessToken);
+        localStorage.setItem('ocsp_auth_user', res.username);
+        setUser({
+            authenticated: true,
+            username: res.username,
+            roles: res.roles,
+            authMode: res.authMode,
+            token: res.accessToken,
+        });
+        return res;
+    };
     return (<AuthContext.Provider value={{
             user,
             authConfig,
@@ -130,6 +147,7 @@ export const AuthProvider = ({ children }) => {
             isLoading,
             login,
             loginWithToken,
+            loginWithClientCert,
             logout,
             refreshAuthConfig,
         }}>

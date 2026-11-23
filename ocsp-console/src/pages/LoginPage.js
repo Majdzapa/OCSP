@@ -1,25 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Container, Paper, Title, Text, TextInput, PasswordInput, Button, Alert, Group, Stack, ThemeIcon, Badge, Box, } from '@mantine/core';
-import { IconLock, IconUser, IconShieldLock, IconAlertCircle, IconArrowRight, IconBrandOauth, } from '@tabler/icons-react';
+import { Container, Paper, Title, Text, TextInput, PasswordInput, Button, Alert, Group, Stack, ThemeIcon, Badge, Box, Divider, } from '@mantine/core';
+import { IconLock, IconUser, IconShieldLock, IconAlertCircle, IconArrowRight, IconBrandOauth, IconCertificate, } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 /**
  * Login page. The flow is dictated by how the responder is deployed:
+ *  - mTLS enabled       -> tries/offers browser client certificate auth, falling back to mode login
  *  - KEYCLOAK mode      -> redirect to the Keycloak login page
- *  - SELF_MANAGED mode  -> username / password form
- * TLS is a deployment concern and is only displayed, never configured here.
+ *  - SELF_MANAGEMENT    -> username / password form (issues Bearer JWT)
  */
 export const LoginPage = () => {
-    const { login, loginWithToken, authConfig } = useAuth();
+    const { login, loginWithToken, loginWithClientCert, authConfig } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const isKeycloak = !!authConfig?.isKeycloak;
     const isTlsActive = authConfig?.tlsEnabled !== false;
+    const isMtlsEnabled = !!authConfig?.clientCertAuthEnabled;
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState(null);
+    const [mtlsInfo, setMtlsInfo] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [mtlsLoading, setMtlsLoading] = useState(false);
     const from = location.state?.from?.pathname ?? '/dashboard';
+
+    // When mTLS is enabled, silently probe if the browser presented a trusted, user-linked certificate.
+    useEffect(() => {
+        if (!isMtlsEnabled) return;
+        let cancelled = false;
+        setMtlsLoading(true);
+        loginWithClientCert()
+            .then(() => {
+                if (!cancelled) navigate(from, { replace: true });
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setMtlsInfo('No linked client certificate detected. Choose a certificate or sign in below.');
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setMtlsLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, [isMtlsEnabled]);
+
+    const handleMtlsLogin = async () => {
+        setError(null);
+        setMtlsInfo(null);
+        setMtlsLoading(true);
+        try {
+            await loginWithClientCert();
+            navigate(from, { replace: true });
+        } catch (err) {
+            const msg = err?.response?.data?.message || (err instanceof Error ? err.message : 'Client certificate authentication failed');
+            setMtlsInfo(msg);
+        } finally {
+            setMtlsLoading(false);
+        }
+    };
     // Handle the redirect back from Keycloak: the token arrives in the URL fragment.
     useEffect(() => {
         const hash = window.location.hash;
@@ -93,6 +131,11 @@ export const LoginPage = () => {
             <Badge variant="dot" color={isTlsActive ? 'teal' : 'gray'} size="md">
               {isTlsActive ? 'Secure connection (TLS)' : 'TLS not enabled'}
             </Badge>
+            {isMtlsEnabled && (
+              <Badge variant="light" color="teal" size="md">
+                mTLS Client Cert Enabled
+              </Badge>
+            )}
           </Group>
         </Stack>
 
@@ -100,6 +143,20 @@ export const LoginPage = () => {
           {error && (<Alert icon={<IconAlertCircle size={18}/>} title="Access Denied" color="red" variant="light" mb="md" radius="md">
               {error}
             </Alert>)}
+
+          {isMtlsEnabled && (
+            <Stack gap="sm" mb="md">
+              {mtlsInfo && (
+                <Alert icon={<IconCertificate size={18}/>} title="Client Certificate (mTLS)" color="teal" variant="light" radius="md">
+                  {mtlsInfo}
+                </Alert>
+              )}
+              <Button fullWidth size="md" radius="md" loading={mtlsLoading} variant="gradient" gradient={{ from: 'teal.6', to: 'cyan.6' }} leftSection={<IconCertificate size={20}/>} rightSection={<IconArrowRight size={16}/>} onClick={handleMtlsLogin}>
+                Sign in with Browser Certificate (mTLS)
+              </Button>
+              <Divider label={isKeycloak ? 'or continue with Keycloak' : 'or sign in with username & password'} labelPosition="center" my="xs" />
+            </Stack>
+          )}
 
           {isKeycloak ? (<Button fullWidth size="lg" radius="md" loading={loading} variant="gradient" gradient={{ from: 'orange.6', to: 'red.6' }} leftSection={<IconBrandOauth size={22}/>} rightSection={<IconArrowRight size={18}/>} onClick={redirectToKeycloak}>
               Sign in with Keycloak

@@ -2,17 +2,20 @@ package com.company.incert.ocsp.auth.controller;
 
 import com.company.incert.ocsp.auth.config.AuthenticationMode;
 import com.company.incert.ocsp.auth.security.AuthenticationService;
+import com.company.incert.ocsp.auth.security.ClientCertificateAuthFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.cert.X509Certificate;
 import java.util.Map;
 
 /**
@@ -85,5 +88,20 @@ public class AuthController {
                             "message", failMsg
                     ));
                 });
+    }
+
+    @Operation(summary = "Authenticate via mTLS client certificate",
+               description = "Validates the browser-presented X.509 client certificate against hot-reloaded Trusted CAs and user_certificates, returning a Bearer JWT.")
+    @PostMapping("/api/v1/auth/login/mtls")
+    public ResponseEntity<Map<String, Object>> loginWithMtls(HttpServletRequest request) {
+        AuthenticationMode mode = authenticationService.resolvedMode();
+        X509Certificate cert = ClientCertificateAuthFilter.extractClientCertificate(request).orElse(null);
+        return authenticationService.authenticateByClientCertificate(cert)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                        "authenticated", false,
+                        "authMode", mode.name(),
+                        "message", "No trusted, user-linked client certificate was presented. Please sign in with credentials or Keycloak."
+                )));
     }
 }

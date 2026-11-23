@@ -67,8 +67,9 @@ class AuthControllerTest {
         provider.setPasswordEncoder(encoder);
         AuthenticationManager authManager = new ProviderManager(provider);
         var jwtService = new com.company.incert.ocsp.auth.security.LocalJwtTokenService(authProps);
+        var userCertService = org.mockito.Mockito.mock(com.company.incert.ocsp.auth.service.UserCertificateService.class);
 
-        return new AuthController(new AuthenticationService(authProps, security, keycloak, authManager, jwtService));
+        return new AuthController(new AuthenticationService(authProps, security, keycloak, authManager, jwtService, userCertService));
     }
 
     @Test
