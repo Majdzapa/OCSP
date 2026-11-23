@@ -207,6 +207,32 @@ class Pkcs11EngineTest {
         }
     }
 
+    @Test
+    void discoverSlotsEnumeratesTokensWithoutPinAndPreservesActiveModules() {
+        AtomicInteger initCalls = new AtomicInteger();
+        AtomicInteger finalizeCalls = new AtomicInteger();
+        AtomicInteger closeCalls = new AtomicInteger();
+        FakePkcs11Library fake = new FakePkcs11Library(
+                "/tmp/libfake.so", Pkcs11Constants.CKR_OK, initCalls, finalizeCalls, closeCalls);
+
+        try (Pkcs11Engine engine = new Pkcs11Engine(path -> fake)) {
+            List<TokenInfo> idleSlots = engine.discoverSlots("/tmp/libfake.so", "embedded");
+            assertThat(idleSlots).extracting(TokenInfo::label).containsExactly("token-a", "token-b");
+            assertThat(fake.loginCalls.get()).isZero();
+            assertThat(initCalls.get()).isEqualTo(1);
+            assertThat(finalizeCalls.get()).isEqualTo(1);
+
+            engine.register(new Pkcs11ProviderConfig(
+                    "device-a", "/tmp/libfake.so", "token-a", null, 0, "1234".toCharArray(), 1, false));
+            assertThat(initCalls.get()).isEqualTo(2);
+
+            List<TokenInfo> activeSlots = engine.discoverSlots("/tmp/libfake.so", "embedded");
+            assertThat(activeSlots).extracting(TokenInfo::label).containsExactly("token-a", "token-b");
+            assertThat(finalizeCalls.get()).isEqualTo(1);
+        }
+        assertThat(finalizeCalls.get()).isEqualTo(2);
+    }
+
     private static final class FakePkcs11Library implements Pkcs11LibraryPort {
         private final String libraryPath;
         private final long initReturnCode;

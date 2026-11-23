@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, PasswordInput, NumberInput, Select, Switch, Alert, Loader, Tooltip, Code, Box, SimpleGrid, } from '@mantine/core';
-import { IconCpu, IconLock, IconLockOpen, IconPlus, IconRefresh, IconTrash, IconEdit, IconAlertCircle, IconCheck, IconServer, } from '@tabler/icons-react';
-import { getCryptoProviders, getAllowedLibraryDirs, createCryptoProvider, updateCryptoProvider, deleteCryptoProvider, getCryptoDevices, createCryptoDevice, updateCryptoDevice, deleteCryptoDevice, activateCryptoDevice, deactivateCryptoDevice, } from '../api/client';
+import { IconCpu, IconLock, IconLockOpen, IconPlus, IconRefresh, IconTrash, IconEdit, IconAlertCircle, IconCheck, IconServer, IconListSearch, } from '@tabler/icons-react';
+import { getCryptoProviders, getAllowedLibraryDirs, createCryptoProvider, updateCryptoProvider, deleteCryptoProvider, discoverCryptoProviderSlots, getCryptoDevices, createCryptoDevice, updateCryptoDevice, deleteCryptoDevice, activateCryptoDevice, deactivateCryptoDevice, } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 export const CryptoDevicesPage = () => {
@@ -43,6 +43,14 @@ export const CryptoDevicesPage = () => {
     const [devPrehash, setDevPrehash] = useState(false);
     const [devDefault, setDevDefault] = useState(false);
     const [devEnabled, setDevEnabled] = useState(true);
+    const [modalSlots, setModalSlots] = useState([]);
+    const [modalSlotsLoading, setModalSlotsLoading] = useState(false);
+
+    // Live slot discovery modal (zero PIN)
+    const [slotsProvider, setSlotsProvider] = useState(null);
+    const [discoveredSlots, setDiscoveredSlots] = useState([]);
+    const [slotsLoading, setSlotsLoading] = useState(false);
+    const [slotsError, setSlotsError] = useState(null);
 
     const fetchAll = async () => {
         try {
@@ -170,6 +178,69 @@ export const CryptoDevicesPage = () => {
         }
     };
 
+    const openDiscoverSlots = async (provider) => {
+        setSlotsProvider(provider);
+        setDiscoveredSlots([]);
+        setSlotsError(null);
+        setSlotsLoading(true);
+        try {
+            const list = await discoverCryptoProviderSlots(provider.id);
+            setDiscoveredSlots(list);
+        } catch (err) {
+            setSlotsError(err?.response?.data?.error || err?.message || 'Failed to discover PKCS#11 slots');
+        } finally {
+            setSlotsLoading(false);
+        }
+    };
+
+    const handleScanModalSlots = async () => {
+        if (!devProviderId) return;
+        setModalSlotsLoading(true);
+        setError(null);
+        try {
+            const list = await discoverCryptoProviderSlots(Number(devProviderId));
+            setModalSlots(list);
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to scan provider PKCS#11 slots');
+        } finally {
+            setModalSlotsLoading(false);
+        }
+    };
+
+    const suggestDeviceId = (providerCode, tokenLabel, slotId) => {
+        const cleanBase = (tokenLabel || `slot-${slotId}`)
+            .toLowerCase()
+            .replace(/[^a-z0-9-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        return providerCode ? `${providerCode}-${cleanBase}` : cleanBase;
+    };
+
+    const applyDiscoveredSlot = (slot, providerObj, fillDeviceIdWhenBlank = false) => {
+        setDevTokenLabel(slot.tokenLabel || '');
+        setDevSlotId(String(slot.slotId));
+        setDevSlotIndex(slot.slotListIndex ?? 0);
+        if (fillDeviceIdWhenBlank && !devId.trim()) {
+            setDevId(suggestDeviceId(providerObj?.code, slot.tokenLabel, slot.slotId));
+        }
+    };
+
+    const openCreateDeviceFromSlot = (slot, provider) => {
+        setSlotsProvider(null);
+        setEditingDeviceId(null);
+        setDevId(suggestDeviceId(provider?.code, slot.tokenLabel, slot.slotId));
+        setDevProviderId(String(provider.id));
+        setDevTokenLabel(slot.tokenLabel || '');
+        setDevSlotId(String(slot.slotId));
+        setDevSlotIndex(slot.slotListIndex ?? 0);
+        setDevPoolSize(4);
+        setDevPrehash(false);
+        setDevDefault(false);
+        setDevEnabled(true);
+        setModalSlots(discoveredSlots);
+        setError(null);
+        setDeviceModalOpen(true);
+    };
+
     const openCreateDevice = () => {
         setEditingDeviceId(null);
         setDevId('');
@@ -181,6 +252,7 @@ export const CryptoDevicesPage = () => {
         setDevPrehash(false);
         setDevDefault(false);
         setDevEnabled(true);
+        setModalSlots([]);
         setError(null);
         setDeviceModalOpen(true);
     };
@@ -196,6 +268,7 @@ export const CryptoDevicesPage = () => {
         setDevPrehash(Boolean(d.prehashInJvm));
         setDevDefault(Boolean(d.isDefault));
         setDevEnabled(Boolean(d.enabled));
+        setModalSlots([]);
         setError(null);
         setDeviceModalOpen(true);
     };
@@ -395,8 +468,8 @@ export const CryptoDevicesPage = () => {
                         )}
                     </Group>
 
-                    <Table.ScrollContainer minWidth={800}>
-                        <Table verticalSpacing="sm" highlightOnHover>
+                    <Box tabIndex={0} role="region" aria-label="Cryptographic providers" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+                        <Table stickyHeader verticalSpacing="sm" highlightOnHover miw={820}>
                             <Table.Thead>
                                 <Table.Tr>
                                     <Table.Th>Code</Table.Th>
@@ -406,7 +479,7 @@ export const CryptoDevicesPage = () => {
                                     <Table.Th>Library Wrapper</Table.Th>
                                     <Table.Th>Devices</Table.Th>
                                     <Table.Th>Status</Table.Th>
-                                    {isAdmin && <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>}
+                                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                                 </Table.Tr>
                             </Table.Thead>
                             <Table.Tbody>
@@ -423,27 +496,40 @@ export const CryptoDevicesPage = () => {
                                                 {p.enabled ? 'ENABLED' : 'DISABLED'}
                                             </Badge>
                                         </Table.Td>
-                                        {isAdmin && (
-                                            <Table.Td style={{ textAlign: 'right' }}>
-                                                <Group justify="flex-end" gap="xs">
-                                                    <Tooltip label="Edit provider">
-                                                        <ActionIcon variant="light" color="blue" onClick={() => openEditProvider(p)}>
-                                                            <IconEdit size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                    <Tooltip label="Delete provider">
-                                                        <ActionIcon variant="light" color="red" disabled={p.deviceCount > 0} onClick={() => handleDeleteProvider(p)}>
-                                                            <IconTrash size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                </Group>
-                                            </Table.Td>
-                                        )}
+                                        <Table.Td style={{ textAlign: 'right' }}>
+                                            <Group justify="flex-end" gap="xs" wrap="nowrap">
+                                                <Tooltip label="Discover live PKCS#11 slots (no PIN required)">
+                                                    <Button
+                                                        size="compact-xs"
+                                                        variant="light"
+                                                        color="cyan"
+                                                        leftSection={<IconListSearch size={14} />}
+                                                        onClick={() => openDiscoverSlots(p)}
+                                                    >
+                                                        Slots
+                                                    </Button>
+                                                </Tooltip>
+                                                {isAdmin && (
+                                                    <>
+                                                        <Tooltip label="Edit provider">
+                                                            <ActionIcon variant="light" color="blue" onClick={() => openEditProvider(p)}>
+                                                                <IconEdit size={16} />
+                                                            </ActionIcon>
+                                                        </Tooltip>
+                                                        <Tooltip label="Delete provider">
+                                                            <ActionIcon variant="light" color="red" disabled={p.deviceCount > 0} onClick={() => handleDeleteProvider(p)}>
+                                                                <IconTrash size={16} />
+                                                            </ActionIcon>
+                                                        </Tooltip>
+                                                    </>
+                                                )}
+                                            </Group>
+                                        </Table.Td>
                                     </Table.Tr>
                                 ))}
                             </Table.Tbody>
                         </Table>
-                    </Table.ScrollContainer>
+                    </Box>
                 </Paper>
             </Stack>
 
@@ -518,8 +604,49 @@ export const CryptoDevicesPage = () => {
                     <Stack gap="md">
                         <SimpleGrid cols={2}>
                             <TextInput label="Device ID" placeholder="hsm-partition-2" value={devId} onChange={(e) => setDevId(e.currentTarget.value)} required />
-                            <Select label="Provider (Driver + Wrapper)" data={providerSelectData} value={devProviderId} onChange={(val) => setDevProviderId(val || '')} required />
+                            <Group align="flex-end" gap="xs" wrap="nowrap">
+                                <Select
+                                    style={{ flex: 1 }}
+                                    label="Provider (Driver + Wrapper)"
+                                    data={providerSelectData}
+                                    value={devProviderId}
+                                    onChange={(val) => { setDevProviderId(val || ''); setModalSlots([]); }}
+                                    required
+                                />
+                                <Button
+                                    variant="light"
+                                    color="cyan"
+                                    leftSection={<IconListSearch size={15} />}
+                                    loading={modalSlotsLoading}
+                                    disabled={!devProviderId}
+                                    onClick={handleScanModalSlots}
+                                >
+                                    Scan Live Slots
+                                </Button>
+                            </Group>
                         </SimpleGrid>
+
+                        {modalSlots.length > 0 && (
+                            <Select
+                                label="Quick-Pick from Discovered Initialized Slots"
+                                placeholder="Choose a live token slot to auto-fill label, slotId & index"
+                                data={modalSlots
+                                    .filter((s) => s.initialized)
+                                    .map((s) => ({
+                                        value: String(s.slotId),
+                                        label: `Slot ${s.slotId} (Idx ${s.slotListIndex}) — ${s.tokenLabel || '(unlabeled)'}${s.configuredDeviceId ? ` [mapped: ${s.configuredDeviceId}]` : ' [available]'}`,
+                                    }))}
+                                onChange={(val) => {
+                                    const picked = modalSlots.find((s) => String(s.slotId) === val);
+                                    if (picked) {
+                                        const prov = providers.find((p) => String(p.id) === devProviderId);
+                                        applyDiscoveredSlot(picked, prov, editingDeviceId == null);
+                                    }
+                                }}
+                                clearable
+                            />
+                        )}
+
                         <SimpleGrid cols={2}>
                             <TextInput label="Token Label" description="Matches C_GetTokenInfo().label (optional if slotId set)" placeholder="ocsp-signing-2" value={devTokenLabel} onChange={(e) => setDevTokenLabel(e.currentTarget.value)} />
                             <TextInput label="Numeric Slot ID (optional)" placeholder="Leave blank to match by tokenLabel" value={devSlotId} onChange={(e) => setDevSlotId(e.currentTarget.value)} />
@@ -539,6 +666,110 @@ export const CryptoDevicesPage = () => {
                         </Group>
                     </Stack>
                 </form>
+            </Modal>
+
+            {/* Modal: Live Discovered PKCS#11 Slots (Zero PIN) */}
+            <Modal
+                opened={Boolean(slotsProvider)}
+                onClose={() => setSlotsProvider(null)}
+                size="xl"
+                title={
+                    <Group gap="xs">
+                        <IconListSearch size={20} color="#38bdf8" />
+                        <Text fw={700}>Discovered PKCS#11 Slots</Text>
+                        {slotsProvider && <Badge color="cyan" variant="light">{slotsProvider.code}</Badge>}
+                    </Group>
+                }
+            >
+                <Stack gap="md">
+                    <Group justify="space-between" wrap="wrap">
+                        <Text size="xs" c="dimmed">
+                            Driver: <Code>{slotsProvider?.libraryPath}</Code> · Queried via <Code>C_GetSlotList(true)</Code> &amp; <Code>C_GetTokenInfo</Code> (no PIN required)
+                        </Text>
+                        <Button
+                            size="xs"
+                            variant="default"
+                            leftSection={<IconRefresh size={14} />}
+                            loading={slotsLoading}
+                            onClick={() => slotsProvider && openDiscoverSlots(slotsProvider)}
+                        >
+                            Refresh Slots
+                        </Button>
+                    </Group>
+
+                    {slotsError && (
+                        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Slot discovery failed">
+                            {slotsError}
+                        </Alert>
+                    )}
+
+                    {slotsLoading ? (
+                        <Group justify="center" p="xl"><Loader size="md" /></Group>
+                    ) : discoveredSlots.length === 0 ? (
+                        <Text c="dimmed" ta="center" py="lg">No PKCS#11 slots with present tokens found for this provider.</Text>
+                    ) : (
+                        <Box tabIndex={0} role="region" aria-label="Discovered PKCS#11 slots" style={{ overflowX: 'auto', maxHeight: '60vh' }}>
+                            <Table stickyHeader verticalSpacing="sm" highlightOnHover miw={760}>
+                                <Table.Thead>
+                                    <Table.Tr>
+                                        <Table.Th>Slot ID</Table.Th>
+                                        <Table.Th>Idx</Table.Th>
+                                        <Table.Th>Token Label</Table.Th>
+                                        <Table.Th>Model / Manufacturer</Table.Th>
+                                        <Table.Th>Serial</Table.Th>
+                                        <Table.Th>Token State</Table.Th>
+                                        <Table.Th>Configured Device</Table.Th>
+                                    </Table.Tr>
+                                </Table.Thead>
+                                <Table.Tbody>
+                                    {discoveredSlots.map((slot) => (
+                                        <Table.Tr key={`${slot.slotId}-${slot.slotListIndex}`}>
+                                            <Table.Td><Code>{slot.slotId}</Code></Table.Td>
+                                            <Table.Td><Badge size="xs" variant="outline">{slot.slotListIndex}</Badge></Table.Td>
+                                            <Table.Td>
+                                                {slot.tokenLabel ? <Code>{slot.tokenLabel}</Code> : <Text size="xs" c="dimmed">—</Text>}
+                                            </Table.Td>
+                                            <Table.Td>
+                                                <Text size="xs">{slot.model || '—'}</Text>
+                                                <Text size="11px" c="dimmed">{slot.manufacturerId || '—'}</Text>
+                                            </Table.Td>
+                                            <Table.Td><Code>{slot.serialNumber || '—'}</Code></Table.Td>
+                                            <Table.Td>
+                                                <Badge size="xs" color={slot.initialized ? 'teal' : 'gray'} variant="light">
+                                                    {slot.initialized ? 'INITIALIZED' : 'UNINITIALIZED'}
+                                                </Badge>
+                                            </Table.Td>
+                                            <Table.Td>
+                                                {slot.configuredDeviceId ? (
+                                                    <Group gap={6} wrap="nowrap">
+                                                        <Badge size="xs" color="indigo" variant="filled">{slot.configuredDeviceId}</Badge>
+                                                        {slot.configuredDeviceState && (
+                                                            <Badge size="xs" color={stateColor(slot.configuredDeviceState)} variant="dot">
+                                                                {slot.configuredDeviceState}
+                                                            </Badge>
+                                                        )}
+                                                    </Group>
+                                                ) : isAdmin && slot.initialized ? (
+                                                    <Button
+                                                        size="compact-xs"
+                                                        variant="light"
+                                                        color="indigo"
+                                                        leftSection={<IconPlus size={13} />}
+                                                        onClick={() => openCreateDeviceFromSlot(slot, slotsProvider)}
+                                                    >
+                                                        Register Device
+                                                    </Button>
+                                                ) : (
+                                                    <Text size="xs" c="dimmed">Unmapped</Text>
+                                                )}
+                                            </Table.Td>
+                                        </Table.Tr>
+                                    ))}
+                                </Table.Tbody>
+                            </Table>
+                        </Box>
+                    )}
+                </Stack>
             </Modal>
         </Container>
     );

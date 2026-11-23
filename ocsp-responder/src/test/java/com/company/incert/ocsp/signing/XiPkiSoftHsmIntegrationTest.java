@@ -82,12 +82,22 @@ class XiPkiSoftHsmIntegrationTest {
     @Test
     void multiDeviceSigningAndCsrVerificationViaIpks11Wrapper() throws Exception {
         try (Pkcs11Engine engine = new Pkcs11Engine()) {
+            // 0. Zero-PIN slot discovery before unlocking any device
+            var idleSlots = engine.discoverSlots(softhsmLib, "embedded");
+            assertThat(idleSlots)
+                    .extracting(com.company.incert.ocsp.signing.pkcs11.TokenInfo::label)
+                    .contains("xipki-dev-1", "xipki-dev-2");
+            assertThat(engine.loadedModuleCount()).isZero();
+
             Pkcs11Provider dev1 = engine.register(new Pkcs11ProviderConfig(
                     "softhsm-1", softhsmLib, "embedded", "xipki-dev-1", null, 0, "1234".toCharArray(), 4, false));
             Pkcs11Provider dev2 = engine.register(new Pkcs11ProviderConfig(
                     "softhsm-2", softhsmLib, "embedded", "xipki-dev-2", null, 0, "1234".toCharArray(), 4, false));
 
             assertThat(engine.loadedModuleCount()).isEqualTo(1);
+            assertThat(engine.discoverSlots(softhsmLib, "embedded"))
+                    .extracting(com.company.incert.ocsp.signing.pkcs11.TokenInfo::label)
+                    .contains("xipki-dev-1", "xipki-dev-2");
             assertThat(dev1.getTokenInfo().label()).isEqualTo("xipki-dev-1");
             assertThat(dev2.getTokenInfo().label()).isEqualTo("xipki-dev-2");
 

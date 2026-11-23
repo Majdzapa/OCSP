@@ -155,6 +155,35 @@ public final class Pkcs11Engine implements AutoCloseable {
         return moduleRegistry.loadedModuleCount();
     }
 
+    /**
+     * Discovers token-present PKCS#11 slots ({@code C_GetSlotList(true)} + {@code C_GetTokenInfo})
+     * without requiring a user PIN or closing modules already held by active devices.
+     */
+    public synchronized List<TokenInfo> discoverSlots(String libraryPath, String libraryWrapperPath) {
+        Pkcs11LibraryPort library = moduleRegistry.acquire(libraryPath, libraryWrapperPath);
+        try {
+            long[] slotIds = library.cGetSlotList(true);
+            if (slotIds == null || slotIds.length == 0) {
+                return List.of();
+            }
+            List<TokenInfo> slots = new ArrayList<>(slotIds.length);
+            for (long slotId : slotIds) {
+                try {
+                    slots.add(library.cGetTokenInfo(slotId));
+                } catch (Pkcs11Exception e) {
+                    log.debug("Failed reading C_GetTokenInfo for slot {} on '{}': {}",
+                            slotId, libraryPath, e.getMessage());
+                    if (e.getErrorCode() != Pkcs11Constants.CKR_TOKEN_NOT_PRESENT) {
+                        slots.add(new TokenInfo(slotId, "", "", "", "", 0L));
+                    }
+                }
+            }
+            return Collections.unmodifiableList(slots);
+        } finally {
+            moduleRegistry.release(libraryPath);
+        }
+    }
+
     @Override
     public synchronized void close() {
         List<Pkcs11Provider> snapshot;

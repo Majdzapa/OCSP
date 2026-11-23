@@ -4,12 +4,14 @@ import com.company.incert.ocsp.signing.dto.CryptoDeviceDto;
 import com.company.incert.ocsp.signing.dto.CryptoDeviceRequest;
 import com.company.incert.ocsp.signing.dto.CryptoProviderDto;
 import com.company.incert.ocsp.signing.dto.CryptoProviderRequest;
+import com.company.incert.ocsp.signing.dto.CryptoSlotDto;
 import com.company.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import com.company.incert.ocsp.signing.entity.CryptoProviderEntity;
 import com.company.incert.ocsp.signing.port.ActivatableCryptoProvider;
 import com.company.incert.ocsp.signing.port.CryptoDeviceSpec;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
 import com.company.incert.ocsp.signing.port.DeviceActivationState;
+import com.company.incert.ocsp.signing.port.DiscoveredSlotInfo;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.provider.CryptoDeviceAdapterFactory;
 import com.company.incert.ocsp.signing.provider.LibraryPathAllowlist;
@@ -64,6 +66,14 @@ class CryptoDeviceServiceTest {
             @Override
             public CryptoProviderPort create(CryptoDeviceSpec spec) {
                 return new FakeActivatablePort(spec);
+            }
+
+            @Override
+            public List<DiscoveredSlotInfo> discoverSlots(String libraryPath, String libraryWrapperPath) {
+                return List.of(
+                        new DiscoveredSlotInfo(101L, 0, "ocsp-signing", "SoftHSM", "SoftHSM v2", "AAA", true, 0x400L),
+                        new DiscoveredSlotInfo(202L, 1, "ocsp-signing-2", "SoftHSM", "SoftHSM v2", "BBB", true, 0x400L)
+                );
             }
         };
         service = new CryptoDeviceService(
@@ -152,6 +162,31 @@ class CryptoDeviceServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("active signing certificate references it");
         verify(deviceRepository, never()).delete(any());
+    }
+
+    @Test
+    void discoverProviderSlotsAnnotatesMappedAndUnmappedSlots() {
+        CryptoProviderEntity provider = CryptoProviderEntity.builder()
+                .id(1L).code("softhsm2").name("SoftHSM").wrapperType("PKCS11J")
+                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("embedded").enabled(true).build();
+        CryptoDeviceEntity primary = CryptoDeviceEntity.builder()
+                .id(10L).deviceId("softhsm-primary").provider(provider).tokenLabel("ocsp-signing")
+                .slotListIndex(0).poolSize(4).defaultDevice(true).enabled(true).build();
+
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(deviceRepository.findAllByProviderId(1L)).thenReturn(List.of(primary));
+        pkcsProviders.register(new FakeActivatablePort(new CryptoDeviceSpec(
+                "softhsm-primary", "softhsm2", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", "embedded",
+                "ocsp-signing", null, 0, 4, false)));
+
+        List<CryptoSlotDto> slots = service.discoverProviderSlots(1L);
+        assertThat(slots).hasSize(2);
+        assertThat(slots.get(0).slotId()).isEqualTo(101L);
+        assertThat(slots.get(0).configuredDeviceId()).isEqualTo("softhsm-primary");
+        assertThat(slots.get(0).configuredDeviceState()).isEqualTo("LOCKED");
+        assertThat(slots.get(1).slotId()).isEqualTo(202L);
+        assertThat(slots.get(1).configuredDeviceId()).isNull();
+        assertThat(slots.get(1).configuredDeviceState()).isNull();
     }
 
     private static final class FakeActivatablePort implements CryptoProviderPort, ActivatableCryptoProvider {

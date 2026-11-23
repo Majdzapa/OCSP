@@ -136,6 +136,7 @@ export const assignUserCertificate = (userId, certificatePem) => api.post(`/user
 export const removeUserCertificate = (userId, certId) => api.delete(`/users/${userId}/certificates/${certId}`).then((r) => r.data);
 // ---- Cryptographic Providers & HSM Devices (DB + Pattern 2 Runtime Activation) ----
 export const getCryptoProviders = () => api.get('/crypto-providers').then((r) => r.data);
+export const discoverCryptoProviderSlots = (providerId) => api.get(`/crypto-providers/${providerId}/slots`).then((r) => r.data);
 export const getAllowedLibraryDirs = () => api.get('/crypto-providers/allowed-dirs').then((r) => r.data);
 export const createCryptoProvider = (req) => api.post('/crypto-providers', req).then((r) => r.data);
 export const updateCryptoProvider = (id, req) => api.put(`/crypto-providers/${id}`, req).then((r) => r.data);

@@ -51,6 +51,22 @@ public class CryptoDeviceController {
         return ResponseEntity.ok(cryptoDeviceService.listAllowedLibraryDirs());
     }
 
+    @Operation(summary = "Discover live PKCS#11 slots and token metadata for a cryptographic provider (no PIN required)")
+    @GetMapping("/crypto-providers/{id}/slots")
+    @PreAuthorize("hasPermission(null, 'CRYPTO_DEVICE_READ')")
+    public ResponseEntity<?> discoverProviderSlots(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(cryptoDeviceService.discoverProviderSlots(id));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = (e.getMessage() != null && e.getMessage().startsWith("Crypto provider not found"))
+                    ? HttpStatus.NOT_FOUND
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @Operation(summary = "Create a new cryptographic provider")
     @PostMapping("/crypto-providers")
     @PreAuthorize("hasPermission(null, 'CRYPTO_DEVICE_MANAGE')")

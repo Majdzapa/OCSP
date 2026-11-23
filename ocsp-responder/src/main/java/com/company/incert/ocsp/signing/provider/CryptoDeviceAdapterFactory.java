@@ -2,6 +2,9 @@ package com.company.incert.ocsp.signing.provider;
 
 import com.company.incert.ocsp.signing.port.CryptoDeviceSpec;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
+import com.company.incert.ocsp.signing.port.DiscoveredSlotInfo;
+
+import java.util.List;
 
 /**
  * Open-Closed factory port mapping a {@code wrapperType} (e.g. {@code PKCS11J} or custom
@@ -13,5 +16,9 @@ public interface CryptoDeviceAdapterFactory {
     boolean supports(String wrapperType);
 
     CryptoProviderPort create(CryptoDeviceSpec spec);
+
+    default List<DiscoveredSlotInfo> discoverSlots(String libraryPath, String libraryWrapperPath) {
+        return List.of();
+    }
 }
 

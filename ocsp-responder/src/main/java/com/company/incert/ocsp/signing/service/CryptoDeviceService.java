@@ -5,11 +5,13 @@ import com.company.incert.ocsp.signing.dto.CryptoDeviceDto;
 import com.company.incert.ocsp.signing.dto.CryptoDeviceRequest;
 import com.company.incert.ocsp.signing.dto.CryptoProviderDto;
 import com.company.incert.ocsp.signing.dto.CryptoProviderRequest;
+import com.company.incert.ocsp.signing.dto.CryptoSlotDto;
 import com.company.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import com.company.incert.ocsp.signing.entity.CryptoProviderEntity;
 import com.company.incert.ocsp.signing.port.CryptoDeviceSpec;
 import com.company.incert.ocsp.signing.port.CryptoProviderPort;
 import com.company.incert.ocsp.signing.port.DeviceActivationState;
+import com.company.incert.ocsp.signing.port.DiscoveredSlotInfo;
 import com.company.incert.ocsp.signing.port.ProviderDeviceInfo;
 import com.company.incert.ocsp.signing.provider.CryptoDeviceAdapterFactory;
 import com.company.incert.ocsp.signing.provider.LibraryPathAllowlist;
@@ -70,6 +72,66 @@ public class CryptoDeviceService {
 
     public List<String> listAllowedLibraryDirs() {
         return allowlist.getAllowedDirectories();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CryptoSlotDto> discoverProviderSlots(Long providerId) {
+        CryptoProviderEntity provider = providerRepository.findById(providerId)
+                .orElseThrow(() -> new IllegalArgumentException("Crypto provider not found: " + providerId));
+        String validatedLibrary = allowlist.validateLibraryPath(provider.getLibraryPath());
+        String validatedWrapper = allowlist.validateWrapperPath(provider.getLibraryWrapperPath());
+        CryptoDeviceAdapterFactory factory = requireFactory(provider.getWrapperType());
+
+        List<DiscoveredSlotInfo> slots = factory.discoverSlots(validatedLibrary, validatedWrapper);
+        List<CryptoDeviceEntity> existingDevices = deviceRepository.findAllByProviderId(provider.getId());
+
+        return slots.stream()
+                .map(slot -> toSlotDto(slot, existingDevices, provider))
+                .toList();
+    }
+
+    private CryptoSlotDto toSlotDto(
+            DiscoveredSlotInfo slot,
+            List<CryptoDeviceEntity> existingDevices,
+            CryptoProviderEntity provider) {
+        CryptoDeviceEntity matched = existingDevices.stream()
+                .filter(d -> matchesSlot(d, slot))
+                .findFirst()
+                .orElse(null);
+
+        String configuredDeviceId = matched != null ? matched.getDeviceId() : null;
+        String configuredDeviceState = matched != null ? resolveConfiguredState(matched, provider) : null;
+        return new CryptoSlotDto(
+                slot.slotId(),
+                slot.slotListIndex(),
+                slot.tokenLabel(),
+                slot.manufacturerId(),
+                slot.model(),
+                slot.serialNumber(),
+                slot.initialized(),
+                configuredDeviceId,
+                configuredDeviceState
+        );
+    }
+
+    private static boolean matchesSlot(CryptoDeviceEntity device, DiscoveredSlotInfo slot) {
+        if (device.getSlotId() != null) {
+            return device.getSlotId().equals(slot.slotId());
+        }
+        if (device.getTokenLabel() != null && !device.getTokenLabel().isBlank()) {
+            return slot.tokenLabel() != null && device.getTokenLabel().trim().equals(slot.tokenLabel().trim());
+        }
+        return device.getSlotListIndex() == slot.slotListIndex();
+    }
+
+    private String resolveConfiguredState(CryptoDeviceEntity device, CryptoProviderEntity provider) {
+        if (!device.isEnabled() || !provider.isEnabled()) {
+            return "DISABLED";
+        }
+        if (pkcsProviders != null && pkcsProviders.hasProvider(device.getDeviceId())) {
+            return pkcsProviders.getProvider(device.getDeviceId()).getDeviceInfo().activationState();
+        }
+        return DeviceActivationState.LOCKED.name();
     }
 
     @Transactional
