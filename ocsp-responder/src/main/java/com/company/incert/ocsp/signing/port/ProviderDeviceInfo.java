@@ -33,7 +33,7 @@ public record ProviderDeviceInfo(
                 providerId,
                 providerType,
                 libraryPath,
-                "embedded",
+                "/opt/pkcs11j/libpkcs11wrapper.so",
                 tokenLabel,
                 slotId,
                 healthy ? DeviceActivationState.ACTIVE.name() : DeviceActivationState.LOCKED.name(),

@@ -11,10 +11,14 @@ import iaik.pkcs.pkcs11.wrapper.PKCS11Implementation;
 import org.xipki.pkcs11.wrapper.PKCS11Module;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
 
+    public static final String DEFAULT_WRAPPER_PATH = "/opt/pkcs11j/libpkcs11wrapper.so";
     public static final String EMBEDDED = "embedded";
 
     private static final Map<String, PKCS11> MODULE_CACHE = new ConcurrentHashMap<>();
@@ -37,7 +42,7 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
     private final PKCS11 pkcs11;
 
     public XiPkiPkcs11Library(String libraryPath) {
-        this(libraryPath, EMBEDDED);
+        this(libraryPath, DEFAULT_WRAPPER_PATH);
     }
 
     public XiPkiPkcs11Library(String libraryPath, String libraryWrapperPath) {
@@ -62,7 +67,11 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
         try {
             if (loadedWrapperSource == null) {
                 if (explicitWrapper != null) {
-                    System.load(explicitWrapper);
+                    Path wrapperPath = Path.of(explicitWrapper);
+                    if (!Files.isRegularFile(wrapperPath)) {
+                        materializeBundledWrapper(wrapperPath);
+                    }
+                    System.load(wrapperPath.toAbsolutePath().normalize().toString());
                     PKCS11Implementation.initializeLibrary();
                     loadedWrapperSource = explicitWrapper;
                     return new PKCS11Implementation(canonicalLib);
@@ -80,9 +89,41 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
         }
     }
 
+    /**
+     * Extracts the OS/arch-appropriate {@code libpkcs11wrapper} binary from {@code ipkcs11wrapper.jar}
+     * to {@code targetPath} if it has not already been pre-staged on disk.
+     */
+    public static void materializeBundledWrapper(Path targetPath) throws IOException {
+        if (Files.isRegularFile(targetPath)) {
+            return;
+        }
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        String resource;
+        if (os.contains("mac") || os.contains("darwin")) {
+            resource = "natives/unix/macosx_universal/release/libpkcs11wrapper.jnilib";
+        } else if (os.contains("win")) {
+            resource = "natives/windows/win-x86_64/release/pkcs11wrapper.dll";
+        } else if (arch.contains("aarch64") || arch.contains("arm64")) {
+            resource = "natives/unix/linux-aarch64/release/libpkcs11wrapper.so";
+        } else {
+            resource = "natives/unix/linux-x86_64/release/libpkcs11wrapper.so";
+        }
+        Path parent = targetPath.toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (InputStream in = PKCS11Module.class.getClassLoader().getResourceAsStream(resource)) {
+            if (in == null) {
+                throw new IOException("Bundled PKCS#11 wrapper resource not found in classpath: " + resource);
+            }
+            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     private static String normalizeWrapperPath(String raw) {
         if (raw == null || raw.isBlank()) {
-            return null;
+            return DEFAULT_WRAPPER_PATH;
         }
         String trimmed = raw.trim();
         if (EMBEDDED.equalsIgnoreCase(trimmed) || "auto".equalsIgnoreCase(trimmed)) {

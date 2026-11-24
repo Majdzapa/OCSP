@@ -20,7 +20,7 @@ flowchart TD
     ADAPTER["Pkcs11jCryptoProviderAdapter\nPattern 2 Guard (LOCKED vs ACTIVE)"]
     ENGINE["Pkcs11Engine + Pkcs11ModuleRegistry\nC_Initialize(CKF_OS_LOCKING_OK) once per .so"]
     POOL["Pkcs11SessionPool + XiPkiPkcs11Library\nPooled RO Sessions / On-Demand RW Sessions"]
-    BRIDGE["libraryWrapperPath\nDefault: 'embedded' (libpkcs11wrapper in JAR)\nor allowlisted host .so"]
+    BRIDGE["libraryWrapperPath\n/opt/pkcs11j/libpkcs11wrapper.so\n(allowlisted JNI wrapper binary)"]
     HSM1["libraryPath: SoftHSM2 / Test\n/usr/lib/softhsm/libsofthsm2.so"]
     HSM2["libraryPath: Thales Luna\n/usr/safenet/lunaclient/lib/libCryptoki2_64.so"]
     HSM3["libraryPath: Utimaco CryptoServer\n/opt/utimaco/libcs_pkcs11_R2.so"]
@@ -46,9 +46,8 @@ e.g. `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`, `/opt/utimaco/libcs_pkcs1
 
 | `libraryWrapperPath`
 | **Shared across the JVM**
-| Path to the JNI bridge (`libpkcs11wrapper`) connecting Java to C Cryptoki calls.
-Default is **`embedded`** (extracts and loads the OS/architecture-specific native binary bundled inside `ipkcs11wrapper-1.0.9.jar`).
-Only supply an explicit allowlisted file path (e.g. `/opt/pkcs11j/libpkcs11wrapper.so`) if `/tmp` is mounted `noexec` or your OS requires a custom build.
+| Explicit allowlisted path to the JNI bridge (`libpkcs11wrapper.so`) connecting Java to C Cryptoki calls.
+Default is **`/opt/pkcs11j/libpkcs11wrapper.so`** (pre-staged inside `ocsp-responder` at `/opt/pkcs11j/libpkcs11wrapper.so`, or auto-materialized to that path on first load if writable).
 |===
 
 [IMPORTANT]
@@ -195,7 +194,7 @@ Default `hsm.allowed-library-dirs` in `application.yml` already permits `/usr/sa
    * **Display Name**: e.g. `Thales Luna Network HSM`
    * **Wrapper Strategy**: `PKCS11J (In-Process ipkcs11wrapper)`
    * **PKCS#11 Vendor Library Path (`libraryPath`)**: e.g. `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`
-   * **JNI Library Wrapper Path (`libraryWrapperPath`)**: `embedded` *(leave as `embedded` unless `/tmp` is `noexec`)*
+   * **JNI Library Wrapper Path (`libraryWrapperPath`)**: `/opt/pkcs11j/libpkcs11wrapper.so`
 3. Click **Add Device**:
    * **Device ID**: unique identifier referenced by signing certificates, e.g. `luna-ca1` *(cannot be `default`)*
    * **Provider**: select `thales-luna`
@@ -222,7 +221,7 @@ curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-providers \
     "name": "Thales Luna Network HSM",
     "wrapperType": "PKCS11J",
     "libraryPath": "/usr/safenet/lunaclient/lib/libCryptoki2_64.so",
-    "libraryWrapperPath": "embedded",
+    "libraryWrapperPath": "/opt/pkcs11j/libpkcs11wrapper.so",
     "enabled": true
   }'
 
@@ -272,8 +271,8 @@ curl -sf -X POST http://localhost:8080/api/v1/admin/crypto-devices/luna-ca1/deac
 | Absolute path inside `hsm.allowed-library-dirs` to vendor `.so` driver.
 
 | `libraryWrapperPath` *(Provider)*
-| No (default `embedded`)
-| `embedded` (bundled JAR native bridge) or an allowlisted absolute file path to `libpkcs11wrapper.so`.
+| Yes (default `/opt/pkcs11j/libpkcs11wrapper.so`)
+| Allowlisted absolute file path to `libpkcs11wrapper.so` (e.g. `/opt/pkcs11j/libpkcs11wrapper.so`).
 
 | `deviceId` *(Device)*
 | Yes

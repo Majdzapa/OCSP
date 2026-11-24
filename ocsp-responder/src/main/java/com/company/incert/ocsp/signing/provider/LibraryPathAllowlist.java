@@ -33,13 +33,15 @@ public final class LibraryPathAllowlist {
         return validateNormalizedAbsoluteFile(libraryPath, "libraryPath");
     }
 
+    public static final String DEFAULT_WRAPPER_PATH = "/opt/pkcs11j/libpkcs11wrapper.so";
+
     public String validateWrapperPath(String wrapperPath) {
         if (wrapperPath == null || wrapperPath.isBlank()) {
-            return "embedded";
+            return validateNormalizedAbsoluteFile(DEFAULT_WRAPPER_PATH, "libraryWrapperPath");
         }
         String trimmed = wrapperPath.trim();
         if ("embedded".equalsIgnoreCase(trimmed) || "auto".equalsIgnoreCase(trimmed)) {
-            return "embedded";
+            return validateNormalizedAbsoluteFile(DEFAULT_WRAPPER_PATH, "libraryWrapperPath");
         }
         return validateNormalizedAbsoluteFile(trimmed, "libraryWrapperPath");
     }

@@ -24,7 +24,7 @@ ocsp-responder (Modular Monolith)
 * **`Pkcs11LibraryPort` (`signing.pkcs11`)**: Port interface backed by `XiPkiPkcs11Library` (`org.xipki:ipkcs11wrapper`), mapping 1:1 to OASIS PKCS#11 v2.40 Cryptoki APIs (`C_Initialize` with `CKF_OS_LOCKING_OK`, `C_GetSlotList`, `C_GetTokenInfo`, `C_OpenSession`, `C_Login`, `C_FindObjects*`, `C_GetAttributeValue`, `C_GenerateKeyPair`, `C_CreateObject`, `C_SignInit`, `C_Sign`, `C_Logout`, `C_CloseSession`, `C_Finalize`).
 * **`libraryPath` vs `libraryWrapperPath`**:
   ** `library_path`: Per-vendor Cryptoki `.so`/`.dylib` driver (e.g. `/usr/lib/softhsm/libsofthsm2.so`, Thales Luna `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`, Utimaco `/opt/utimaco/libcs_pkcs11_R2.so`). Multiple drivers and slots run simultaneously inside `PkcsProviders`.
-  ** `library_wrapper_path`: JNI wrapper binary — defaults to `embedded` (loads the prebuilt native wrapper bundled in `ipkcs11wrapper.jar` for Linux x86_64/aarch64, macOS, or Windows) or points to an allowlisted external host binary path.
+  ** `library_wrapper_path`: Explicit allowlisted host path to the JNI wrapper binary (defaults to `/opt/pkcs11j/libpkcs11wrapper.so`, pre-staged inside `ocsp-responder` at `/opt/pkcs11j/libpkcs11wrapper.so`).
 * **`LibraryPathAllowlist`**: Refuses relative paths, `..` traversal, and any library or wrapper path outside `hsm.allowed-library-dirs` (`HSM_ALLOWED_LIBRARY_DIRS`).
 
 == Pattern 2: Runtime Activation (Zero PIN in DB & RAM)

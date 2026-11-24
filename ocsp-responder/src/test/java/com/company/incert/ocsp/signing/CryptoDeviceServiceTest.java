@@ -104,7 +104,7 @@ class CryptoDeviceServiceTest {
 
         when(providerRepository.existsByCode("evil")).thenReturn(false);
         assertThatThrownBy(() -> service.createProvider(new CryptoProviderRequest(
-                "evil", "Untrusted", "PKCS11J", "/tmp/evil.so", "embedded", true)))
+                "evil", "Untrusted", "PKCS11J", "/tmp/evil.so", "/opt/pkcs11j/libpkcs11wrapper.so", true)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("outside hsm.allowed-library-dirs");
     }
@@ -113,7 +113,7 @@ class CryptoDeviceServiceTest {
     void createAndActivateDeactivateDeviceFollowsPattern2AndWipesPin() {
         CryptoProviderEntity provider = CryptoProviderEntity.builder()
                 .id(1L).code("softhsm2").name("SoftHSM v2").wrapperType("PKCS11J")
-                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("embedded").enabled(true).build();
+                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("/opt/pkcs11j/libpkcs11wrapper.so").enabled(true).build();
 
         when(deviceRepository.existsByDeviceId("hsm-a")).thenReturn(false);
         when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
@@ -151,7 +151,7 @@ class CryptoDeviceServiceTest {
     void deleteDeviceBlockedWhenActiveSigningCertReferencesIt() {
         CryptoProviderEntity provider = CryptoProviderEntity.builder()
                 .id(1L).code("softhsm2").name("SoftHSM").wrapperType("PKCS11J")
-                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("embedded").enabled(true).build();
+                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("/opt/pkcs11j/libpkcs11wrapper.so").enabled(true).build();
         CryptoDeviceEntity device = CryptoDeviceEntity.builder()
                 .id(9L).deviceId("hsm-in-use").provider(provider).enabled(true).build();
 
@@ -168,7 +168,7 @@ class CryptoDeviceServiceTest {
     void discoverProviderSlotsAnnotatesMappedAndUnmappedSlots() {
         CryptoProviderEntity provider = CryptoProviderEntity.builder()
                 .id(1L).code("softhsm2").name("SoftHSM").wrapperType("PKCS11J")
-                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("embedded").enabled(true).build();
+                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath("/opt/pkcs11j/libpkcs11wrapper.so").enabled(true).build();
         CryptoDeviceEntity primary = CryptoDeviceEntity.builder()
                 .id(10L).deviceId("softhsm-primary").provider(provider).tokenLabel("ocsp-signing")
                 .slotListIndex(0).poolSize(4).defaultDevice(true).enabled(true).build();
@@ -176,7 +176,7 @@ class CryptoDeviceServiceTest {
         when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
         when(deviceRepository.findAllByProviderId(1L)).thenReturn(List.of(primary));
         pkcsProviders.register(new FakeActivatablePort(new CryptoDeviceSpec(
-                "softhsm-primary", "softhsm2", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", "embedded",
+                "softhsm-primary", "softhsm2", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", "/opt/pkcs11j/libpkcs11wrapper.so",
                 "ocsp-signing", null, 0, 4, false)));
 
         List<CryptoSlotDto> slots = service.discoverProviderSlots(1L);

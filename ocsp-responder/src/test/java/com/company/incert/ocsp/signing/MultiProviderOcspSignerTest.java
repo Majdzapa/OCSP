@@ -130,7 +130,7 @@ class MultiProviderOcspSignerTest {
                 "softhsm2",
                 "PKCS11J",
                 "/opt/pkcs11j/libfake_hsm.so",
-                "embedded",
+                "/opt/pkcs11j/libpkcs11wrapper.so",
                 "token-inproc",
                 null,
                 0,

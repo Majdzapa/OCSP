@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class XiPkiSoftHsmIntegrationTest {
 
     private static String softhsmLib;
+    private static String wrapperLib;
     private static Path confFile;
 
     @BeforeAll
@@ -75,6 +76,10 @@ class XiPkiSoftHsmIntegrationTest {
         Files.createDirectories(tokenDir);
         Files.writeString(confFile, "directories.tokendir = " + tokenDir.toAbsolutePath() + "\nobjectstore.backend = file\n");
 
+        Path extractedWrapper = baseDir.resolve("libpkcs11wrapper.so").toAbsolutePath().normalize();
+        com.company.incert.ocsp.signing.pkcs11.XiPkiPkcs11Library.materializeBundledWrapper(extractedWrapper);
+        wrapperLib = extractedWrapper.toString();
+
         initToken("xipki-dev-1");
         initToken("xipki-dev-2");
     }
@@ -83,19 +88,19 @@ class XiPkiSoftHsmIntegrationTest {
     void multiDeviceSigningAndCsrVerificationViaIpks11Wrapper() throws Exception {
         try (Pkcs11Engine engine = new Pkcs11Engine()) {
             // 0. Zero-PIN slot discovery before unlocking any device
-            var idleSlots = engine.discoverSlots(softhsmLib, "embedded");
+            var idleSlots = engine.discoverSlots(softhsmLib, wrapperLib);
             assertThat(idleSlots)
                     .extracting(com.company.incert.ocsp.signing.pkcs11.TokenInfo::label)
                     .contains("xipki-dev-1", "xipki-dev-2");
             assertThat(engine.loadedModuleCount()).isZero();
 
             Pkcs11Provider dev1 = engine.register(new Pkcs11ProviderConfig(
-                    "softhsm-1", softhsmLib, "embedded", "xipki-dev-1", null, 0, "1234".toCharArray(), 4, false));
+                    "softhsm-1", softhsmLib, wrapperLib, "xipki-dev-1", null, 0, "1234".toCharArray(), 4, false));
             Pkcs11Provider dev2 = engine.register(new Pkcs11ProviderConfig(
-                    "softhsm-2", softhsmLib, "embedded", "xipki-dev-2", null, 0, "1234".toCharArray(), 4, false));
+                    "softhsm-2", softhsmLib, wrapperLib, "xipki-dev-2", null, 0, "1234".toCharArray(), 4, false));
 
             assertThat(engine.loadedModuleCount()).isEqualTo(1);
-            assertThat(engine.discoverSlots(softhsmLib, "embedded"))
+            assertThat(engine.discoverSlots(softhsmLib, wrapperLib))
                     .extracting(com.company.incert.ocsp.signing.pkcs11.TokenInfo::label)
                     .contains("xipki-dev-1", "xipki-dev-2");
             assertThat(dev1.getTokenInfo().label()).isEqualTo("xipki-dev-1");
@@ -191,7 +196,7 @@ class XiPkiSoftHsmIntegrationTest {
             // 6. Pattern 2 lock -> unlock cycle (unregister C_Finalize + re-register C_Initialize + sign)
             assertThat(engine.unregister("softhsm-1")).isTrue();
             Pkcs11Provider reopened = engine.register(new Pkcs11ProviderConfig(
-                    "softhsm-1", softhsmLib, "embedded", "xipki-dev-1", null, 0, "1234".toCharArray(), 2, false));
+                    "softhsm-1", softhsmLib, wrapperLib, "xipki-dev-1", null, 0, "1234".toCharArray(), 2, false));
             byte[] afterRelockSig = reopened.sign("ocsp-rsa-key", "SHA256withRSA", payload);
             jcaRsa.initVerify(rsaPub);
             jcaRsa.update(payload);

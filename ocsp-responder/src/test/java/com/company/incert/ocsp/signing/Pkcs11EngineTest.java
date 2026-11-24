@@ -216,7 +216,7 @@ class Pkcs11EngineTest {
                 "/tmp/libfake.so", Pkcs11Constants.CKR_OK, initCalls, finalizeCalls, closeCalls);
 
         try (Pkcs11Engine engine = new Pkcs11Engine(path -> fake)) {
-            List<TokenInfo> idleSlots = engine.discoverSlots("/tmp/libfake.so", "embedded");
+            List<TokenInfo> idleSlots = engine.discoverSlots("/tmp/libfake.so", "/opt/pkcs11j/libpkcs11wrapper.so");
             assertThat(idleSlots).extracting(TokenInfo::label).containsExactly("token-a", "token-b");
             assertThat(fake.loginCalls.get()).isZero();
             assertThat(initCalls.get()).isEqualTo(1);
@@ -226,7 +226,7 @@ class Pkcs11EngineTest {
                     "device-a", "/tmp/libfake.so", "token-a", null, 0, "1234".toCharArray(), 1, false));
             assertThat(initCalls.get()).isEqualTo(2);
 
-            List<TokenInfo> activeSlots = engine.discoverSlots("/tmp/libfake.so", "embedded");
+            List<TokenInfo> activeSlots = engine.discoverSlots("/tmp/libfake.so", "/opt/pkcs11j/libpkcs11wrapper.so");
             assertThat(activeSlots).extracting(TokenInfo::label).containsExactly("token-a", "token-b");
             assertThat(finalizeCalls.get()).isEqualTo(1);
         }

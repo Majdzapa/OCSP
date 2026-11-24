@@ -19,9 +19,10 @@ class LibraryPathAllowlistTest {
     void acceptsLibrariesAndWrappersInsideAllowlistedDirectories() {
         assertThat(allowlist.validateLibraryPath("/usr/lib/softhsm/libsofthsm2.so"))
                 .isEqualTo("/usr/lib/softhsm/libsofthsm2.so");
-        assertThat(allowlist.validateWrapperPath("embedded")).isEqualTo("embedded");
-        assertThat(allowlist.validateWrapperPath("auto")).isEqualTo("embedded");
-        assertThat(allowlist.validateWrapperPath(null)).isEqualTo("embedded");
+        assertThat(allowlist.validateWrapperPath("/opt/pkcs11j/libpkcs11wrapper.so"))
+                .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
+        assertThat(allowlist.validateWrapperPath(null))
+                .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
         assertThat(allowlist.validateWrapperPath("/opt/pkcs11j/libpkcs11j.so"))
                 .isEqualTo("/opt/pkcs11j/libpkcs11j.so");
     }

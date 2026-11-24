@@ -28,7 +28,7 @@ export const CryptoDevicesPage = () => {
     const [provName, setProvName] = useState('');
     const [provWrapperType, setProvWrapperType] = useState('PKCS11J');
     const [provLibraryPath, setProvLibraryPath] = useState('/usr/lib/softhsm/libsofthsm2.so');
-    const [provWrapperPath, setProvWrapperPath] = useState('embedded');
+    const [provWrapperPath, setProvWrapperPath] = useState('/opt/pkcs11j/libpkcs11wrapper.so');
     const [provEnabled, setProvEnabled] = useState(true);
 
     // Device modal (create / edit)
@@ -116,7 +116,7 @@ export const CryptoDevicesPage = () => {
         setProvName('');
         setProvWrapperType('PKCS11J');
         setProvLibraryPath('/usr/lib/softhsm/libsofthsm2.so');
-        setProvWrapperPath('embedded');
+        setProvWrapperPath('/opt/pkcs11j/libpkcs11wrapper.so');
         setProvEnabled(true);
         setError(null);
         setProviderModalOpen(true);
@@ -128,7 +128,7 @@ export const CryptoDevicesPage = () => {
         setProvName(p.name);
         setProvWrapperType(p.wrapperType || 'PKCS11J');
         setProvLibraryPath(p.libraryPath || '');
-        setProvWrapperPath(p.libraryWrapperPath || 'embedded');
+        setProvWrapperPath(p.libraryWrapperPath || '/opt/pkcs11j/libpkcs11wrapper.so');
         setProvEnabled(Boolean(p.enabled));
         setError(null);
         setProviderModalOpen(true);
@@ -144,7 +144,7 @@ export const CryptoDevicesPage = () => {
                 name: provName.trim(),
                 wrapperType: provWrapperType,
                 libraryPath: provLibraryPath.trim(),
-                libraryWrapperPath: provWrapperPath.trim() || 'embedded',
+                libraryWrapperPath: provWrapperPath.trim() || '/opt/pkcs11j/libpkcs11wrapper.so',
                 enabled: provEnabled,
             };
             if (editingProviderId != null) {
@@ -583,8 +583,8 @@ export const CryptoDevicesPage = () => {
                         />
                         <TextInput
                             label="JNI Library Wrapper Path (libraryWrapperPath)"
-                            description="Use 'embedded' to load the bundled ipkcs11wrapper native library or supply an allowlisted custom path"
-                            placeholder="embedded"
+                            description="Absolute path to the JNI wrapper binary inside hsm.allowed-library-dirs (default: /opt/pkcs11j/libpkcs11wrapper.so)"
+                            placeholder="/opt/pkcs11j/libpkcs11wrapper.so"
                             value={provWrapperPath}
                             onChange={(e) => setProvWrapperPath(e.currentTarget.value)}
                             required

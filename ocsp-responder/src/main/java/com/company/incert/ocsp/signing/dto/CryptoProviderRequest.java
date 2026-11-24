@@ -26,7 +26,7 @@ public record CryptoProviderRequest(
         String libraryPath,
 
         @Size(max = 500)
-        @Schema(description = "JNI wrapper binary path or 'embedded'", example = "embedded")
+        @Schema(description = "Absolute path to JNI wrapper binary inside allowlisted directories", example = "/opt/pkcs11j/libpkcs11wrapper.so")
         String libraryWrapperPath,
 
         @Schema(description = "Whether devices using this provider can be unlocked", example = "true")
