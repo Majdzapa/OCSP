@@ -83,13 +83,6 @@ ocsp:
       enabled: true
       cron: "0 0 0 * * *"
       alert-threshold-days: 3
-    keycloak-reconciliation:
-      enabled: true
-      cron: "0 0 2 * * *"
-    identity-outbox-retry:
-      enabled: true
-      fixed-delay-ms: 30000
-      max-attempts: 5
 
 hsm:
   enabled: true

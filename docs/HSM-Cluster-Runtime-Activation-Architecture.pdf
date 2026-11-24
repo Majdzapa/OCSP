@@ -4,7 +4,7 @@
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [7 0 R 9 0 R 11 0 R] /Count 3 >>
+<< /Type /Pages /Kids [7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R] /Count 7 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
@@ -16,187 +16,953 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
 endobj
 6 0 obj
-<< /Length 6555 >>
+<< /Length 10778 >>
 stream
-0.12 0.16 0.28 rg 0 806 595.28 36 re f
-BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
-0.94 0.96 0.99 rg 48 714.0 499 66 re f
-0.24 0.32 0.78 rg 48 714.0 4 66 re f
-BT /F2 15 Tf 0.10 0.14 0.26 rg 62 754.0 Td (HSM Runtime Activation in a 3-Node Load-Balanced Cluster) Tj ET
-BT /F1 9.5 Tf 0.30 0.35 0.45 rg 62 736.0 Td (Technical Architecture & DevOps Blueprint for Incert OCSP Responder \(lu.incert.ocsp\)) Tj ET
-BT /F3 8.5 Tf 0.24 0.32 0.78 rg 62 722.0 Td (Package: lu.incert.ocsp   |   Pattern A Readiness Gate: GET /ocsp/health   |   RFC 6960 / PKCS#11) Tj ET
-BT /F2 12 Tf 0.14 0.20 0.46 rg 48 690.0 Td (1. Architectural Problem Statement) Tj ET
-0.24 0.32 0.78 RG 1.0 w 48 685.0 m 547 685.0 l S
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 671.0 Td (When deploying 3 stateless OCSP Responder instances \(ocsp-node-1, ocsp-node-2, ocsp-node-3\)) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 658.0 Td (behind a Load Balancer, each JVM opens its own in-process PKCS#11 sessions \(C_OpenSession +) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 645.0 Td (C_Login\) to the Hardware Security Module via org.xipki:ipkcs11wrapper. Under Pattern 2 \(Zero) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 632.0 Td (PIN in Database\), the HSM PIN is never stored in MariaDB or configuration files; it is) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 619.0 Td (supplied at runtime by an administrator and wiped from heap RAM immediately after opening) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 606.0 Td (the authenticated PKCS#11 session pool.) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 589.0 Td (This creates a key cluster design question: if one of the 3 servers reboots \(or starts up) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 576.0 Td (fresh\), its local PKCS#11 session pool starts in the LOCKED state until unlocked. How should) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 563.0 Td (the Load Balancer and the 3 OCSP Responder nodes coordinate HSM activation so that OCSP) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 550.0 Td (clients never experience errors?) Tj ET
-BT /F2 12 Tf 0.14 0.20 0.46 rg 48 525.0 Td (2. Comparison of the 3 Industry-Standard Patterns) Tj ET
-0.24 0.32 0.78 RG 1.0 w 48 520.0 m 547 520.0 l S
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 502.0 Td (Pattern A \(Recommended - Industry Gold Standard\): Per-Node Manual Unlock + LB Readiness Gate) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 488.0 Td (Used by HashiCorp Vault \(Unseal\) and EJBCA Enterprise CryptoTokens in WebTrust / eIDAS) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 475.0 Td (compliant PKI deployments. The HSM PIN is never transmitted between cluster nodes. Instead,) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 462.0 Td (each node exposes a dedicated Load-Balancer Readiness Gate \(GET /ocsp/health\) that reports) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 449.0 Td (HTTP 200 READY only when the node has an active signing certificate and its backing HSM slot) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 436.0 Td (is ACTIVE in memory.) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 419.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 419.0 Td (Zero Inter-Node PIN Transmission: Each JVM receives the HSM PIN directly from the) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 406.0 Td (Security Officer over HTTPS. No PIN ever crosses the network between servers.) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 391.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 391.0 Td (Split Liveness vs. OCSP Readiness Probes: GET /actuator/health remains HTTP 200 UP) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 378.0 Td (when the JVM, MariaDB, and RabbitMQ are healthy \(so Docker/Kubernetes does not restart) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 365.0 Td (the container while it waits for PIN entry\). Meanwhile, GET /ocsp/health returns HTTP) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 352.0 Td (503 SERVICE_UNAVAILABLE while the HSM device is LOCKED, and HTTP 200 OK once unlocked) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 339.0 Td (\(ACTIVE\).) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 324.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 324.0 Td (Automatic Load-Balancer Traffic Draining: When Server 3 reboots at 03:00 AM, its HSM) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 311.0 Td (starts LOCKED and GET /ocsp/health returns 503. The Load Balancer automatically) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 298.0 Td (excludes Server 3 from the /ocsp pool and routes 100% of RFC 6960 OCSP queries to) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 285.0 Td (Server 1 and Server 2 with zero failed OCSP responses. Once the Security Officer) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 272.0 Td (unlocks Server 3, GET /ocsp/health returns 200 READY and the Load Balancer puts Server) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 259.0 Td (3 back into rotation.) Tj ET
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 240.0 Td (Pattern B: UI-Driven Peer Fanout / Cluster Proxy \(One-Click Unlock\)) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 226.0 Td (All 3 nodes are configured with OCSP_CLUSTER_PEERS. When an administrator logs in through) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 213.0 Td (the Load Balancer and unlocks a device on one node, that node forwards the authenticated) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 200.0 Td (activation request to its peer nodes over internal mTLS. While convenient, a node that) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 187.0 Td (reboots later by itself still starts LOCKED, so Pattern B still requires Pattern A's Load-) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 174.0 Td (Balancer Readiness Gate.) Tj ET
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 153.0 Td (Pattern C: Secret-Manager Auto-Activation at Boot \(Vault / Encrypted Systemd Credential\)) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 139.0 Td (An init hook fetches the HSM PIN in-memory from an external unsealed HashiCorp Vault cluster) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 126.0 Td (at startup and calls POST /api/v1/admin/crypto-devices/{id}/activate on localhost. Useful) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 113.0 Td (for unattended 24/7 reboot recovery, but shifts the unseal requirement to the Vault cluster.) Tj ET
-BT /F2 12 Tf 0.14 0.20 0.46 rg 48 88.0 Td (3. Pattern A Implementation in Incert OCSP Responder \(lu.incert.ocsp\)) Tj ET
-0.24 0.32 0.78 RG 1.0 w 48 83.0 m 547 83.0 l S
-0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
-BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 1) Tj ET
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.93 0.95 0.99 rg 42.0 704.0 511.3 76 re f
+0.20 0.32 0.82 rg 42.0 704.0 5 76 re f
+BT /F2 15.0 Tf 0.08 0.12 0.26 rg 56.0 756.0 Td (Incert OCSP Subsystem - Technical Architecture Guide) Tj ET
+BT /F1 9.2 Tf 0.25 0.30 0.42 rg 56.0 740.0 Td (HSM Wrapper Design, Pattern 2 Runtime Lock/Unlock, Multi-Provider OCP, Multi-CA Signing, 3-Node LB & Jobs) Tj ET
+BT /F3 7.8 Tf 0.20 0.32 0.78 rg 56.0 725.0 Td (Artifact: lu.incert:ocsp-responder  |  HSM Bridge: org.xipki:ipkcs11wrapper:1.0.9  |  Java 25 + Spring Boot 4) Tj ET
+BT /F3 7.8 Tf 0.14 0.48 0.32 rg 56.0 712.0 Td (Protocols: RFC 6960 (OCSP)  |  RFC 8954 (Nonce)  |  PKCS#11 v2.40  |  Zero-REST AMQPS Reconciliation) Tj ET
+0.15 0.23 0.55 rg 42.0 685.0 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 689.0 Td (01) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 689.0 Td (Unified Single-Artifact Architecture & Stateless Dual-Mode Auth) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 682.0 m 553 682.0 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 670.0 Td (The Incert OCSP Subsystem is engineered as a clean Modular Monolith under the Luxembourg) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 658.2 Td (namespace lu.incert.ocsp \(Maven artifact lu.incert:ocsp-responder\). Rather than deploying three) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 646.4 Td (separate processes per node \(OCSP Responder + OCSP Client + Nginx React Console\), a 3-stage) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 634.6 Td (Docker build compiles the React 18 Mantine 7 SPA \(ocsp-console\) and Antora documentation directly) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 622.8 Td (into Spring Boot's classpath:/static/ directory, while the RFC 6960/8954 OCSP Client runs as the) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 611.0 Td (isolated domain package lu.incert.ocsp.client.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 466.2 511.3 130.0 re B
+0.15 0.22 0.45 rg 42.0 579.2 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 584.2 Td (DIAGRAM: Unified lu.incert:ocsp-responder Single-Container Appliance \(:8080\)) Tj ET
+0.93 0.96 1.00 rg 0.18 0.30 0.74 RG 1.0 w
+50.0 476.2 326.0 96.0 re B
+0.14 0.24 0.62 rg 50.0 555.2 326.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 55.0 560.2 Td (Unified Spring Boot 4 / Java 25 Container \(lu.incert.ocsp\)) Tj ET
+1.00 1.00 1.00 rg 0.25 0.45 0.85 RG 1.0 w
+58.0 484.2 98.0 65.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 63.0 536.7 Td (React SPA & Docs) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 63.0 524.7 Td (SpaForwardingCtrl) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 63.0 514.9 Td (/login, /dashboard) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 63.0 505.1 Td (/ocsp-client \(Public\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 63.0 495.3 Td (/docs/ocsp/5.0/*) Tj ET
+1.00 1.00 1.00 rg 0.16 0.58 0.44 RG 1.0 w
+164.0 484.2 102.0 65.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 169.0 536.7 Td (OCSP & REST API) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 169.0 524.7 Td (POST/GET /ocsp) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 169.0 514.9 Td (GET /ocsp/health) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 169.0 505.1 Td (POST /api/v1/client) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 169.0 495.3 Td (/api/v1/admin/**) Tj ET
+1.00 1.00 1.00 rg 0.68 0.34 0.14 RG 1.0 w
+274.0 484.2 94.0 65.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 279.0 536.7 Td (PKCS#11 Engine) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 279.0 524.7 Td (ipkcs11wrapper) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 279.0 514.9 Td (PkcsProviders) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 279.0 505.1 Td (CaSignerMatcher) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 279.0 495.3 Td (SessionPool \(RAM\)) Tj ET
+0.94 0.99 0.96 rg 0.16 0.58 0.38 RG 1.0 w
+412.0 538.2 132.0 34.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 417.0 559.7 Td (PKCS#11 HSM Hardware) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 417.0 547.7 Td (SoftHSM2 / Luna / Utimaco) Tj ET
+0.99 0.96 0.92 rg 0.78 0.42 0.14 RG 1.0 w
+412.0 504.2 132.0 28.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 417.0 519.7 Td (RabbitMQ AMQPS \(5671\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 417.0 507.7 Td (KMS Status & Recon Queues) Tj ET
+0.95 0.95 0.99 rg 0.35 0.35 0.72 RG 1.0 w
+412.0 472.2 132.0 28.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 417.0 487.7 Td (MariaDB 10.11 \(Flyway\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 417.0 475.7 Td (Revocation, Devices, Certs) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+376.0 552.2 m 412.0 552.2 l S
+Q
+0.20 0.32 0.72 rg 412.0 552.2 m 407.7 554.3 l 407.7 550.1 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 383.2 556.2 Td (C_Sign) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+412.0 518.2 m 376.0 518.2 l S
+Q
+0.20 0.32 0.72 rg 376.0 518.2 m 380.3 516.1 l 380.3 520.3 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 385.0 522.2 Td (AMQPS) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+376.0 488.2 m 412.0 488.2 l S
+Q
+0.20 0.32 0.72 rg 412.0 488.2 m 407.7 490.3 l 407.7 486.1 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 388.6 492.2 Td (JPA) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 457.2 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 457.2 Td (Why Same-Origin Packaging Simplifies Deployment: SpaForwardingController forwards React) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 445.6 Td (Router paths \(/login, /ocsp-client, /dashboard, /hsm-devices, /signing-cert, etc.\) to) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 434.0 Td (/index.html. Serving UI and API from the same Tomcat origin eliminates CORS preflight) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 422.4 Td (latency, removes per-node Nginx reverse-proxy containers, and enables direct Tomcat mTLS.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 408.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 408.8 Td (Stateless Dual-Mode Authentication \(Zero Cross-System Keycloak Sync\): SecurityConfig) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 397.2 Td (supports app.auth.mode = SELF_MANAGEMENT \(local MariaDB users + HS256 Bearer JWT via) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 385.6 Td (LocalJwtTokenService + optional X.509 mTLS via HotReloadableTrustManager\) or KEYCLOAK) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 374.0 Td (\(stateless OAuth2 Resource Server via NimbusJwtDecoder +) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 362.4 Td (KeycloakJwtAuthenticationConverter\). Cross-system Keycloak webhooks and user-) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 350.8 Td (synchronization background jobs were deliberately eliminated: roles and groups are) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 339.2 Td (evaluated directly from signed JWT claims, avoiding split-brain identity state across) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 327.6 Td (cluster nodes.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 314.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 314.0 Td (Public OCSP Client Tester \(/ocsp-client\) with SSRF Guard: Exposed on the Login page without) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 302.4 Td (requiring credentials so relying parties and operators can test live OCSP requests. When) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 290.8 Td (called unauthenticated, OcspClientController overrides any custom responderUrl with the) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 279.2 Td (local ocsp.client.default-responder-url so the endpoint cannot be abused for SSRF.) Tj ET
+0.15 0.23 0.55 rg 42.0 256.6 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 260.6 Td (02) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 260.6 Td (Choice of HSM Dependency Wrapper \(org.xipki:ipkcs11wrapper\)) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 253.6 m 553 253.6 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 241.6 Td (Communicating with PKCS#11 HSM hardware from Java 25 requires a native bridge capable of per-slot) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 229.8 Td (session lifecycle control, zero-PIN slot enumeration, and multi-architecture portability. After) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 218.0 Td (evaluating JDK SunPKCS11, JackNJI11, a custom C/CMake JNI library, and EJBCA/XiPKI's) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 206.2 Td (org.xipki:ipkcs11wrapper:1.0.9, we selected org.xipki:ipkcs11wrapper.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 97.4 511.3 94.0 re B
+0.15 0.22 0.45 rg 42.0 174.4 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 179.4 Td (DIAGRAM: In-Process PKCS#11 JNI Call Stack & LibraryPathAllowlist Enforcement) Tj ET
+0.94 0.96 1.00 rg 0.20 0.34 0.78 RG 1.0 w
+48.0 113.4 106.0 54.0 re B
+0.16 0.28 0.70 rg 48.0 150.4 106.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 155.4 Td (Pkcs11Engine \(Java\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 141.4 Td (Pkcs11SessionPool) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 131.6 Td (Pkcs11ObjectStore) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 121.8 Td (SignatureStrategies) Tj ET
+0.96 0.94 1.00 rg 0.44 0.26 0.78 RG 1.0 w
+172.0 113.4 118.0 54.0 re B
+0.36 0.20 0.68 rg 172.0 150.4 118.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 177.0 155.4 Td (XiPkiPkcs11Library) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 177.0 141.4 Td (LibraryPathAllowlist) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 177.0 131.6 Td (Canonical realpath\(\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 177.0 121.8 Td (Validates both .so) Tj ET
+0.99 0.96 0.92 rg 0.80 0.44 0.14 RG 1.0 w
+308.0 113.4 114.0 54.0 re B
+0.76 0.38 0.10 rg 308.0 150.4 114.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 313.0 155.4 Td (libpkcs11wrapper.so) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 313.0 141.4 Td (/opt/pkcs11j/...) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 313.0 131.6 Td (Pre-staged JNI bridge) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 313.0 121.8 Td (Linux/macOS/Win64) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+440.0 113.4 106.0 54.0 re B
+0.12 0.52 0.30 rg 440.0 150.4 106.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 445.0 155.4 Td (Vendor PKCS#11 .so) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 445.0 141.4 Td (libsofthsm2.so) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 445.0 131.6 Td (libCryptoki2_64.so) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 445.0 121.8 Td (libcs_pkcs11_R3.so) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+154.0 140.4 m 172.0 140.4 l S
+Q
+0.20 0.32 0.72 rg 172.0 140.4 m 167.7 142.5 l 167.7 138.3 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+290.0 140.4 m 308.0 140.4 l S
+Q
+0.20 0.32 0.72 rg 308.0 140.4 m 303.7 142.5 l 303.7 138.3 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+422.0 140.4 m 440.0 140.4 l S
+Q
+0.20 0.32 0.72 rg 440.0 140.4 m 435.7 142.5 l 435.7 138.3 l h f
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 1) Tj ET
 endstream
 endobj
 7 0 obj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 6 0 R >>
 endobj
 8 0 obj
-<< /Length 5520 >>
+<< /Length 11936 >>
 stream
-0.12 0.16 0.28 rg 0 806 595.28 36 re f
-BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 776.0 Td (Pattern A is implemented directly in lu.incert.ocsp.responder.service.OcspResponderService) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 763.0 Td (and lu.incert.ocsp.responder.controller.OcspResponderController, alongside the embedded) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 750.0 Td (React Admin Console \(CryptoDevicesPage.js\).) Tj ET
-0.95 0.96 0.98 rg 48 667.5 499 71.5 re f
-0.80 0.84 0.90 RG 0.6 w 48 667.5 499 71.5 re S
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 725.0 Td (Client \(/ocsp\) ---> [ Load Balancer \(Nginx / HAProxy / F5\) ]) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 713.5 Td (                       Health Check: GET /ocsp/health) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 702.0 Td (                       +-- Node 1 \(ocsp-node-1:8080\) -> HSM ACTIVE -> HTTP 200 READY  \(Receives /ocsp\)) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 690.5 Td (                       +-- Node 2 \(ocsp-node-2:8080\) -> HSM ACTIVE -> HTTP 200 READY  \(Receives /ocsp\)) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 679.0 Td (                       +-- Node 3 \(ocsp-node-3:8080\) -> HSM LOCKED -> HTTP 503 LOCKED \(Drained by LB!\)) Tj ET
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 653.5 Td (Readiness Gate Response When HSM Is LOCKED \(HTTP 503 Service Unavailable\)) Tj ET
-0.95 0.96 0.98 rg 48 470.5 499 175.0 re f
-0.80 0.84 0.90 RG 0.6 w 48 470.5 499 175.0 re S
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 631.5 Td (HTTP/1.1 503 Service Unavailable) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 620.0 Td (X-OCSP-Node: ocsp-node-3) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 608.5 Td (X-OCSP-Ready: false) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 597.0 Td (Content-Type: application/json) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 585.5 Td ({) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 574.0 Td (  "ocspReady": false,) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 562.5 Td (  "status": "HSM_DEVICE_LOCKED",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 551.0 Td (  "nodeId": "ocsp-node-3",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 539.5 Td (  "providerId": "softhsm-primary",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 528.0 Td (  "keyLabel": "ocsp-signing-key-2",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 516.5 Td (  "activationState": "LOCKED",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 505.0 Td (  "signingCertDaysRemaining": 179,) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 493.5 Td (  "detail": "HSM device 'softhsm-primary' is LOCKED on node 'ocsp-node-3' - awaiting manual PIN unlock") Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 482.0 Td (}) Tj ET
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 456.5 Td (Readiness Gate Response When HSM Is Unlocked / ACTIVE \(HTTP 200 OK\)) Tj ET
-0.95 0.96 0.98 rg 48 273.5 499 175.0 re f
-0.80 0.84 0.90 RG 0.6 w 48 273.5 499 175.0 re S
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 434.5 Td (HTTP/1.1 200 OK) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 423.0 Td (X-OCSP-Node: ocsp-node-1) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 411.5 Td (X-OCSP-Ready: true) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 400.0 Td (Content-Type: application/json) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 388.5 Td ({) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 377.0 Td (  "ocspReady": true,) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 365.5 Td (  "status": "READY",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 354.0 Td (  "nodeId": "ocsp-node-1",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 342.5 Td (  "providerId": "softhsm-primary",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 331.0 Td (  "keyLabel": "ocsp-signing-key-2",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 319.5 Td (  "activationState": "ACTIVE",) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 308.0 Td (  "signingCertDaysRemaining": 179,) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 296.5 Td (  "detail": "Node 'ocsp-node-1' HSM signer is ACTIVE and ready to sign RFC 6960 OCSP responses") Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 285.0 Td (}) Tj ET
-BT /F2 12 Tf 0.14 0.20 0.46 rg 48 255.5 Td (4. Load Balancer Configuration Examples \(HAProxy & Nginx\)) Tj ET
-0.24 0.32 0.78 RG 1.0 w 48 250.5 m 547 250.5 l S
-BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 232.5 Td (HAProxy Configuration \(Recommended for Active Health Checks on /ocsp/health\)) Tj ET
-0.95 0.96 0.98 rg 48 118.5 499 106.0 re f
-0.80 0.84 0.90 RG 0.6 w 48 118.5 499 106.0 re S
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 210.5 Td (backend ocsp_protocol_pool) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 199.0 Td (    mode http) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 187.5 Td (    balance roundrobin) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 176.0 Td (    option httpchk GET /ocsp/health) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 164.5 Td (    http-check expect status 200) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 153.0 Td (    server ocsp-node-1 10.10.1.11:8080 check inter 3s fall 2 rise 1) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 141.5 Td (    server ocsp-node-2 10.10.1.12:8080 check inter 3s fall 2 rise 1) Tj ET
-BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 130.0 Td (    server ocsp-node-3 10.10.1.13:8080 check inter 3s fall 2 rise 1) Tj ET
-BT /F2 12 Tf 0.14 0.20 0.46 rg 48 100.5 Td (5. Operational Runbook: Unlocking & Verifying a 3-Node Cluster) Tj ET
-0.24 0.32 0.78 RG 1.0 w 48 95.5 m 547 95.5 l S
-0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
-BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 2) Tj ET
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.15 0.22 0.46 rg 42.0 760.5 511.3 15.5 re f
+BT /F2 7.8 Tf 1 1 1 rg 46.5 765.2 Td (Evaluation Dimension) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 160.5 765.2 Td (JDK SunPKCS11 \(JCA\)) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 286.5 765.2 Td (Custom C/CMake JNI) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 408.5 765.2 Td (org.xipki:ipkcs11wrapper:1.0.9) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 745.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 749.7 Td (Runtime Lock / Unlock) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 160.0 749.7 Td (Broken \(static JCA provider\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 286.0 749.7 Td (Supported) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 408.0 749.7 Td (Native C_Login & C_Logout per slot) Tj ET
+1.00 1.00 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 729.5 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 734.2 Td (Zero-PIN Slot Discovery) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 160.0 734.2 Td (Impossible via KeyStore API) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 286.0 734.2 Td (Supported) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 408.0 734.2 Td (Native C_GetSlotList & C_GetTokenInfo) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 714.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 718.7 Td (Cross-OS Build Chain) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 160.0 718.7 Td (Bundled in JDK) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 286.0 718.7 Td (Needs gcc/cmake per OS) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 408.0 718.7 Td (Prebuilt Maven Central binaries) Tj ET
+1.00 1.00 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 698.5 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 703.2 Td (Production Pedigree) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 160.0 703.2 Td (Generic JCA wrapper) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 286.0 703.2 Td (Bespoke C code to audit) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 408.0 703.2 Td (Proven in EJBCA & XiPKI PKI) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 683.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 687.7 Td (Concurrency & Pooling) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 160.0 687.7 Td (Coarse internal synchronized) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 286.0 687.7 Td (Custom pool) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 408.0 687.7 Td (Bounded Lock-Free ArrayBlockingQueue) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 675.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 675.0 Td (Explicit Allowlisted Paths \(Defense Against Arbitrary Native Code Execution\): Because an) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 663.4 Td (administrator can register a PKCS#11 provider via REST/UI, LibraryPathAllowlist resolves) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 651.8 Td (both libraryPath \(vendor driver\) and libraryWrapperPath \(/opt/pkcs11j/libpkcs11wrapper.so\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 640.2 Td (using Path.toRealPath\(\) \(defeating '../' traversal and rogue symlinks\) and verifies the) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 628.6 Td (canonical parent directory belongs to hsm.allowed-library-dirs before dlopen is ever) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 617.0 Td (invoked.) Tj ET
+0.15 0.23 0.55 rg 42.0 594.4 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 598.4 Td (03) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 598.4 Td (Pattern 2 Runtime Lock & Unlock Lifecycle \(Zero PIN in Database\)) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 591.4 m 553 591.4 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 579.4 Td (Persisting an HSM PIN in MariaDB or plaintext config files violates WebTrust CA, PCI-DSS, and) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 567.6 Td (eIDAS cryptographic custody rules. Flyway migration V14__crypto_providers_and_devices.sql stores) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 555.8 Td (only non-secret hardware metadata \(driver path, wrapper path, tokenLabel, slotId, poolSize\) with) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 544.0 Td (zero PIN columns. Every HSM device starts in LOCKED state upon JVM startup.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 413.2 511.3 116.0 re B
+0.15 0.22 0.45 rg 42.0 512.2 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 517.2 Td (DIAGRAM: Pattern 2 Runtime HSM Lock / Unlock State Machine & Heap PIN Zeroization) Tj ET
+1.00 0.96 0.92 rg 0.86 0.44 0.12 RG 1.0 w
+48.0 433.2 112.0 72.0 re B
+0.82 0.38 0.10 rg 48.0 488.2 112.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 493.2 Td (1. LOCKED \(Startup\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 479.2 Td (DB metadata registered) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 469.4 Td (0 open PKCS#11 sessions) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 459.6 Td (GET /ocsp/health -> 503) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 449.8 Td (GET /slots -> Zero-PIN OK) Tj ET
+0.94 0.96 1.00 rg 0.22 0.36 0.82 RG 1.0 w
+182.0 433.2 122.0 72.0 re B
+0.18 0.30 0.74 rg 182.0 488.2 122.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 187.0 493.2 Td (2. Transient Unlock) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 187.0 479.2 Td (POST /activate {pin}) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 187.0 469.4 Td (C_OpenSession x poolSize) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 187.0 459.6 Td (C_Login\(CKU_USER, pin\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 187.0 449.8 Td (Arrays.fill\(pin, '\\0'\)!) Tj ET
+0.92 0.99 0.95 rg 0.14 0.62 0.38 RG 1.0 w
+326.0 433.2 108.0 72.0 re B
+0.12 0.54 0.32 rg 326.0 488.2 108.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 331.0 493.2 Td (3. ACTIVE \(In-Memory\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 479.2 Td (SessionPool live in RAM) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 469.4 Td (No PIN in DB or JVM heap) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 459.6 Td (GET /ocsp/health -> 200) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 449.8 Td (C_Sign & CSR enabled) Tj ET
+0.99 0.93 0.94 rg 0.78 0.20 0.26 RG 1.0 w
+454.0 433.2 92.0 72.0 re B
+0.72 0.18 0.24 rg 454.0 488.2 92.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 459.0 493.2 Td (4. Lock / Reset) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 479.2 Td (POST /deactivate) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 469.4 Td (C_Logout on token) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 459.6 Td (C_CloseSession all) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 449.8 Td (Returns to LOCKED) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+160.0 469.2 m 182.0 469.2 l S
+Q
+0.20 0.32 0.72 rg 182.0 469.2 m 177.7 471.3 l 177.7 467.1 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 165.6 473.2 Td (PIN) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+304.0 469.2 m 326.0 469.2 l S
+Q
+0.20 0.32 0.72 rg 326.0 469.2 m 321.7 471.3 l 321.7 467.1 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 311.4 473.2 Td (OK) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+434.0 469.2 m 454.0 469.2 l S
+Q
+0.20 0.32 0.72 rg 454.0 469.2 m 449.7 471.3 l 449.7 467.1 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 436.8 473.2 Td (Lock) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 404.2 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 404.2 Td (Why PKCS#11 Sessions Stay Authenticated After Wiping the PIN: Per the OASIS PKCS#11) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 392.6 Td (specification, C_Login transitions the application's token login state to CKU_USER across) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 381.0 Td (all sessions opened by that process on that slot. Pkcs11SessionPool opens poolSize \(default) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 369.4 Td (4\) serial sessions, calls C_Login once \(tolerating CKR_USER_ALREADY_LOGGED_IN when two) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 357.8 Td (devices share a token\), and immediately overwrites the char[] PIN array with '\\0' inside a) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 346.2 Td (finally block so heap dumps cannot recover the PIN.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 332.6 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 332.6 Td (Automatic Fault Detection on Hardware Tamper or Session Drop: If an HSM resets or logs out) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 321.0 Td (externally \(returning CKR_USER_NOT_LOGGED_IN, CKR_SESSION_CLOSED, or CKR_TOKEN_NOT_PRESENT) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 309.4 Td (during C_Sign\), Pkcs11SessionPool triggers the onLoggedOut callback on) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 297.8 Td (Pkcs11jCryptoProviderAdapter, transitioning the device cleanly back to LOCKED so GET) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 286.2 Td (/ocsp/health immediately reports 503 to the Load Balancer.) Tj ET
+0.15 0.23 0.55 rg 42.0 263.6 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 267.6 Td (04) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 267.6 Td (Multi-Provider Architecture & Adding a New Provider Step-by-Step) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 260.6 m 553 260.6 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 248.6 Td (lu.incert.ocsp.signing is structured around Hexagonal Ports & Adapters: MultiProviderOcspSigner) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 236.8 Td (interacts exclusively with PkcsProviders and CryptoProviderPort. DatabaseProviderLoader discovers) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 225.0 Td (all @Component implementations of CryptoDeviceAdapterFactory via Spring dependency injection) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 213.2 Td (\(OCP\).) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 88.4 511.3 110.0 re B
+0.15 0.22 0.45 rg 42.0 181.4 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 186.4 Td (DIAGRAM: Hexagonal Multi-Provider Registry & Auto-Discovered Adapter Factories) Tj ET
+0.94 0.96 1.00 rg 0.20 0.32 0.76 RG 1.0 w
+48.0 108.4 116.0 68.0 re B
+0.16 0.26 0.66 rg 48.0 159.4 116.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 164.4 Td (MultiProviderOcspSigner) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 150.4 Td (Matches CA -> Device) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 140.6 Td (Calls CryptoProviderPort) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 130.8 Td (Zero vendor imports) Tj ET
+0.96 0.95 1.00 rg 0.42 0.26 0.78 RG 1.0 w
+184.0 108.4 120.0 68.0 re B
+0.36 0.22 0.68 rg 184.0 159.4 120.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 189.0 164.4 Td (PkcsProviders Registry) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 189.0 150.4 Td (Concurrent device map) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 189.0 140.6 Td (activate\(id, pin\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 189.0 130.8 Td (deactivate\(id\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 189.0 121.0 Td (replace / unregister) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+326.0 144.4 220.0 34.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 331.0 165.9 Td (Pkcs11jDeviceAdapterFactory \(wrapperType=PKCS11J\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 153.9 Td (SoftHSM2, Thales Luna, Utimaco, YubiHSM via ipkcs11wrapper) Tj ET
+0.99 0.96 0.92 rg 0.80 0.44 0.14 RG 1.0 w
+326.0 102.4 220.0 34.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 331.0 123.9 Td (AzureKeyVaultAdapterFactory \(wrapperType=AZURE_KV\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 331.0 111.9 Td (Custom Cloud KMS / REST HSM plugged in with 0 core edits) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+164.0 142.4 m 184.0 142.4 l S
+Q
+0.20 0.32 0.72 rg 184.0 142.4 m 179.7 144.5 l 179.7 140.3 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+304.0 160.4 m 326.0 160.4 l S
+Q
+0.20 0.32 0.72 rg 326.0 160.4 m 321.7 162.5 l 321.7 158.3 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+304.0 126.4 m 326.0 120.4 l S
+Q
+0.20 0.32 0.72 rg 326.0 120.4 m 322.4 123.6 l 321.3 119.5 l h f
+BT /F2 9.8 Tf 0.14 0.20 0.46 rg 42.0 77.4 Td (Case A: Adding a New PKCS#11 HSM Vendor \(Luna / Utimaco\) - Zero Code Changes) Tj ET
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 2) Tj ET
 endstream
 endobj
 9 0 obj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 8 0 R >>
 endobj
 10 0 obj
-<< /Length 2340 >>
+<< /Length 7419 >>
 stream
-0.12 0.16 0.28 rg 0 806 595.28 36 re f
-BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 776.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 776.0 Td (Step 1 - Deploy Unified Single-Artifact Container on Each Server: Each server runs the) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 763.0 Td (unified lu.incert:ocsp-responder image \(which embeds the OCSP Responder, OCSP Client) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 750.0 Td (Tester, React Admin Console, and Antora Docs on port 8080\) with a unique OCSP_NODE_ID) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 737.0 Td (\(ocsp-node-1, ocsp-node-2, ocsp-node-3\).) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 722.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 722.0 Td (Step 2 - Verify Locked Node Is Drained from Load Balancer: Before unlocking a freshly) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 709.0 Td (started node, call curl -i http://<node-ip>:8080/ocsp/health and confirm HTTP 503) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 696.0 Td (\(HSM_DEVICE_LOCKED\). The Load Balancer will not route /ocsp requests to this node.) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 681.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 681.0 Td (Step 3 - Per-Node Manual Unlock by Security Officer: Open the node's Admin Console) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 668.0 Td (\(http://<node-ip>:8080/hsm-devices\), verify the Pattern A Readiness Gate banner shows) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 655.0 Td (HTTP 503 HSM_DEVICE_LOCKED, and click Unlock on the HSM device with the operator PIN.) Tj ET
-BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 640.0 Td (*) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 640.0 Td (Step 4 - Confirm Readiness Gate Transitions to HTTP 200 READY: Immediately after) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 627.0 Td (unlock, the Pattern A Readiness Gate banner in the UI \(and GET /ocsp/health\)) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 614.0 Td (transitions to HTTP 200 READY, and the Load Balancer begins routing /ocsp traffic to) Tj ET
-BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 601.0 Td (the node.) Tj ET
-0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
-BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 3) Tj ET
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 776.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 776.0 Td (1. Mount Driver: Mount the vendor .so \(e.g. /opt/utimaco/lib/libcs_pkcs11_R3.so\) in) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 764.4 Td (HSM_ALLOWED_LIBRARY_DIRS.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 750.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 750.8 Td (2. Register Provider: In HSM Devices & Slots -> Add Provider: wrapperType=PKCS11J,) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 739.2 Td (libraryPath=/opt/utimaco/lib/libcs_pkcs11_R3.so,) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 727.6 Td (libraryWrapperPath=/opt/pkcs11j/libpkcs11wrapper.so.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 714.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 714.0 Td (3. Scan & Unlock: Click Slots \(zero-PIN scan\), select the initialized slot to create the) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 702.4 Td (HSM Device, then click Unlock with the operator PIN.) Tj ET
+BT /F2 9.8 Tf 0.14 0.20 0.46 rg 42.0 686.8 Td (Case B: Step-by-Step Code Example to Add a Non-PKCS#11 Wrapper \(e.g., AZURE_KV\)) Tj ET
+0.94 0.96 0.99 rg 0.76 0.81 0.90 RG 0.6 w 42.0 188.4 511.3 490.4 re B
+0.22 0.34 0.78 rg 42.0 188.4 3.2 490.4 re f
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 668.3 Td (// STEP 1: Create the Adapter implementing CryptoProviderPort & ActivatableCryptoProvider) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 658.1 Td (package lu.incert.ocsp.signing.provider;) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 647.9 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 637.7 Td (public class AzureKeyVaultProviderAdapter implements CryptoProviderPort, ActivatableCryptoProvider {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 627.5 Td (    private final CryptoProviderEntity provider;) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 617.3 Td (    private final CryptoDeviceEntity device;) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 607.1 Td (    private volatile CryptographyClient client;) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 596.9 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 586.7 Td (    public AzureKeyVaultProviderAdapter\(CryptoProviderEntity provider, CryptoDeviceEntity device\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 576.5 Td (        this.provider = provider; this.device = device;) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 566.3 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 556.1 Td (    @Override public String providerId\(\) { return device.getDeviceId\(\); }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 545.9 Td (    @Override public String providerType\(\) { return "AZURE_KV"; }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 535.7 Td (    @Override public boolean isUnlocked\(\) { return client != null; }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 525.5 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 515.3 Td (    @Override public synchronized void activate\(char[] secretPin\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 505.1 Td (        try {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 494.9 Td (            this.client = buildAzureClient\(provider.getLibraryPath\(\), new String\(secretPin\)\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 484.7 Td (        } finally {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 474.5 Td (            java.util.Arrays.fill\(secretPin, '\\0'\); // Always wipe secret from RAM) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 464.3 Td (        }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 454.1 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 443.9 Td (    @Override public synchronized void deactivate\(\) { this.client = null; }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 433.7 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 423.5 Td (    @Override public byte[] sign\(String keyLabel, String sigAlg, byte[] tbsBytes\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 413.3 Td (        if \(client == null\) throw new DeviceLockedException\(providerId\(\)\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 403.1 Td (        return client.signData\(mapAlgorithm\(sigAlg\), tbsBytes\).getSignature\(\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 392.9 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 382.7 Td (    @Override public ProviderDeviceInfo getDeviceInfo\(\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 372.5 Td (        return new ProviderDeviceInfo\(providerId\(\), providerType\(\), provider.getLibraryPath\(\),) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 362.3 Td (            device.getTokenLabel\(\), 0L, isUnlocked\(\), isUnlocked\(\) ? "ACTIVE" : "LOCKED",) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 352.1 Td (            isUnlocked\(\) ? listKeyLabels\(\) : java.util.List.of\(\), java.util.Map.of\(\)\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 341.9 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 331.7 Td (}) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 321.5 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 311.3 Td (// STEP 2: Register @Component CryptoDeviceAdapterFactory \(auto-wired into DatabaseProviderLoader\)) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 301.1 Td (@Component) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 290.9 Td (public class AzureKeyVaultAdapterFactory implements CryptoDeviceAdapterFactory {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 280.7 Td (    @Override public boolean supports\(String wrapperType\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 270.5 Td (        return "AZURE_KV".equalsIgnoreCase\(wrapperType\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 260.3 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 250.1 Td (    @Override public CryptoProviderPort createLockedAdapter\(CryptoProviderEntity p, CryptoDeviceEntity d\) {) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 239.9 Td (        return new AzureKeyVaultProviderAdapter\(p, d\);) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 229.7 Td (    }) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 219.5 Td (}) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 209.3 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 199.1 Td (// STEP 3: Register via POST /api/v1/admin/crypto-providers \(wrapperType='AZURE_KV'\) & Unlock in UI!) Tj ET
+0.15 0.23 0.55 rg 42.0 172.4 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 176.4 Td (05) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 176.4 Td (Multi-Signing Certificates, CaSignerMatcher & In-HSM C_Sign) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 169.4 m 553 169.4 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 157.4 Td (A single Incert OCSP Responder can simultaneously serve multiple Issuing CAs \(for instance, Root) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 145.6 Td (CA 1 on softhsm-primary and Citizen Sub-CA 2 on softhsm-secondary\). Multiple rows in) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 133.8 Td (ocsp_signing_certificates can have active = true at the same time-one active signer per Issuing) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 122.0 Td (CA.) Tj ET
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 3) Tj ET
 endstream
 endobj
 11 0 obj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 10 0 R >>
 endobj
+12 0 obj
+<< /Length 10395 >>
+stream
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 654.0 511.3 122.0 re B
+0.15 0.22 0.45 rg 42.0 759.0 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 764.0 Td (DIAGRAM: Multi-CA Signer Selection \(CaSignerMatcher\) & In-HSM PKCS#11 C_Sign Pipeline) Tj ET
+0.94 0.97 1.00 rg 0.20 0.36 0.80 RG 1.0 w
+48.0 674.0 112.0 76.0 re B
+0.16 0.28 0.70 rg 48.0 733.0 112.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 738.0 Td (1. OCSP Request) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 724.0 Td (CertID ASN.1:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 714.2 Td (- hashAlgorithm OID) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 704.4 Td (- issuerNameHash) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 694.6 Td (- issuerKeyHash) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 684.8 Td (- serialNumber) Tj ET
+0.96 0.94 1.00 rg 0.44 0.26 0.78 RG 1.0 w
+178.0 674.0 134.0 76.0 re B
+0.36 0.20 0.68 rg 178.0 733.0 134.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 183.0 738.0 Td (2. CaSignerMatcher) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 183.0 724.0 Td (Evaluates active non-expired) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 183.0 714.2 Td (signers in memory:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 183.0 704.4 Td (+1 Issuer DN digest match) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 183.0 694.6 Td (+2 AuthorityKeyId == KeyHash) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 183.0 684.8 Td (+1 Preferred flag -> Highest) Tj ET
+0.99 0.96 0.92 rg 0.82 0.44 0.14 RG 1.0 w
+330.0 674.0 106.0 76.0 re B
+0.76 0.38 0.10 rg 330.0 733.0 106.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 335.0 738.0 Td (3. Target Selection) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 335.0 724.0 Td (SigningSelection:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 335.0 714.2 Td (- X509CertHolder[]) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 335.0 704.4 Td (- providerId) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 335.0 694.6 Td (- keyLabel) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 335.0 684.8 Td (- sigAlgorithm) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+454.0 674.0 92.0 76.0 re B
+0.12 0.52 0.30 rg 454.0 733.0 92.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 459.0 738.0 Td (4. HSM C_Sign) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 724.0 Td (Pool.withSession\(\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 714.2 Td (Find CKO_PRIV_KEY) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 704.4 Td (C_SignInit + C_Sign) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 694.6 Td (EC R||S -> ASN.1 DER) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 459.0 684.8 Td (Key stays in HSM!) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+160.0 712.0 m 178.0 712.0 l S
+Q
+0.20 0.32 0.72 rg 178.0 712.0 m 173.7 714.1 l 173.7 709.9 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+312.0 712.0 m 330.0 712.0 l S
+Q
+0.20 0.32 0.72 rg 330.0 712.0 m 325.7 714.1 l 325.7 709.9 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+436.0 712.0 m 454.0 712.0 l S
+Q
+0.20 0.32 0.72 rg 454.0 712.0 m 449.7 714.1 l 449.7 709.9 l h f
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 645.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 645.0 Td (Exact CaSignerMatcher Scoring & Key-Rollover Disambiguation: CaSignerMatcher resolves the) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 633.4 Td (request's hash algorithm \(SHA-1, SHA-256, SHA-384, SHA-512\), hashes each candidate signer's) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 621.8 Td (encoded Issuer DN, and requires equality with CertID.issuerNameHash \(+1 pt\). If the signer) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 610.2 Td (certificate carries an AuthorityKeyIdentifier \(AKI\) extension, AKI.keyIdentifier must also) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 598.6 Td (match CertID.issuerKeyHash \(+2 pts, or the candidate is skipped\), ensuring accurate) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 587.0 Td (selection even when a CA re-keys under the same Subject DN.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 573.4 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 573.4 Td (Auto-Superseding on Renewal \(Preventing Stale Certificate Shadowing\): When) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 561.8 Td (SigningCertificateService.activate\(id\) activates a renewed certificate, any older active) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 550.2 Td (certificate with the same issuerDn or same \(providerId, keyLabel\) is automatically) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 538.6 Td (deactivated in the same transaction, while signers belonging to other CAs remain active.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 525.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 525.0 Td (Cryptographic Execution Inside the HSM: BouncyCastle's BasicOCSPRespBuilder streams) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 513.4 Td (TBSResponseData bytes into BufferedContentSigner, which calls Pkcs11Provider.sign\(\). For) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 501.8 Td (RSA \(SHA256/384/512withRSA\), RsaSignatureStrategy invokes CKM_SHA256_RSA_PKCS \(or) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 490.2 Td (DigestInfo + CKM_RSA_PKCS when prehashInJvm=true\). For ECDSA, EcdsaSignatureStrategy hashes) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 478.6 Td (in JVM, invokes CKM_ECDSA, and converts the PKCS#11 raw fixed-width R||S concatenation into) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 467.0 Td (RFC 3279 ASN.1 DER SEQUENCE { INTEGER r, INTEGER s }.) Tj ET
+0.15 0.23 0.55 rg 42.0 444.4 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 448.4 Td (06) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 448.4 Td (Strict RFC 6960 & RFC 8954 Compliance & 9-Step Client Verifier) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 441.4 m 553 441.4 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 429.4 Td (Every OCSP query is signed dynamically against live MariaDB status without a pre-signed response) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 417.6 Td (cache, eliminating stale-cache windows after emergency certificate revocations.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 296.8 511.3 106.0 re B
+0.15 0.22 0.45 rg 42.0 385.8 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 390.8 Td (DIAGRAM: RFC 6960 / RFC 8954 Direct Signing & 9-Point Client Verification) Tj ET
+0.94 0.96 1.00 rg 0.20 0.34 0.78 RG 1.0 w
+48.0 314.8 144.0 68.0 re B
+0.16 0.28 0.70 rg 48.0 365.8 144.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 370.8 Td (OCSP Client / Relying Party) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 356.8 Td (POST /ocsp \(DER binary\) or) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 347.0 Td (GET /ocsp/{base64url}) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 337.2 Td (Optional Nonce extension) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 327.4 Td (\(OID 1.3.6.1.5.5.7.48.1.2\)) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+218.0 314.8 150.0 68.0 re B
+0.12 0.52 0.30 rg 218.0 365.8 150.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 223.0 370.8 Td (OcspResponderService) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 356.8 Td (1. Enforce maxBytes & Nonce 1..32B) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 347.0 Td (2. CertID lookup in revocation_status) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 337.2 Td (3. Echo Nonce & set validity window) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 327.4 Td (4. HSM C_Sign + X-OCSP-Node hdr) Tj ET
+0.96 0.94 1.00 rg 0.44 0.26 0.78 RG 1.0 w
+394.0 314.8 152.0 68.0 re B
+0.36 0.20 0.68 rg 394.0 365.8 152.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 399.0 370.8 Td (OcspClientService \(9 Checks\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 399.0 356.8 Td (1. Issuer CA  2. HTTP 200  3. Status=0) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 399.0 347.0 Td (4. Cryptographic Signature \(RSA/EC\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 399.0 337.2 Td (5. RFC 6960 Sec.4.2.2.2 Delegation) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 399.0 327.4 Td (6. Nonce Echo 7. CertID 8. Freshness) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+192.0 348.8 m 218.0 348.8 l S
+Q
+0.20 0.32 0.72 rg 218.0 348.8 m 213.7 350.9 l 213.7 346.7 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 199.6 352.8 Td (DER) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+368.0 348.8 m 394.0 348.8 l S
+Q
+0.20 0.32 0.72 rg 394.0 348.8 m 389.7 350.9 l 389.7 346.7 l h f
+BT /F2 6.8 Tf 0.20 0.32 0.72 rg 370.2 352.8 Td (Signed) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 287.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 287.8 Td (RFC 6960 Sec. 4.2.2.2 Delegated Responder Validation: OcspClientService verifies that) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 276.2 Td (either the CA itself signed the response, or the embedded signer certificate was issued) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 264.6 Td (directly by the target's Issuing CA, carries ExtendedKeyUsage id-kp-OCSPSigning) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 253.0 Td (\(1.3.6.1.5.5.7.3.9\), and includes id-pkix-ocsp-nocheck \(1.3.6.1.5.5.7.48.1.5\).) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 239.4 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 239.4 Td (RFC 8954 Nonce Bounds & Graceful TRY_LATER: Nonces shorter than 1 byte or longer than 32) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 227.8 Td (bytes return MALFORMED_REQUEST \(1\). Requests arriving while the HSM is LOCKED return) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 216.2 Td (TRY_LATER \(3\).) Tj ET
+0.15 0.23 0.55 rg 42.0 193.6 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 197.6 Td (07) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 197.6 Td (3-Node Load-Balanced Architecture \(Pattern A Readiness Gate\)) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 190.6 m 553 190.6 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 178.6 Td (In a 3-server cluster behind HAProxy, Nginx, or F5, the HSM PIN is never broadcast over the) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 166.8 Td (network \(Pattern A\). Instead, each node exposes GET /ocsp/health as a Load-Balancer Readiness) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 155.0 Td (Gate while keeping GET /actuator/health at HTTP 200 UP for container liveness and Admin UI) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 143.2 Td (access.) Tj ET
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 4) Tj ET
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 12 0 R >>
+endobj
+14 0 obj
+<< /Length 5426 >>
+stream
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 648.0 511.3 128.0 re B
+0.15 0.22 0.45 rg 42.0 759.0 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 764.0 Td (DIAGRAM: 3-Server Load-Balanced Cluster with Automatic Lock Draining \(/ocsp/health\)) Tj ET
+0.94 0.96 1.00 rg 0.20 0.34 0.78 RG 1.0 w
+48.0 684.0 110.0 62.0 re B
+0.16 0.28 0.70 rg 48.0 729.0 110.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 734.0 Td (Load Balancer \(:8080\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 720.0 Td (HAProxy / Nginx) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 710.2 Td (Round-Robin /ocsp) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 700.4 Td (Active Health Check:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 690.6 Td (GET /ocsp/health) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+194.0 724.0 156.0 30.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 199.0 741.5 Td (Server 1: ocsp-node-1 \(:8080\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 199.0 729.5 Td (HSM: ACTIVE  |  /ocsp/health -> 200 READY) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+194.0 688.0 156.0 30.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 199.0 705.5 Td (Server 2: ocsp-node-2 \(:8080\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 199.0 693.5 Td (HSM: ACTIVE  |  /ocsp/health -> 200 READY) Tj ET
+1.00 0.94 0.92 rg 0.82 0.32 0.16 RG 1.0 w
+194.0 652.0 156.0 30.0 re B
+BT /F2 7.9 Tf 0.10 0.16 0.36 rg 199.0 669.5 Td (Server 3: ocsp-node-3 \(Rebooted\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 199.0 657.5 Td (HSM: LOCKED  |  /ocsp/health -> 503 DRAINED) Tj ET
+0.96 0.95 1.00 rg 0.38 0.30 0.74 RG 1.0 w
+384.0 670.0 162.0 76.0 re B
+0.30 0.22 0.64 rg 384.0 729.0 162.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 389.0 734.0 Td (Shared Cluster Infrastructure) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 389.0 720.0 Td (- MariaDB / Galera Cluster) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 389.0 710.2 Td (- RabbitMQ AMQPS \(:5671\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 389.0 700.4 Td (- Shared / Network HSM Slots) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 389.0 690.6 Td (- Shared APP_AUTH_JWT_SECRET) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 389.0 680.8 Td (- Admin unlocks Node 3 -> 200 OK!) Tj ET
+q
+0.12 0.55 0.32 RG 0.12 0.55 0.32 rg 1.1 w
+158.0 728.0 m 194.0 739.0 l S
+Q
+0.12 0.55 0.32 rg 194.0 739.0 m 189.3 739.7 l 190.5 735.7 l h f
+BT /F2 6.8 Tf 0.12 0.55 0.32 rg 165.2 737.5 Td (200 OK) Tj ET
+q
+0.12 0.55 0.32 RG 0.12 0.55 0.32 rg 1.1 w
+158.0 713.0 m 194.0 703.0 l S
+Q
+0.12 0.55 0.32 rg 194.0 703.0 m 190.4 706.2 l 189.3 702.1 l h f
+BT /F2 6.8 Tf 0.12 0.55 0.32 rg 165.2 712.0 Td (200 OK) Tj ET
+q
+[3 2] 0 d
+0.82 0.26 0.16 RG 0.82 0.26 0.16 rg 1.1 w
+158.0 696.0 m 194.0 667.0 l S
+Q
+0.82 0.26 0.16 rg 194.0 667.0 m 191.9 671.3 l 189.3 668.1 l h f
+BT /F2 6.8 Tf 0.82 0.26 0.16 rg 156.2 685.5 Td (503 Drained) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+350.0 736.0 m 384.0 718.0 l S
+Q
+0.20 0.32 0.72 rg 384.0 718.0 m 381.2 721.9 l 379.2 718.2 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+350.0 703.0 m 384.0 703.0 l S
+Q
+0.20 0.32 0.72 rg 384.0 703.0 m 379.7 705.1 l 379.7 700.9 l h f
+0.94 0.96 0.99 rg 0.76 0.81 0.90 RG 0.6 w 42.0 479.0 511.3 164.0 re B
+0.22 0.34 0.78 rg 42.0 479.0 3.2 164.0 re f
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 632.5 Td (# HAProxy Production Pool Configuration + 4-Step Verification Commands) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 622.3 Td (backend ocsp_responder_pool) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 612.1 Td (    mode http) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 601.9 Td (    balance roundrobin) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 591.7 Td (    option httpchk GET /ocsp/health) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 581.5 Td (    http-check expect status 200) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 571.3 Td (    server ocsp-node-1 10.10.1.11:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 561.1 Td (    server ocsp-node-2 10.10.1.12:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 550.9 Td (    server ocsp-node-3 10.10.1.13:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 540.7 Td () Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 530.5 Td (# Test 1 \(Round-Robin\):  for i in 1 2 3 4 5 6; do curl -sI http://lb:8080/ocsp/health | grep X-OCSP; done) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 520.3 Td (# Test 2 \(Lock Node 3\):  curl -X POST http://10.10.1.13:8080/api/v1/admin/crypto-devices/softhsm-primary/deactivate \\) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 510.1 Td (#                             -H "Authorization: Bearer $TOKEN"   # -> Node 3 returns 503 & drains cleanly!) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 499.9 Td (# Test 3 \(Zero Errors\):  POST /api/v1/client/check via http://lb:8080 -> 100% answered by Node 1 & Node 2) Tj ET
+BT /F3 7.5 Tf 0.10 0.14 0.24 rg 51.0 489.7 Td (# Test 4 \(Unlock Node 3\): Unlock in Node 3 UI \(/hsm-devices\) -> /ocsp/health returns 200 -> Rejoins pool!) Tj ET
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 5) Tj ET
+endstream
+endobj
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 14 0 R >>
+endobj
+16 0 obj
+<< /Length 11570 >>
+stream
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.15 0.23 0.55 rg 42.0 767.0 22 15 re f
+BT /F2 9.2 Tf 1 1 1 rg 46.8 771.0 Td (08) Tj ET
+BT /F2 11.6 Tf 0.10 0.16 0.38 rg 69.0 771.0 Td (Background Jobs, Transaction Hooks & KMS <-> OCSP Reconciliation) Tj ET
+0.20 0.32 0.80 RG 0.9 w 42.0 764.0 m 553 764.0 l S
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 752.0 Td (All background processing across KMS Simulator \(:8090\) and OCSP Responder \(:8080\) is driven by) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 740.2 Td (deterministic Spring @Scheduled loops, AMQPS mTLS listeners, and) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 728.4 Td (@TransactionalEventListener\(AFTER_COMMIT\) hooks-with zero REST calls between KMS and OCSP and) Tj ET
+BT /F1 8.8 Tf 0.16 0.19 0.25 rg 42.0 716.6 Td (zero legacy Keycloak user-sync jobs.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 513.8 511.3 188.0 re B
+0.15 0.22 0.45 rg 42.0 684.8 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 689.8 Td (DIAGRAM: 8A. KMS Outbox & Manifest Jobs <-> RabbitMQ AMQPS <-> OCSP Inbox & Self-Healing Replay) Tj ET
+0.94 0.96 1.00 rg 0.20 0.34 0.78 RG 1.0 w
+48.0 607.8 152.0 70.0 re B
+0.16 0.28 0.70 rg 48.0 660.8 152.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 665.8 Td (KMS Hooks H1/H2 & Job J1 \(500ms\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 651.8 Td (H1: @PostPersist/@PostUpdate cert) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 642.0 Td (H2: AFTER_COMMIT -> kms.outbox_event) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 632.2 Td (J1: OutboxRelayService \(500ms\):) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 622.4 Td (    SELECT sent=false ORDER BY created) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 612.6 Td (    Break batch on error \(strict order!\)) Tj ET
+0.94 0.96 1.00 rg 0.20 0.34 0.78 RG 1.0 w
+48.0 523.8 152.0 74.0 re B
+0.16 0.28 0.70 rg 48.0 580.8 152.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 585.8 Td (KMS Job J2 \(3s\) & Listener L3) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 571.8 Td (J2: broadcastManifest\(\) every 3000ms) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 562.0 Td (    Sends eventIds[] & cert\(seq,status\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 552.2 Td (L3: onReconciliationCommand\(\):) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 542.4 Td (    Re-publishes outbox_event OR) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 532.6 Td (    synthesizes missing OutboxEvent!) Tj ET
+0.99 0.96 0.92 rg 0.80 0.44 0.14 RG 1.0 w
+220.0 537.8 134.0 130.0 re B
+0.76 0.38 0.10 rg 220.0 650.8 134.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 225.0 655.8 Td (RabbitMQ AMQPS \(:5671 mTLS\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 641.8 Td (Exch: incert.certificate.status) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 632.0 Td () Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 622.2 Td (1. ocsp.certificate.status) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 612.4 Td (   \(hdr: MESSAGE_ID = event_id\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 602.6 Td (2. ocsp.certificate.status.dlq) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 592.8 Td (   \(Poison payload dead-letter\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 583.0 Td (3. ocsp.reconciliation.manifest) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 225.0 573.2 Td (4. kms.reconciliation.request) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+374.0 607.8 172.0 70.0 re B
+0.12 0.52 0.30 rg 374.0 660.8 172.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 379.0 665.8 Td (OCSP Listener L1 & FailureRecorder) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 651.8 Td (CertificateStatusConsumerService:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 642.0 Td (- Deduplicates by MESSAGE_ID \(DUPLICATE\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 632.2 Td (- CertID monotonic seq \(PROCESSED/SKIPPED\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 622.4 Td (- On error: InboxFailureRecorder saves) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 612.6 Td (  FAILED in REQUIRES_NEW + NACK -> DLQ) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+374.0 523.8 172.0 74.0 re B
+0.12 0.52 0.30 rg 374.0 580.8 172.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 379.0 585.8 Td (OCSP Listener L2 & UI Job J3 \(3s\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 571.8 Td (L2: Caches latest OutboxManifestEvent) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 562.0 Td (J3: InboxAuditPage polls /verify \(3s\):) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 552.2 Td (    Zero-REST local diff vs inbox_event) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 542.4 Td (    & revocation_status -> Replay button) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 379.0 532.6 Td (    sends REPLAY_EVENTS via AMQPS!) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+200.0 633.8 m 220.0 633.8 l S
+Q
+0.20 0.32 0.72 rg 220.0 633.8 m 215.7 635.9 l 215.7 631.7 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+354.0 633.8 m 374.0 633.8 l S
+Q
+0.20 0.32 0.72 rg 374.0 633.8 m 369.7 635.9 l 369.7 631.7 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+200.0 569.8 m 220.0 569.8 l S
+Q
+0.20 0.32 0.72 rg 220.0 569.8 m 215.7 571.9 l 215.7 567.7 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+354.0 569.8 m 374.0 569.8 l S
+Q
+0.20 0.32 0.72 rg 374.0 569.8 m 369.7 571.9 l 369.7 567.7 l h f
+q
+0.76 0.24 0.18 RG 0.76 0.24 0.18 rg 1.1 w
+374.0 539.8 m 354.0 539.8 l S
+Q
+0.76 0.24 0.18 rg 354.0 539.8 m 358.3 537.7 l 358.3 541.9 l h f
+q
+0.76 0.24 0.18 RG 0.76 0.24 0.18 rg 1.1 w
+220.0 539.8 m 200.0 539.8 l S
+Q
+0.76 0.24 0.18 rg 200.0 539.8 m 204.3 537.7 l 204.3 541.9 l h f
+BT /F2 9.8 Tf 0.14 0.20 0.46 rg 42.0 502.8 Td (Detailed Walkthrough of KMS & RabbitMQ Jobs \(H1, H2, J1, L1, J2, L2, J3, L3\)) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 490.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 490.8 Td (KMS Hooks H1 & H2 + 500ms Outbox Relay \(Job J1\): When a certificate is issued, revoked,) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 479.2 Td (held, or unrevoked in kms.certificate, JPA @PostPersist/@PostUpdate \(Hook H1\) emits a) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 467.6 Td (domain event. After DB commit, CertificateOutboxEventListener \(Hook H2, REQUIRES_NEW\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 456.0 Td (inserts an OutboxEvent \(sent=false\). OutboxRelayService.relay\(\) \(Job J1, every 500ms\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 444.4 Td (publishes unsent rows in created_at ASC order with AMQP header messageId=event_id. If) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 432.8 Td (RabbitMQ fails on event N, the loop executes break immediately so event N+1 can never) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 421.2 Td (overtake event N.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 407.6 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 407.6 Td (OCSP Transactional Inbox Consumer \(Listener L1\) & Independent Failure Recorder:) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 396.0 Td (CertificateStatusListener extracts MESSAGE_ID, DELIVERY_TAG, CONSUMER_QUEUE, and) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 384.4 Td (REDELIVERED. If a poison JSON payload arrives, InboxFailureRecorder.recordFailure\(\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 372.8 Td (persists processing_status='FAILED' in a separate REQUIRES_NEW transaction \(linked via) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 361.2 Td (MESSAGE_ID\) while the main TX rolls back to route the message to) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 349.6 Td (ocsp.certificate.status.dlq. Valid events update ocsp.revocation_status by the RFC 6960) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 338.0 Td (CertID triple \(issuer_name_hash, issuer_key_hash, serial_number\) only when) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 326.4 Td (incoming.sequence > stored.sequence.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 312.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 312.8 Td (3-Second Manifest Broadcast \(Job J2\), Zero-REST Diff \(L2 / J3\) & Self-Healing Synthesis) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 301.2 Td (\(Listener L3\): Every 3000ms, KmsReconciliationService.broadcastManifest\(\) publishes) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 289.6 Td (OutboxManifestEvent to ocsp.reconciliation.manifest. OutboxReconciliationService \(L2\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 278.0 Td (caches it in an AtomicReference so InboxAuditPage \(J3, 3000ms poll\) computes) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 266.4 Td (missingInInboxEventIds, failedInInboxEventIds, missingSerials, and statusMismatches locally) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 254.8 Td (with zero HTTP coupling to KMS. Clicking Replay publishes REPLAY_EVENTS to) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 243.2 Td (kms.reconciliation.request; KmsReconciliationService \(L3\) re-publishes existing) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 231.6 Td (OutboxEvents and-if a certificate has no row in kms.outbox_event-synthesizes a new) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 220.0 Td (OutboxEvent from kms.certificate on the fly.) Tj ET
+0.97 0.98 1.00 rg 0.78 0.83 0.92 RG 0.8 w 42.0 100.4 511.3 106.0 re B
+0.15 0.22 0.45 rg 42.0 189.4 511.3 17 re f
+BT /F2 8.1 Tf 1 1 1 rg 50.0 194.4 Td (DIAGRAM: 8B. OCSP Responder Daily Signing Certificate Validity Job \(J4\) & Post-Commit HSM Sync \(H3\)) Tj ET
+0.96 0.94 1.00 rg 0.44 0.26 0.78 RG 1.0 w
+48.0 118.4 148.0 68.0 re B
+0.36 0.20 0.68 rg 48.0 169.4 148.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 53.0 174.4 Td (Job J4: ScheduledJobsConfig) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 160.4 Td (Cron: 0 0 0 * * * \(00:00 UTC\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 150.6 Td (+ ApplicationReadyEvent at boot) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 140.8 Td (+ On-demand POST /validity/check) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 53.0 131.0 Td (Threshold: alert-threshold-days=3) Tj ET
+1.00 0.96 0.92 rg 0.84 0.42 0.12 RG 1.0 w
+218.0 118.4 152.0 68.0 re B
+0.78 0.36 0.10 rg 218.0 169.4 152.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 223.0 174.4 Td (Validity Report & Renewal CSR) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 160.4 Td (Classifies signing_certificates:) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 150.6 Td (- EXPIRED / EXPIRING_SOON \(<=72h\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 140.8 Td (- HEALTHY \(>3d\) -> Sidebar Badge) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 223.0 131.0 Td (POST /{id}/renew-request -> HSM CSR) Tj ET
+0.92 0.99 0.95 rg 0.14 0.60 0.36 RG 1.0 w
+392.0 118.4 154.0 68.0 re B
+0.12 0.52 0.30 rg 392.0 169.4 154.0 17 re f
+BT /F2 7.9 Tf 1.00 1.00 1.00 rg 397.0 174.4 Td (Hook H3: Post-Commit HSM Sync) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 397.0 160.4 Td (Import renewed CA-signed PEM) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 397.0 150.6 Td (@TransactionalEventListener) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 397.0 140.8 Td (  \(phase = AFTER_COMMIT\)) Tj ET
+BT /F1 7.1 Tf 0.18 0.22 0.30 rg 397.0 131.0 Td (Updates MultiProviderOcspSigner!) Tj ET
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+196.0 152.4 m 218.0 152.4 l S
+Q
+0.20 0.32 0.72 rg 218.0 152.4 m 213.7 154.5 l 213.7 150.3 l h f
+q
+0.20 0.32 0.72 RG 0.20 0.32 0.72 rg 1.1 w
+370.0 152.4 m 392.0 152.4 l S
+Q
+0.20 0.32 0.72 rg 392.0 152.4 m 387.7 154.5 l 387.7 150.3 l h f
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 6) Tj ET
+endstream
+endobj
+17 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 16 0 R >>
+endobj
+18 0 obj
+<< /Length 6089 >>
+stream
+0.08 0.11 0.22 rg 0 806 595.28 36 re f
+0.22 0.36 0.86 rg 0 803 595.28 3 re f
+BT /F2 8.3 Tf 0.88 0.92 1.00 rg 42.0 820 Td (INCERT OCSP SUBSYSTEM - COMPLETE TECHNICAL ARCHITECTURE & OPERATIONS GUIDE) Tj ET
+BT /F3 7.8 Tf 0.58 0.74 0.98 rg 446 820 Td (lu.incert.ocsp  |  v5.0) Tj ET
+0.15 0.22 0.46 rg 42.0 760.5 511.3 15.5 re f
+BT /F2 7.8 Tf 1 1 1 rg 46.5 765.2 Td (Component) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 140.5 765.2 Td (Side) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 174.5 765.2 Td (Trigger / Cadence) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 318.5 765.2 Td (Database / Queue) Tj ET
+BT /F2 7.8 Tf 1 1 1 rg 426.5 765.2 Td (Purpose) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 745.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 749.7 Td (Hooks H1 & H2) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 749.7 Td (KMS) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 749.7 Td (@PostPersist/Update + AFTER_COMMIT) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 749.7 Td (kms.outbox_event) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 749.7 Td (Atomic outbox capture on cert mutation) Tj ET
+1.00 1.00 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 729.5 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 734.2 Td (Job J1 \(OutboxRelay\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 734.2 Td (KMS) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 734.2 Td (@Scheduled\(fixedDelay = 500ms\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 734.2 Td (ocsp.certificate.status) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 734.2 Td (Ordered AMQPS relay \(breaks on error\)) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 714.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 718.7 Td (Job J2 \(Manifest\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 718.7 Td (KMS) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 718.7 Td (@Scheduled\(fixedDelay = 3000ms\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 718.7 Td (ocsp.reconciliation.manifest) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 718.7 Td (Broadcasts CA & outbox manifest) Tj ET
+1.00 1.00 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 698.5 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 703.2 Td (Listener L3 \(Replay\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 703.2 Td (KMS) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 703.2 Td (@RabbitListener \(kms.recon.request\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 703.2 Td (kms.certificate / outbox) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 703.2 Td (Replays or synthesizes missing events) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 683.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 687.7 Td (Listener L1 \(Inbox\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 687.7 Td (OCSP) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 687.7 Td (@RabbitListener \(ocsp.cert.status\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 687.7 Td (inbox_event + revocation) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 687.7 Td (Idempotent CertID seq + DLQ recorder) Tj ET
+1.00 1.00 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 667.5 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 672.2 Td (Listener L2 & Job J3) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 672.2 Td (OCSP) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 672.2 Td (AMQPS + UI setInterval\(3000ms\)) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 672.2 Td (AtomicReference + DB) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 672.2 Td (Zero-REST reconciliation diff & replay) Tj ET
+0.95 0.97 1.00 rg 0.80 0.84 0.90 RG 0.5 w
+42.0 652.0 511.3 15.5 re B
+BT /F2 7.1 Tf 0.15 0.18 0.25 rg 46.0 656.7 Td (Job J4 & Hook H3) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 140.0 656.7 Td (OCSP) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 174.0 656.7 Td (Cron 0 0 0 * * * + AFTER_COMMIT) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 318.0 656.7 Td (signing_certificates + HSM) Tj ET
+BT /F1 7.1 Tf 0.15 0.18 0.25 rg 426.0 656.7 Td (3-day expiry alert, CSR & signer sync) Tj ET
+BT /F2 9.8 Tf 0.14 0.20 0.46 rg 42.0 642.0 Td (Detailed Walkthrough of OCSP Responder Job J4 & Post-Commit Hook H3) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 630.0 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 630.0 Td (Daily Signing Certificate Validity Check \(Job J4 - ScheduledJobsConfig\):) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 618.4 Td (ScheduledJobsConfig triggers SigningCertificateValidityService.runDailyValidityCheck\(\) at) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 606.8 Td (00:00 UTC \(ocsp.jobs.signing-cert-validity.cron = '0 0 0 * * *'\), once at startup) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 595.2 Td (\(ApplicationReadyEvent\), and on demand via POST /api/v1/admin/signing-) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 583.6 Td (certificates/validity/check. Each signing certificate is classified as EXPIRED \(now >) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 572.0 Td (notAfter\), EXPIRING_SOON \(<= 3 days / 72h remaining\), or HEALTHY \(> 3d\), emitting) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 560.4 Td (structured [SIGNING-CERT-ALERT] logs and a red badge in the Console sidebar.) Tj ET
+BT /F2 8.8 Tf 0.20 0.34 0.82 rg 47.0 546.8 Td (*) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 546.8 Td (One-Click HSM Renewal CSR & Post-Commit Signer Sync \(Hook H3\): Clicking Request to Renew) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 535.2 Td (calls POST /api/v1/admin/signing-certificates/{id}/renew-request, which generates a PKCS#10) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 523.6 Td (CSR directly inside the HSM token \(reusing the existing keypair or creating a new keypair\).) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 512.0 Td (When the CA-signed certificate is imported, @TransactionalEventListener\(AFTER_COMMIT\)) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 500.4 Td (updates MultiProviderOcspSigner only after the MariaDB commit succeeds, preventing DB/RAM) Tj ET
+BT /F1 8.7 Tf 0.16 0.19 0.25 rg 58.0 488.8 Td (drift on rollback.) Tj ET
+0.80 0.84 0.90 RG 0.6 w 42 38 m 553 38 l S
+BT /F1 7.8 Tf 0.42 0.46 0.54 rg 42 25 Td (Incert PKI & OCSP Responder - Technical Architecture, HSM Security, Load Balancing & Jobs Reference) Tj ET
+BT /F2 8.0 Tf 0.20 0.32 0.74 rg 512 25 Td (Page 7) Tj ET
+endstream
+endobj
+19 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 18 0 R >>
+endobj
 xref
-0 12
+0 20
 0000000000 65535 f 
 0000000015 00000 n 
 0000000064 00000 n 
-0000000134 00000 n 
-0000000231 00000 n 
-0000000333 00000 n 
-0000000428 00000 n 
-0000007035 00000 n 
-0000007187 00000 n 
-0000012759 00000 n 
-0000012911 00000 n 
-0000015304 00000 n 
+0000000162 00000 n 
+0000000259 00000 n 
+0000000361 00000 n 
+0000000456 00000 n 
+0000011287 00000 n 
+0000011439 00000 n 
+0000023428 00000 n 
+0000023580 00000 n 
+0000031052 00000 n 
+0000031206 00000 n 
+0000041655 00000 n 
+0000041809 00000 n 
+0000047288 00000 n 
+0000047442 00000 n 
+0000059066 00000 n 
+0000059220 00000 n 
+0000065362 00000 n 
 trailer
-<< /Size 12 /Root 1 0 R >>
+<< /Size 20 /Root 1 0 R >>
 startxref
-15458
+65516
 %%EOF
