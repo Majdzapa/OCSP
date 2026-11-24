@@ -278,7 +278,7 @@ public class OcspClientService {
                     thisUp != null ? thisUp.toInstant().toString() : null,
                     nextUp != null ? nextUp.toInstant().toString() : null,
                     basicResp.getProducedAt() != null ? basicResp.getProducedAt().toInstant().toString() : null,
-                    basicResp.getResponderId().toASN1Primitive().toString(),
+                    formatResponderId(basicResp.getResponderId()),
                     signerCert.getSubjectX500Principal().getName(),
                     request.includeNonce(),
                     nonceSentHex,
@@ -297,6 +297,20 @@ public class OcspClientService {
             checks.add(Check.fail("Client Execution", e.getClass().getSimpleName() + ": " + e.getMessage()));
             return errorResult(displayUrl, method, 0, 0, 0, 0, null, checks, e.getMessage());
         }
+    }
+
+    private static String formatResponderId(org.bouncycastle.cert.ocsp.RespID respId) {
+        if (respId == null || respId.toASN1Primitive() == null) {
+            return null;
+        }
+        org.bouncycastle.asn1.ocsp.ResponderID asn1 = respId.toASN1Primitive();
+        if (asn1.getName() != null) {
+            return asn1.getName().toString();
+        }
+        if (asn1.getKeyHash() != null) {
+            return "KeyHash:" + HexFormat.of().formatHex(asn1.getKeyHash());
+        }
+        return asn1.toString();
     }
 
     private ResponseEntity<byte[]> sendRequest(String responderUrl, String method, byte[] derRequest, String getPath) {

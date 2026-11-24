@@ -150,7 +150,22 @@ public class SigningCertificateService {
                     + "': HSM key '" + target.getKeyLabel() + "' not found on provider '" + target.getProviderId() + "'");
         }
 
-        // Mark target active (multiple signing certificates can be active simultaneously, e.g. one per CA/device)
+        // Deactivate any previously active signing certificate for the same Issuer CA or same HSM key
+        for (SigningCertificate existing : repository.findAllByActiveTrueOrderByActivatedAtDesc()) {
+            if (!existing.getId().equals(target.getId())) {
+                boolean sameIssuer = existing.getIssuerDn() != null && existing.getIssuerDn().equals(target.getIssuerDn());
+                boolean sameKey = existing.getKeyLabel() != null && existing.getKeyLabel().equals(target.getKeyLabel())
+                        && java.util.Objects.equals(resolveProviderId(existing.getProviderId()), resolveProviderId(target.getProviderId()));
+                if (sameIssuer || sameKey) {
+                    existing.setActive(false);
+                    repository.save(existing);
+                    log.info("Auto-deactivated superseded signing certificate id={}, alias='{}' (issuerDn='{}', keyLabel='{}')",
+                            existing.getId(), existing.getAlias(), existing.getIssuerDn(), existing.getKeyLabel());
+                }
+            }
+        }
+
+        // Mark target active (multiple signing certificates can be active simultaneously across different CAs/devices)
         target.setActive(true);
         target.setActivatedAt(Instant.now());
         SigningCertificate updated = repository.save(target);
@@ -243,8 +258,7 @@ public class SigningCertificateService {
 
     private List<OcspSigner.RegisteredSigner> buildRegisteredSignerSnapshot() {
         Instant now = Instant.now();
-        return repository.findAll().stream()
-                .filter(SigningCertificate::isActive)
+        return repository.findAllByActiveTrueOrderByActivatedAtDesc().stream()
                 .filter(c -> c.getNotAfter() == null || !now.isAfter(c.getNotAfter()))
                 .map(c -> {
                     try {

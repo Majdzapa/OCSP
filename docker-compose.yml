@@ -10,8 +10,7 @@
 #   mariadb          MariaDB 10.11 (schema: ocsp)       (host 3307, internal 3306)
 #   rabbitmq         RabbitMQ 3.13 + Management UI      (host 5672, 15672)
 #   hsm              SoftHSM2 Dedicated HSM Container   (PKCS#11 Tokens: ocsp-signing, ocsp-signing-2)
-#   ocsp-responder   RFC 6960 OCSP Responder & Client   (host 8080, internal 8080)
-#   ocsp-console     React 18 Admin Dashboard + Nginx   (host 3002)
+#   ocsp-responder   Unified OCSP Responder, Client & Admin Console UI (host 8080 & 3002 -> internal 8080)
 # =============================================================================
 
 networks:
@@ -130,6 +129,7 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+      - "3002:8080"
     environment:
       <<: *spring-opts
       MARIADB_HOST: mariadb
@@ -174,34 +174,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-
-  # ============================================================
-  # OCSP Admin Console (React 18 SPA via Nginx)
-  # ============================================================
-  ocsp-console:
-    build:
-      context: ./ocsp-console
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: ""
-        VITE_AUTH_BASE_URL: ""
-    image: ocsp/console:local
-    container_name: ocsp-console
-    restart: unless-stopped
-    networks: [ocsp-net]
-    depends_on:
-      ocsp-responder:
-        condition: service_healthy
-    ports:
-      - "3002:80"
-    volumes:
-      - ./build/site:/usr/share/nginx/html/docs:ro
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost/ || exit 1"]
-      start_period: 15s
-      interval: 10s
-      timeout: 5s
-      retries: 4
 
   # ============================================================
   # Keycloak IAM Service (OAuth2 / OIDC Provider for KEYCLOAK mode)

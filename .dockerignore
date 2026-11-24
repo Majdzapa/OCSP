@@ -1,0 +1,7 @@
+.git
+**/node_modules
+**/target
+ocsp-console/dist
+ocsp-responder/src/main/resources/static/docs
+*.log
+

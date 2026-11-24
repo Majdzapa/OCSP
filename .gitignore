@@ -38,6 +38,7 @@ spring-boot-devtools.properties
 ocsp-console/node_modules/
 ocsp-console/dist/
 ocsp-console/.oxlintrc.json
+ocsp-responder/src/main/resources/static/docs/
 *.tsbuildinfo
 build/
 .cache/
