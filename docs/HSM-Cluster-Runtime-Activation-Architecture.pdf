@@ -1,0 +1,202 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [7 0 R 9 0 R 11 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 6555 >>
+stream
+0.12 0.16 0.28 rg 0 806 595.28 36 re f
+BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
+0.94 0.96 0.99 rg 48 714.0 499 66 re f
+0.24 0.32 0.78 rg 48 714.0 4 66 re f
+BT /F2 15 Tf 0.10 0.14 0.26 rg 62 754.0 Td (HSM Runtime Activation in a 3-Node Load-Balanced Cluster) Tj ET
+BT /F1 9.5 Tf 0.30 0.35 0.45 rg 62 736.0 Td (Technical Architecture & DevOps Blueprint for Incert OCSP Responder \(lu.incert.ocsp\)) Tj ET
+BT /F3 8.5 Tf 0.24 0.32 0.78 rg 62 722.0 Td (Package: lu.incert.ocsp   |   Pattern A Readiness Gate: GET /ocsp/health   |   RFC 6960 / PKCS#11) Tj ET
+BT /F2 12 Tf 0.14 0.20 0.46 rg 48 690.0 Td (1. Architectural Problem Statement) Tj ET
+0.24 0.32 0.78 RG 1.0 w 48 685.0 m 547 685.0 l S
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 671.0 Td (When deploying 3 stateless OCSP Responder instances \(ocsp-node-1, ocsp-node-2, ocsp-node-3\)) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 658.0 Td (behind a Load Balancer, each JVM opens its own in-process PKCS#11 sessions \(C_OpenSession +) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 645.0 Td (C_Login\) to the Hardware Security Module via org.xipki:ipkcs11wrapper. Under Pattern 2 \(Zero) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 632.0 Td (PIN in Database\), the HSM PIN is never stored in MariaDB or configuration files; it is) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 619.0 Td (supplied at runtime by an administrator and wiped from heap RAM immediately after opening) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 606.0 Td (the authenticated PKCS#11 session pool.) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 589.0 Td (This creates a key cluster design question: if one of the 3 servers reboots \(or starts up) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 576.0 Td (fresh\), its local PKCS#11 session pool starts in the LOCKED state until unlocked. How should) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 563.0 Td (the Load Balancer and the 3 OCSP Responder nodes coordinate HSM activation so that OCSP) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 550.0 Td (clients never experience errors?) Tj ET
+BT /F2 12 Tf 0.14 0.20 0.46 rg 48 525.0 Td (2. Comparison of the 3 Industry-Standard Patterns) Tj ET
+0.24 0.32 0.78 RG 1.0 w 48 520.0 m 547 520.0 l S
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 502.0 Td (Pattern A \(Recommended - Industry Gold Standard\): Per-Node Manual Unlock + LB Readiness Gate) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 488.0 Td (Used by HashiCorp Vault \(Unseal\) and EJBCA Enterprise CryptoTokens in WebTrust / eIDAS) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 475.0 Td (compliant PKI deployments. The HSM PIN is never transmitted between cluster nodes. Instead,) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 462.0 Td (each node exposes a dedicated Load-Balancer Readiness Gate \(GET /ocsp/health\) that reports) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 449.0 Td (HTTP 200 READY only when the node has an active signing certificate and its backing HSM slot) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 436.0 Td (is ACTIVE in memory.) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 419.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 419.0 Td (Zero Inter-Node PIN Transmission: Each JVM receives the HSM PIN directly from the) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 406.0 Td (Security Officer over HTTPS. No PIN ever crosses the network between servers.) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 391.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 391.0 Td (Split Liveness vs. OCSP Readiness Probes: GET /actuator/health remains HTTP 200 UP) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 378.0 Td (when the JVM, MariaDB, and RabbitMQ are healthy \(so Docker/Kubernetes does not restart) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 365.0 Td (the container while it waits for PIN entry\). Meanwhile, GET /ocsp/health returns HTTP) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 352.0 Td (503 SERVICE_UNAVAILABLE while the HSM device is LOCKED, and HTTP 200 OK once unlocked) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 339.0 Td (\(ACTIVE\).) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 324.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 324.0 Td (Automatic Load-Balancer Traffic Draining: When Server 3 reboots at 03:00 AM, its HSM) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 311.0 Td (starts LOCKED and GET /ocsp/health returns 503. The Load Balancer automatically) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 298.0 Td (excludes Server 3 from the /ocsp pool and routes 100% of RFC 6960 OCSP queries to) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 285.0 Td (Server 1 and Server 2 with zero failed OCSP responses. Once the Security Officer) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 272.0 Td (unlocks Server 3, GET /ocsp/health returns 200 READY and the Load Balancer puts Server) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 259.0 Td (3 back into rotation.) Tj ET
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 240.0 Td (Pattern B: UI-Driven Peer Fanout / Cluster Proxy \(One-Click Unlock\)) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 226.0 Td (All 3 nodes are configured with OCSP_CLUSTER_PEERS. When an administrator logs in through) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 213.0 Td (the Load Balancer and unlocks a device on one node, that node forwards the authenticated) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 200.0 Td (activation request to its peer nodes over internal mTLS. While convenient, a node that) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 187.0 Td (reboots later by itself still starts LOCKED, so Pattern B still requires Pattern A's Load-) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 174.0 Td (Balancer Readiness Gate.) Tj ET
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 153.0 Td (Pattern C: Secret-Manager Auto-Activation at Boot \(Vault / Encrypted Systemd Credential\)) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 139.0 Td (An init hook fetches the HSM PIN in-memory from an external unsealed HashiCorp Vault cluster) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 126.0 Td (at startup and calls POST /api/v1/admin/crypto-devices/{id}/activate on localhost. Useful) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 113.0 Td (for unattended 24/7 reboot recovery, but shifts the unseal requirement to the Vault cluster.) Tj ET
+BT /F2 12 Tf 0.14 0.20 0.46 rg 48 88.0 Td (3. Pattern A Implementation in Incert OCSP Responder \(lu.incert.ocsp\)) Tj ET
+0.24 0.32 0.78 RG 1.0 w 48 83.0 m 547 83.0 l S
+0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
+BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 1) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 5520 >>
+stream
+0.12 0.16 0.28 rg 0 806 595.28 36 re f
+BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 776.0 Td (Pattern A is implemented directly in lu.incert.ocsp.responder.service.OcspResponderService) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 763.0 Td (and lu.incert.ocsp.responder.controller.OcspResponderController, alongside the embedded) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 48.0 750.0 Td (React Admin Console \(CryptoDevicesPage.js\).) Tj ET
+0.95 0.96 0.98 rg 48 667.5 499 71.5 re f
+0.80 0.84 0.90 RG 0.6 w 48 667.5 499 71.5 re S
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 725.0 Td (Client \(/ocsp\) ---> [ Load Balancer \(Nginx / HAProxy / F5\) ]) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 713.5 Td (                       Health Check: GET /ocsp/health) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 702.0 Td (                       +-- Node 1 \(ocsp-node-1:8080\) -> HSM ACTIVE -> HTTP 200 READY  \(Receives /ocsp\)) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 690.5 Td (                       +-- Node 2 \(ocsp-node-2:8080\) -> HSM ACTIVE -> HTTP 200 READY  \(Receives /ocsp\)) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 679.0 Td (                       +-- Node 3 \(ocsp-node-3:8080\) -> HSM LOCKED -> HTTP 503 LOCKED \(Drained by LB!\)) Tj ET
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 653.5 Td (Readiness Gate Response When HSM Is LOCKED \(HTTP 503 Service Unavailable\)) Tj ET
+0.95 0.96 0.98 rg 48 470.5 499 175.0 re f
+0.80 0.84 0.90 RG 0.6 w 48 470.5 499 175.0 re S
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 631.5 Td (HTTP/1.1 503 Service Unavailable) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 620.0 Td (X-OCSP-Node: ocsp-node-3) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 608.5 Td (X-OCSP-Ready: false) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 597.0 Td (Content-Type: application/json) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 585.5 Td ({) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 574.0 Td (  "ocspReady": false,) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 562.5 Td (  "status": "HSM_DEVICE_LOCKED",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 551.0 Td (  "nodeId": "ocsp-node-3",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 539.5 Td (  "providerId": "softhsm-primary",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 528.0 Td (  "keyLabel": "ocsp-signing-key-2",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 516.5 Td (  "activationState": "LOCKED",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 505.0 Td (  "signingCertDaysRemaining": 179,) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 493.5 Td (  "detail": "HSM device 'softhsm-primary' is LOCKED on node 'ocsp-node-3' - awaiting manual PIN unlock") Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 482.0 Td (}) Tj ET
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 456.5 Td (Readiness Gate Response When HSM Is Unlocked / ACTIVE \(HTTP 200 OK\)) Tj ET
+0.95 0.96 0.98 rg 48 273.5 499 175.0 re f
+0.80 0.84 0.90 RG 0.6 w 48 273.5 499 175.0 re S
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 434.5 Td (HTTP/1.1 200 OK) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 423.0 Td (X-OCSP-Node: ocsp-node-1) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 411.5 Td (X-OCSP-Ready: true) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 400.0 Td (Content-Type: application/json) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 388.5 Td ({) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 377.0 Td (  "ocspReady": true,) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 365.5 Td (  "status": "READY",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 354.0 Td (  "nodeId": "ocsp-node-1",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 342.5 Td (  "providerId": "softhsm-primary",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 331.0 Td (  "keyLabel": "ocsp-signing-key-2",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 319.5 Td (  "activationState": "ACTIVE",) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 308.0 Td (  "signingCertDaysRemaining": 179,) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 296.5 Td (  "detail": "Node 'ocsp-node-1' HSM signer is ACTIVE and ready to sign RFC 6960 OCSP responses") Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 285.0 Td (}) Tj ET
+BT /F2 12 Tf 0.14 0.20 0.46 rg 48 255.5 Td (4. Load Balancer Configuration Examples \(HAProxy & Nginx\)) Tj ET
+0.24 0.32 0.78 RG 1.0 w 48 250.5 m 547 250.5 l S
+BT /F2 10.5 Tf 0.12 0.16 0.28 rg 48 232.5 Td (HAProxy Configuration \(Recommended for Active Health Checks on /ocsp/health\)) Tj ET
+0.95 0.96 0.98 rg 48 118.5 499 106.0 re f
+0.80 0.84 0.90 RG 0.6 w 48 118.5 499 106.0 re S
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 210.5 Td (backend ocsp_protocol_pool) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 199.0 Td (    mode http) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 187.5 Td (    balance roundrobin) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 176.0 Td (    option httpchk GET /ocsp/health) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 164.5 Td (    http-check expect status 200) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 153.0 Td (    server ocsp-node-1 10.10.1.11:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 141.5 Td (    server ocsp-node-2 10.10.1.12:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F3 8.2 Tf 0.12 0.16 0.24 rg 56 130.0 Td (    server ocsp-node-3 10.10.1.13:8080 check inter 3s fall 2 rise 1) Tj ET
+BT /F2 12 Tf 0.14 0.20 0.46 rg 48 100.5 Td (5. Operational Runbook: Unlocking & Verifying a 3-Node Cluster) Tj ET
+0.24 0.32 0.78 RG 1.0 w 48 95.5 m 547 95.5 l S
+0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
+BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 2) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 2340 >>
+stream
+0.12 0.16 0.28 rg 0 806 595.28 36 re f
+BT /F2 9 Tf 0.85 0.89 0.98 rg 48 820 Td (INCERT PKI & OCSP SUBSYSTEM  |  TECHNICAL ARCHITECTURE BLUEPRINT) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 776.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 776.0 Td (Step 1 - Deploy Unified Single-Artifact Container on Each Server: Each server runs the) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 763.0 Td (unified lu.incert:ocsp-responder image \(which embeds the OCSP Responder, OCSP Client) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 750.0 Td (Tester, React Admin Console, and Antora Docs on port 8080\) with a unique OCSP_NODE_ID) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 737.0 Td (\(ocsp-node-1, ocsp-node-2, ocsp-node-3\).) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 722.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 722.0 Td (Step 2 - Verify Locked Node Is Drained from Load Balancer: Before unlocking a freshly) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 709.0 Td (started node, call curl -i http://<node-ip>:8080/ocsp/health and confirm HTTP 503) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 696.0 Td (\(HSM_DEVICE_LOCKED\). The Load Balancer will not route /ocsp requests to this node.) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 681.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 681.0 Td (Step 3 - Per-Node Manual Unlock by Security Officer: Open the node's Admin Console) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 668.0 Td (\(http://<node-ip>:8080/hsm-devices\), verify the Pattern A Readiness Gate banner shows) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 655.0 Td (HTTP 503 HSM_DEVICE_LOCKED, and click Unlock on the HSM device with the operator PIN.) Tj ET
+BT /F2 9.5 Tf 0.24 0.32 0.78 rg 54 640.0 Td (*) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 640.0 Td (Step 4 - Confirm Readiness Gate Transitions to HTTP 200 READY: Immediately after) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 627.0 Td (unlock, the Pattern A Readiness Gate banner in the UI \(and GET /ocsp/health\)) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 614.0 Td (transitions to HTTP 200 READY, and the Load Balancer begins routing /ocsp traffic to) Tj ET
+BT /F1 9.5 Tf 0.18 0.20 0.25 rg 66 601.0 Td (the node.) Tj ET
+0.82 0.85 0.90 RG 0.5 w 48 42 m 547 42 l S
+BT /F1 8 Tf 0.45 0.48 0.55 rg 48 28 Td (Incert OCSP Responder - 3-Node Load-Balanced HSM Runtime Activation Guide   |   Page 3) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 10 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000231 00000 n 
+0000000333 00000 n 
+0000000428 00000 n 
+0000007035 00000 n 
+0000007187 00000 n 
+0000012759 00000 n 
+0000012911 00000 n 
+0000015304 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+15458
+%%EOF

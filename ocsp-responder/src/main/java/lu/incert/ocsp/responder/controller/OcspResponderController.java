@@ -51,6 +51,24 @@ public class OcspResponderController {
     }
 
     @Operation(
+        summary = "OCSP Signer Readiness Gate (Pattern A Load-Balancer Health Check)",
+        description = "Returns HTTP 200 READY only when this node has an active signing certificate and its HSM slot is unlocked (ACTIVE) in memory. Returns HTTP 503 SERVICE_UNAVAILABLE when the HSM slot is LOCKED so the Load Balancer automatically drains /ocsp traffic away from locked nodes."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Node HSM is ACTIVE and ready to sign OCSP responses"),
+        @ApiResponse(responseCode = "503", description = "Node HSM is LOCKED or no active signing certificate is configured")
+    })
+    @GetMapping(value = "/health", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<OcspResponderService.OcspReadinessStatus> checkOcspReadiness() {
+        OcspResponderService.OcspReadinessStatus status = responderService.checkReadiness();
+        HttpStatus httpStatus = status.ocspReady() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
+        return ResponseEntity.status(httpStatus)
+                .header("X-OCSP-Node", status.nodeId())
+                .header("X-OCSP-Ready", String.valueOf(status.ocspReady()))
+                .body(status);
+    }
+
+    @Operation(
         summary = "Submit OCSP Request (GET)",
         description = "RFC 6960 GET method. Takes base64url-encoded ASN.1 DER OCSPRequest in the URL path and returns DER OCSPResponse."
     )
@@ -79,6 +97,7 @@ public class OcspResponderController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
         return ResponseEntity.ok()
+                .header("X-OCSP-Node", responderService.getNodeId())
                 .contentType(MediaType.parseMediaType(OCSP_RESPONSE_CONTENT_TYPE))
                 .body(der);
     }

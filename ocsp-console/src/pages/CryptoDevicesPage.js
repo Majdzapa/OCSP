@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, PasswordInput, NumberInput, Select, Switch, Alert, Loader, Tooltip, Code, Box, SimpleGrid, } from '@mantine/core';
 import { IconCpu, IconLock, IconLockOpen, IconPlus, IconRefresh, IconTrash, IconEdit, IconAlertCircle, IconCheck, IconServer, IconListSearch, } from '@tabler/icons-react';
-import { getCryptoProviders, getAllowedLibraryDirs, createCryptoProvider, updateCryptoProvider, deleteCryptoProvider, discoverCryptoProviderSlots, getCryptoDevices, createCryptoDevice, updateCryptoDevice, deleteCryptoDevice, activateCryptoDevice, deactivateCryptoDevice, } from '../api/client';
+import { getCryptoProviders, getAllowedLibraryDirs, createCryptoProvider, updateCryptoProvider, deleteCryptoProvider, discoverCryptoProviderSlots, getCryptoDevices, createCryptoDevice, updateCryptoDevice, deleteCryptoDevice, activateCryptoDevice, deactivateCryptoDevice, getOcspReadiness, } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 export const CryptoDevicesPage = () => {
@@ -12,6 +12,7 @@ export const CryptoDevicesPage = () => {
     const [providers, setProviders] = useState([]);
     const [devices, setDevices] = useState([]);
     const [allowedDirs, setAllowedDirs] = useState([]);
+    const [readiness, setReadiness] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -56,14 +57,16 @@ export const CryptoDevicesPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const [provList, devList, dirs] = await Promise.all([
+            const [provList, devList, dirs, rdy] = await Promise.all([
                 getCryptoProviders(),
                 getCryptoDevices(),
                 getAllowedLibraryDirs().catch(() => []),
+                getOcspReadiness().catch(() => null),
             ]);
             setProviders(provList);
             setDevices(devList);
             setAllowedDirs(dirs);
+            setReadiness(rdy);
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to load HSM providers and devices');
         } finally {
@@ -368,6 +371,49 @@ export const CryptoDevicesPage = () => {
                     <Alert icon={<IconCheck size={18} />} title="Success" color="teal" withCloseButton onClose={() => setSuccess(null)}>
                         {success}
                     </Alert>
+                )}
+
+                {/* Pattern A Load-Balancer Readiness Gate Banner */}
+                {readiness && (
+                    <Paper
+                        withBorder
+                        p="md"
+                        radius="md"
+                        style={{
+                            borderColor: readiness.ocspReady ? 'rgba(34,197,94,0.45)' : 'rgba(245,158,11,0.55)',
+                            backgroundColor: readiness.ocspReady ? 'rgba(34,197,94,0.06)' : 'rgba(245,158,11,0.08)',
+                        }}
+                    >
+                        <Group justify="space-between" wrap="wrap" gap="sm">
+                            <Group gap="sm">
+                                <IconServer size={22} color={readiness.ocspReady ? '#22c55e' : '#f59e0b'} />
+                                <Box>
+                                    <Group gap="xs">
+                                        <Text fw={700} fz="sm" c="white">
+                                            Pattern A Load-Balancer Readiness Gate (<Code>/ocsp/health</Code>)
+                                        </Text>
+                                        <Badge color="indigo" variant="light" size="sm">
+                                            Node: {readiness.nodeId}
+                                        </Badge>
+                                        <Badge color={readiness.ocspReady ? 'teal' : 'orange'} variant="filled" size="sm">
+                                            HTTP {readiness.httpStatus} · {readiness.status}
+                                        </Badge>
+                                    </Group>
+                                    <Text fz="xs" c="dimmed" mt={2}>
+                                        {readiness.detail}
+                                    </Text>
+                                </Box>
+                            </Group>
+                            <Group gap="xs">
+                                <Badge color="gray" variant="outline" size="sm">
+                                    Device: {readiness.providerId || 'default'}
+                                </Badge>
+                                <Badge color="gray" variant="outline" size="sm">
+                                    Key: {readiness.keyLabel || '—'}
+                                </Badge>
+                            </Group>
+                        </Group>
+                    </Paper>
                 )}
 
                 {/* Section 1: HSM Devices (Runtime Activation) */}

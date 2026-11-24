@@ -30,6 +30,10 @@ public interface SigningDeviceManager {
         return "default";
     }
 
+    default String getActiveProviderId() {
+        return getDefaultProviderId();
+    }
+
     default List<ProviderDeviceInfo> listProviders() {
         return List.of();
     }

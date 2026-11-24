@@ -132,6 +132,7 @@ services:
       - "3002:8080"
     environment:
       <<: *spring-opts
+      OCSP_NODE_ID: ${OCSP_NODE_ID:-ocsp-node-1}
       MARIADB_HOST: mariadb
       MARIADB_PORT: 3306
       MARIADB_DB: ocsp

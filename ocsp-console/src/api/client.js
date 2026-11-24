@@ -163,6 +163,7 @@ export const updateCryptoDevice = (id, req) => api.put(`/crypto-devices/${id}`, 
 export const deleteCryptoDevice = (id) => api.delete(`/crypto-devices/${id}`).then((r) => r.data);
 export const activateCryptoDevice = (deviceId, pin) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/activate`, { pin }).then((r) => r.data);
 export const deactivateCryptoDevice = (deviceId) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/deactivate`).then((r) => r.data);
+export const getOcspReadiness = () => axios.get('/ocsp/health', { validateStatus: (s) => s === 200 || s === 503 }).then((r) => ({ httpStatus: r.status, ...r.data }));
 // ---- Trusted CAs (Hot-reloaded mTLS Truststore) ----
 export const getTrustedCas = () => api.get('/trusted-cas').then((r) => r.data);
 export const importTrustedCa = (alias, certificatePem) => api.post('/trusted-cas', { alias, certificatePem }).then((r) => r.data);

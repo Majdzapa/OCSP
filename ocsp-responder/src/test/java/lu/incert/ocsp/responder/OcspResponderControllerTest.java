@@ -71,5 +71,33 @@ class OcspResponderControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @Test
+    void checkOcspReadiness_whenReady_returns200Ok() {
+        var readyStatus = new OcspResponderService.OcspReadinessStatus(
+                true, "READY", "ocsp-node-1", "softhsm-primary", "ocsp-signing-key", "ACTIVE", 180, "Ready");
+        when(responderService.checkReadiness()).thenReturn(readyStatus);
+
+        var response = controller.checkOcspReadiness();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getFirst("X-OCSP-Node")).isEqualTo("ocsp-node-1");
+        assertThat(response.getHeaders().getFirst("X-OCSP-Ready")).isEqualTo("true");
+        assertThat(response.getBody()).isEqualTo(readyStatus);
+    }
+
+    @Test
+    void checkOcspReadiness_whenLocked_returns503ServiceUnavailable() {
+        var lockedStatus = new OcspResponderService.OcspReadinessStatus(
+                false, "HSM_DEVICE_LOCKED", "ocsp-node-3", "softhsm-primary", "ocsp-signing-key", "LOCKED", 180, "Locked");
+        when(responderService.checkReadiness()).thenReturn(lockedStatus);
+
+        var response = controller.checkOcspReadiness();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getHeaders().getFirst("X-OCSP-Node")).isEqualTo("ocsp-node-3");
+        assertThat(response.getHeaders().getFirst("X-OCSP-Ready")).isEqualTo("false");
+        assertThat(response.getBody()).isEqualTo(lockedStatus);
+    }
 }
 

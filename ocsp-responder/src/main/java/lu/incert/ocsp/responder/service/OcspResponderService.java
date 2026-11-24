@@ -9,6 +9,7 @@ import lu.incert.ocsp.status.entity.RevocationStatus;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SignerNotConfiguredException;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
+import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,102 @@ public class OcspResponderService {
         this.signer = signer;
         this.meterRegistry = meterRegistry;
         this.properties = properties;
+    }
+
+    public record OcspReadinessStatus(
+            boolean ocspReady,
+            String status,
+            String nodeId,
+            String providerId,
+            String keyLabel,
+            String activationState,
+            long signingCertDaysRemaining,
+            String detail
+    ) {}
+
+    public String getNodeId() {
+        String envNode = System.getenv("OCSP_NODE_ID");
+        if (envNode != null && !envNode.isBlank()) {
+            return envNode.trim();
+        }
+        String host = System.getenv("HOSTNAME");
+        return (host != null && !host.isBlank()) ? host.trim() : "ocsp-node-1";
+    }
+
+    /**
+     * Pattern A Load-Balancer Readiness Gate: returns {@code ocspReady=true} (HTTP 200) only when
+     * this node has an active non-expired signing certificate AND its backing HSM device is ACTIVE
+     * in memory with the required signing key. Returns {@code ocspReady=false} (HTTP 503) when LOCKED.
+     */
+    public OcspReadinessStatus checkReadiness() {
+        String nodeId = getNodeId();
+        String activeProviderId = signer.getActiveProviderId();
+        String defaultProviderId = signer.getDefaultProviderId();
+        String targetProviderId = (activeProviderId != null && !activeProviderId.isBlank() && !"default".equalsIgnoreCase(activeProviderId))
+                ? activeProviderId
+                : defaultProviderId;
+        String activeKeyLabel = signer.getActiveKeyLabel();
+        long daysRemaining = signer.signingCertDaysUntilExpiry();
+
+        if (daysRemaining < 0) {
+            return new OcspReadinessStatus(
+                    false,
+                    "NO_ACTIVE_SIGNING_CERT",
+                    nodeId,
+                    targetProviderId,
+                    activeKeyLabel,
+                    "LOCKED",
+                    daysRemaining,
+                    "No active non-expired OCSP signing certificate is configured"
+            );
+        }
+
+        java.util.List<ProviderDeviceInfo> providers = signer.listProviders();
+        if (!providers.isEmpty()) {
+            ProviderDeviceInfo device = providers.stream()
+                    .filter(p -> p.providerId().equals(targetProviderId))
+                    .findFirst()
+                    .orElse(providers.get(0));
+
+            if (!device.healthy()) {
+                return new OcspReadinessStatus(
+                        false,
+                        "HSM_DEVICE_LOCKED",
+                        nodeId,
+                        device.providerId(),
+                        activeKeyLabel,
+                        "LOCKED",
+                        daysRemaining,
+                        "HSM device '" + device.providerId() + "' is LOCKED on node '" + nodeId
+                                + "' — awaiting manual PIN unlock (Pattern A Readiness Gate)"
+                );
+            }
+
+            if (device.keyLabels() != null && !device.keyLabels().isEmpty()
+                    && activeKeyLabel != null && !device.keyLabels().contains(activeKeyLabel)) {
+                return new OcspReadinessStatus(
+                        false,
+                        "HSM_KEY_NOT_FOUND",
+                        nodeId,
+                        device.providerId(),
+                        activeKeyLabel,
+                        "ACTIVE",
+                        daysRemaining,
+                        "Private key '" + activeKeyLabel + "' not found on HSM device '" + device.providerId() + "'"
+                );
+            }
+        }
+
+        return new OcspReadinessStatus(
+                true,
+                "READY",
+                nodeId,
+                targetProviderId,
+                activeKeyLabel,
+                "ACTIVE",
+                daysRemaining,
+                "Node '" + nodeId + "' HSM signer is ACTIVE and ready to sign RFC 6960 OCSP responses"
+        );
     }
 
     /** Handles a DER-encoded OCSPRequest and always returns a DER-encoded OCSPResponse. */
