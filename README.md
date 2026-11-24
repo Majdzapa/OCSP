@@ -186,9 +186,9 @@ The OCSP Responder and Admin Console support activating and deactivating TLS for
 
 ## Clean Configuration (`@ConfigurationProperties`), Centralized Jobs & Use Cases
 
-- **Zero Hardcoded Configuration in Java**: All configuration properties live in `application.yml`, `application-dev.yml` (`dev` profile), and `application-local.yml` (`local` profile), bound into typed `@ConfigurationProperties` classes under `com.company.incert.ocsp.config` (`ScheduledJobsProperties`, `OcspRabbitMqProperties`, `RabbitMqTlsProperties`, `HsmProperties`, `AdminProperties`, `KeycloakProperties`, `AppSecurityProperties`, `OcspResponderProperties`) and `com.company.incert.ocsp.client.config.OcspClientProperties`.
-- **Centralized Scheduled Jobs (`ScheduledJobsConfig`)**: All `@Scheduled` job triggers in `ocsp-responder` are collected in `com.company.incert.ocsp.config.ScheduledJobsConfig` and configured via `ScheduledJobsProperties` (`ocsp.jobs.*`).
-- **Reusable `usecase` Package (`com.company.incert.ocsp.usecase`)**: Encapsulates shared domain actions (`FindSigningCertificateUseCase` and `CanonicalizeSerialHexUseCase`).
+- **Zero Hardcoded Configuration in Java**: All configuration properties live in `application.yml`, `application-dev.yml` (`dev` profile), and `application-local.yml` (`local` profile), bound into typed `@ConfigurationProperties` classes under `lu.incert.ocsp.config` (`ScheduledJobsProperties`, `OcspRabbitMqProperties`, `RabbitMqTlsProperties`, `HsmProperties`, `AdminProperties`, `KeycloakProperties`, `AppSecurityProperties`, `OcspResponderProperties`) and `lu.incert.ocsp.client.config.OcspClientProperties`.
+- **Centralized Scheduled Jobs (`ScheduledJobsConfig`)**: All `@Scheduled` job triggers in `ocsp-responder` are collected in `lu.incert.ocsp.config.ScheduledJobsConfig` and configured via `ScheduledJobsProperties` (`ocsp.jobs.*`).
+- **Reusable `usecase` Package (`lu.incert.ocsp.usecase`)**: Encapsulates shared domain actions (`FindSigningCertificateUseCase` and `CanonicalizeSerialHexUseCase`).
 - **Plain JavaScript (`.js`) Admin Console**: `ocsp-console` uses clean `.js` React 18 + Mantine v7 modules (`jsconfig.json`) served on port `3002`.
 
 ---

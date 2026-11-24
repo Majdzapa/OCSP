@@ -23,10 +23,10 @@ Welcome to the official documentation for the **Incert OCSP Subsystem v5.0**. Th
 | Zero REST coupling between KMS and OCSP. KMS broadcasts an `OutboxManifestEvent` over RabbitMQ every 3 seconds. `OutboxReconciliationService` compares outbox event IDs and certificate digests against `ocsp.inbox_event` and `ocsp.revocation_status`, tracks failed deliveries via `AmqpHeaders.MESSAGE_ID` and `AmqpHeaders.DELIVERY_TAG`, and triggers `REPLAY_EVENTS` over RabbitMQ (synthesizing missing outbox events if needed).
 
 | *Centralized Scheduled Jobs & Daily Validity Monitor*
-| All `@Scheduled` triggers in the responder live in `com.company.incert.ocsp.config.ScheduledJobsConfig` and bind from `ScheduledJobsProperties` (`ocsp.jobs.*`). The daily midnight job (`0 0 0 * * *`) checks all signing certificates, raises a 3-day expiry alert (`EXPIRING_SOON` / `EXPIRED`), and powers one-click HSM renewal CSRs on `/signing-validity`.
+| All `@Scheduled` triggers in the responder live in `lu.incert.ocsp.config.ScheduledJobsConfig` and bind from `ScheduledJobsProperties` (`ocsp.jobs.*`). The daily midnight job (`0 0 0 * * *`) checks all signing certificates, raises a 3-day expiry alert (`EXPIRING_SOON` / `EXPIRED`), and powers one-click HSM renewal CSRs on `/signing-validity`.
 
 | *Zero Hardcoded Config & Clean Use Cases*
-| 100% of configuration values live in `application.yml`, `application-dev.yml`, and `application-local.yml`, bound into typed `@ConfigurationProperties` classes under `config`. Reusable domain actions live in `com.company.incert.ocsp.usecase` (`FindSigningCertificateUseCase`, `CanonicalizeSerialHexUseCase`).
+| 100% of configuration values live in `application.yml`, `application-dev.yml`, and `application-local.yml`, bound into typed `@ConfigurationProperties` classes under `config`. Reusable domain actions live in `lu.incert.ocsp.usecase` (`FindSigningCertificateUseCase`, `CanonicalizeSerialHexUseCase`).
 
 | *Plain JavaScript (`.js`) React 18 Admin Console*
 | `ocsp-console` (served on port `3002`) is built with React 18, Mantine v7, and Vite using clean `.js` modules (`jsconfig.json`) with no TypeScript compilation step.

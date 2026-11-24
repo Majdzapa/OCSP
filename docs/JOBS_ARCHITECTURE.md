@@ -97,10 +97,10 @@ flowchart TB
 ## 2. Job J1 (`kms-simulator`): Transactional Outbox Creation & 500ms Relay Job
 
 **Files**:
-- [CertificateStatusEntityListener.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/messaging/CertificateStatusEntityListener.java)
-- [CertificateOutboxEventListener.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/messaging/CertificateOutboxEventListener.java)
-- [OutboxRelayService.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/service/OutboxRelayService.java)
-- [RabbitMqCertificateEventPublisher.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/messaging/rabbitmq/RabbitMqCertificateEventPublisher.java)
+- [CertificateStatusEntityListener.java](file:///Users/hedfimajd/kms-simulator/src/main/java/lu/incert/kms/messaging/CertificateStatusEntityListener.java)
+- [CertificateOutboxEventListener.java](file:///Users/hedfimajd/kms-simulator/src/main/java/lu/incert/kms/messaging/CertificateOutboxEventListener.java)
+- [OutboxRelayService.java](file:///Users/hedfimajd/kms-simulator/src/main/java/lu/incert/kms/service/OutboxRelayService.java)
+- [RabbitMqCertificateEventPublisher.java](file:///Users/hedfimajd/kms-simulator/src/main/java/lu/incert/kms/messaging/rabbitmq/RabbitMqCertificateEventPublisher.java)
 
 ### Visual Execution Graph
 
@@ -149,10 +149,10 @@ flowchart TD
 ## 3. Job L1 (`ocsp-responder`): Transactional Inbox Consumer & Independent Failure Recorder
 
 **Files**:
-- [CertificateStatusListener.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/messaging/CertificateStatusListener.java)
-- [CertificateStatusConsumerService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/messaging/CertificateStatusConsumerService.java)
-- [InboxFailureRecorder.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/messaging/InboxFailureRecorder.java)
-- [CertificateStatusService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/CertificateStatusService.java)
+- [CertificateStatusListener.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/messaging/CertificateStatusListener.java)
+- [CertificateStatusConsumerService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/messaging/CertificateStatusConsumerService.java)
+- [InboxFailureRecorder.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/messaging/InboxFailureRecorder.java)
+- [CertificateStatusService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/service/CertificateStatusService.java)
 
 ### Visual Execution Graph
 
@@ -202,8 +202,8 @@ flowchart TD
 ## 4. Jobs J2, L2, L3 & J3: Zero-REST RabbitMQ Outbox ↔ Inbox Reconciliation & Self-Healing Replay
 
 **Files**:
-- [KmsReconciliationService.java](file:///Users/hedfimajd/kms-simulator/src/main/java/com/company/incert/kms/service/KmsReconciliationService.java)
-- [OutboxReconciliationService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/OutboxReconciliationService.java)
+- [KmsReconciliationService.java](file:///Users/hedfimajd/kms-simulator/src/main/java/lu/incert/kms/service/KmsReconciliationService.java)
+- [OutboxReconciliationService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/service/OutboxReconciliationService.java)
 - [InboxAuditPage.js](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/InboxAuditPage.js)
 
 ### Visual Execution Graph
@@ -275,11 +275,11 @@ flowchart TD
 ## 5. Job J4 & Hook H3 (`ocsp-responder`): Daily Signing Certificate Validity Job, 3-Day Alerting & Post-Commit HSM Sync
 
 **Files**:
-- [ScheduledJobsConfig.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/config/ScheduledJobsConfig.java)
-- [ScheduledJobsProperties.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/config/ScheduledJobsProperties.java)
-- [SigningCertificateValidityService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/SigningCertificateValidityService.java)
-- [SigningCertificateService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/service/SigningCertificateService.java)
-- [Pkcs11OcspSigner.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/com/company/incert/ocsp/signing/Pkcs11OcspSigner.java)
+- [ScheduledJobsConfig.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/config/ScheduledJobsConfig.java)
+- [ScheduledJobsProperties.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/config/ScheduledJobsProperties.java)
+- [SigningCertificateValidityService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/service/SigningCertificateValidityService.java)
+- [SigningCertificateService.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/service/SigningCertificateService.java)
+- [Pkcs11OcspSigner.java](file:///Users/hedfimajd/OCSP/ocsp-responder/src/main/java/lu/incert/ocsp/signing/Pkcs11OcspSigner.java)
 - [SigningCertValidityPage.js](file:///Users/hedfimajd/OCSP/ocsp-console/src/pages/SigningCertValidityPage.js)
 
 ### Visual Execution Graph

@@ -6,7 +6,7 @@ This technical guide explains **native server-level Mutual TLS (mTLS)** inside `
 
 == 1. Architecture: Why Native Server-Level mTLS
 
-Instead of terminating mTLS at an external proxy and forwarding headers, `ocsp-responder` terminates mTLS directly inside Tomcat (`com.company.incert.ocsp.trust.tls`):
+Instead of terminating mTLS at an external proxy and forwarding headers, `ocsp-responder` terminates mTLS directly inside Tomcat (`lu.incert.ocsp.trust.tls`):
 
 * **Zero Header-Spoofing Surface**: `ClientCertificateAuthFilter` reads **exclusively** from the native servlet TLS attribute `jakarta.servlet.request.X509Certificate` populated directly by Tomcat's SSL engine—never from HTTP headers.
 * **Zero-Restart Hot-Reload (`HotReloadableTrustManager`)**: Implements `javax.net.ssl.X509TrustManager` backed directly by `TrustedCaService.getActiveTrustedCas()` (a `CopyOnWriteArrayList<X509Certificate>` synchronized with MariaDB `trusted_cas`).

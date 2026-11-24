@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { AppShell, Box, Group, Stack, Text, ThemeIcon, Tooltip, Button, Badge, Avatar, Divider, NavLink as MantineNavLink, ScrollArea, Burger, Menu, UnstyledButton, } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, IconUsers, IconShieldCheck, IconCpu, IconApps, IconChevronRight, IconShieldLock, IconFileDescription, IconApi, IconKey, } from '@tabler/icons-react';
+import { IconDashboard, IconShieldX, IconCertificate, IconSearch, IconCircleFilled, IconLogout, IconExternalLink, IconInbox, IconBook, IconClock, IconUsers, IconShieldCheck, IconCpu, IconApps, IconChevronRight, IconShieldLock, IconApi, IconKey, } from '@tabler/icons-react';
 import { DashboardPage } from './pages/DashboardPage';
 import { RevocationFeed } from './pages/RevocationFeed';
 import { SigningCertificatesPage } from './pages/SigningCertificatesPage';
@@ -20,10 +20,8 @@ import { useDashboardStats } from './hooks/useDashboardStats';
 const PORTAL_LINKS = {
     docsHome: import.meta.env.VITE_PORTAL_DOCS ?? '/docs/ocsp/5.0/index.html',
     hsmGuide: import.meta.env.VITE_PORTAL_HSM_GUIDE ?? '/docs/ocsp/5.0/hsm-operations-guide.html',
-    clientUi: import.meta.env.VITE_PORTAL_CLIENT_UI ?? 'http://localhost:8082',
     rabbitMq: import.meta.env.VITE_PORTAL_RABBITMQ ?? 'http://localhost:15672',
     responderSwagger: import.meta.env.VITE_PORTAL_RESPONDER_SWAGGER ?? 'http://localhost:8080/swagger-ui/index.html',
-    clientSwagger: import.meta.env.VITE_PORTAL_CLIENT_SWAGGER ?? 'http://localhost:8082/swagger-ui/index.html',
 };
 
 const NAV_SECTIONS = [
@@ -311,17 +309,7 @@ function MainLayout() {
                                 </Menu.Item>
 
                                 <Menu.Divider />
-                                <Menu.Label>Operations &amp; Tools</Menu.Label>
-                                <Menu.Item
-                                    component="a"
-                                    href={PORTAL_LINKS.clientUi}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    leftSection={<IconFileDescription size={15} />}
-                                    rightSection={<IconExternalLink size={13} />}
-                                >
-                                    OCSP Test Tool (8082)
-                                </Menu.Item>
+                                <Menu.Label>Operations &amp; OpenAPI</Menu.Label>
                                 <Menu.Item
                                     component="a"
                                     href={PORTAL_LINKS.rabbitMq}
@@ -332,9 +320,6 @@ function MainLayout() {
                                 >
                                     RabbitMQ Console (15672)
                                 </Menu.Item>
-
-                                <Menu.Divider />
-                                <Menu.Label>OpenAPI / Swagger</Menu.Label>
                                 <Menu.Item
                                     component="a"
                                     href={PORTAL_LINKS.responderSwagger}
@@ -343,17 +328,7 @@ function MainLayout() {
                                     leftSection={<IconApi size={15} />}
                                     rightSection={<IconExternalLink size={13} />}
                                 >
-                                    Responder Swagger (8080)
-                                </Menu.Item>
-                                <Menu.Item
-                                    component="a"
-                                    href={PORTAL_LINKS.clientSwagger}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    leftSection={<IconApi size={15} />}
-                                    rightSection={<IconExternalLink size={13} />}
-                                >
-                                    Client Swagger (8082)
+                                    OCSP OpenAPI / Swagger (8080)
                                 </Menu.Item>
                             </Menu.Dropdown>
                         </Menu>

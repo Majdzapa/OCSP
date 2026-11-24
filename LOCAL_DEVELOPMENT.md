@@ -15,7 +15,7 @@ This guide explains how to run **`ocsp-responder`** and **`ocsp-client`** direct
 
 ## 2. Configuration Profiles Overview
 
-All configuration in v5.0 is externalized into YAML files and bound via typed `@ConfigurationProperties` classes in `com.company.incert.ocsp.config` (and `com.company.incert.ocsp.client.config`) with **zero hardcoded defaults in Java code**:
+All configuration in v5.0 is externalized into YAML files and bound via typed `@ConfigurationProperties` classes in `lu.incert.ocsp.config` (and `lu.incert.ocsp.client.config`) with **zero hardcoded defaults in Java code**:
 
 | Profile | Configuration Files | Description |
 | :--- | :--- | :--- |

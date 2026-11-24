@@ -22,6 +22,7 @@ export const clearAuthStorage = () => {
     sessionStorage.clear();
     delete api.defaults.headers.common['Authorization'];
     delete authApi.defaults.headers.common['Authorization'];
+    delete ocspClientApi.defaults.headers.common['Authorization'];
 };
 // Auto logout on 401 Unauthorized
 api.interceptors.response.use((response) => response, (error) => {
@@ -64,10 +65,17 @@ export const getAuthMe = async () => {
     const res = await authApi.get('/me', { headers });
     return res.data;
 };
-// API client for ocsp-client testing service
+// API client for OCSP client testing endpoint (hosted on ocsp-responder under /api/v1/client)
 const ocspClientApi = axios.create({
     baseURL: '/api/v1/client',
     headers: { 'Content-Type': 'application/json' },
+});
+ocspClientApi.interceptors.request.use((config) => {
+    const token = localStorage.getItem('ocsp_bearer_token');
+    if (token) {
+        config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
 });
 // ---- Dashboard ----
 export const getDashboardStats = () => api.get('/dashboard/stats').then((r) => r.data);

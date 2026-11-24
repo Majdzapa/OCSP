@@ -26,7 +26,7 @@ In v5.0, **zero configuration defaults are hardcoded in Java code**. Every setti
 
 == `@ConfigurationProperties` Classes Reference
 
-=== `ocsp-responder` (`com.company.incert.ocsp.config`)
+=== `ocsp-responder` (`lu.incert.ocsp.config`)
 
 [cols="2,2,3", options="header"]
 |===
@@ -65,7 +65,7 @@ In v5.0, **zero configuration defaults are hardcoded in Java code**. Every setti
 | `username`, `password`
 |===
 
-=== `ocsp-client` (`com.company.incert.ocsp.client.config`)
+=== `ocsp-client` (`lu.incert.ocsp.client.config`)
 
 [cols="2,2,3", options="header"]
 |===
@@ -76,9 +76,9 @@ In v5.0, **zero configuration defaults are hardcoded in Java code**. Every setti
 | `default-responder-url`, `pki-dir`, `connect-timeout`, `read-timeout`
 |===
 
-== Reusable `usecase` Package (`com.company.incert.ocsp.usecase`)
+== Reusable `usecase` Package (`lu.incert.ocsp.usecase`)
 
-To eliminate duplicated logic across services, repeatable domain actions are encapsulated in `com.company.incert.ocsp.usecase`:
+To eliminate duplicated logic across services, repeatable domain actions are encapsulated in `lu.incert.ocsp.usecase`:
 
 * **`FindSigningCertificateUseCase`**:
   Centralizes `repository.findById(id).orElseThrow(...)` across `SigningCertificateService.activate`, `deactivate`, `delete`, and `SigningCertificateValidityService.createRenewalRequest`.

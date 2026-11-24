@@ -12,7 +12,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.company.incert</groupId>
+    <groupId>lu.incert</groupId>
     <artifactId>ocsp-responder</artifactId>
     <version>2.0.0-SNAPSHOT</version>
     <name>Incert OCSP Responder</name>
@@ -223,7 +223,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.company.incert.ocsp.OcspResponderApplication</mainClass>
+                    <mainClass>lu.incert.ocsp.OcspResponderApplication</mainClass>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

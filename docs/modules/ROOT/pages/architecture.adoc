@@ -35,7 +35,7 @@ The Incert OCSP Subsystem v5.0 separates CA lifecycle operations (`kms-simulator
   └───────────────────┘
 ----
 
-== Domain-Grouped Modular Monolith Structure (`com.company.incert.ocsp.*`)
+== Domain-Grouped Modular Monolith Structure (`lu.incert.ocsp.*`)
 
 Domain boundaries and cycle-freedom are enforced automatically at test time via **ArchUnit** (`ArchitectureBoundaryTest`):
 

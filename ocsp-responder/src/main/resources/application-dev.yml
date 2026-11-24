@@ -133,7 +133,10 @@ ocsp:
     max-cert-ids: ${OCSP_MAX_CERT_IDS:10}
     max-nonce-octets: ${OCSP_MAX_NONCE_OCTETS:32}
   client:
-    default-responder-url: http://${OCSP_RESPONDER_HOST:localhost}:${OCSP_RESPONDER_PORT:8080}/ocsp
+    default-responder-url: ${OCSP_RESPONDER_URL:http://${OCSP_RESPONDER_HOST:localhost}:${OCSP_RESPONDER_PORT:8080}/ocsp}
+    pki-dir: ${PKI_DIR:./data/pki}
+    connect-timeout: ${OCSP_CLIENT_CONNECT_TIMEOUT:PT5S}
+    read-timeout: ${OCSP_CLIENT_READ_TIMEOUT:PT10S}
   jobs:
     signing-cert-validity:
       enabled: ${OCSP_JOB_SIGNING_CERT_VALIDITY_ENABLED:true}
@@ -156,7 +159,7 @@ hsm:
 
 logging:
   level:
-    com.company.incert.ocsp: INFO
+    lu.incert.ocsp: INFO
     org.springframework.amqp: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

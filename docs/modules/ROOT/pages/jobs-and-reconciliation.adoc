@@ -7,8 +7,8 @@ This guide details the background scheduled jobs and event-driven reconciliation
 
 All `@Scheduled` job triggers in `ocsp-responder` are collected in a single configuration class under package `config`:
 
-* **`com.company.incert.ocsp.config.ScheduledJobsConfig`**: Annotated with `@Configuration` and `@EnableScheduling`. Contains `@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")` and delegates to `SigningCertificateValidityService.runDailyValidityCheck()`.
-* **`com.company.incert.ocsp.config.ScheduledJobsProperties`**: Typed `@ConfigurationProperties(prefix = "ocsp.jobs")` class binding job flags, cron expressions, and thresholds from `application.yml` / `application-dev.yml` with zero hardcoded values in Java code.
+* **`lu.incert.ocsp.config.ScheduledJobsConfig`**: Annotated with `@Configuration` and `@EnableScheduling`. Contains `@Scheduled(cron = "${ocsp.jobs.signing-cert-validity.cron}")` and delegates to `SigningCertificateValidityService.runDailyValidityCheck()`.
+* **`lu.incert.ocsp.config.ScheduledJobsProperties`**: Typed `@ConfigurationProperties(prefix = "ocsp.jobs")` class binding job flags, cron expressions, and thresholds from `application.yml` / `application-dev.yml` with zero hardcoded values in Java code.
 
 [source,yaml]
 ----

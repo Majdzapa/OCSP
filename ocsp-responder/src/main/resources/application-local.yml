@@ -75,6 +75,9 @@ ocsp:
     max-nonce-octets: 32
   client:
     default-responder-url: http://localhost:8080/ocsp
+    pki-dir: ./data/pki
+    connect-timeout: PT5S
+    read-timeout: PT10S
   jobs:
     signing-cert-validity:
       enabled: true
@@ -96,4 +99,4 @@ hsm:
 
 logging:
   level:
-    com.company.incert.ocsp: DEBUG
+    lu.incert.ocsp: DEBUG
