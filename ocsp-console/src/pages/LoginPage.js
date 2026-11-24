@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Container, Paper, Title, Text, TextInput, PasswordInput, Button, Alert, Group, Stack, ThemeIcon, Badge, Box, Divider, } from '@mantine/core';
-import { IconLock, IconUser, IconShieldLock, IconAlertCircle, IconArrowRight, IconBrandOauth, IconCertificate, } from '@tabler/icons-react';
+import { IconLock, IconUser, IconShieldLock, IconAlertCircle, IconArrowRight, IconBrandOauth, IconCertificate, IconBolt, } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 /**
  * Login page. The flow is dictated by how the responder is deployed:
@@ -169,6 +169,21 @@ export const LoginPage = () => {
                 </Button>
               </Stack>
             </form>)}
+
+          <Divider label="Public Tools (No Login Required)" labelPosition="center" my="lg" />
+
+          <Button
+            fullWidth
+            size="sm"
+            radius="md"
+            variant="light"
+            color="teal"
+            leftSection={<IconBolt size={17} />}
+            rightSection={<IconArrowRight size={15} />}
+            onClick={() => navigate('/ocsp-client')}
+          >
+            Open Public OCSP Client Tester
+          </Button>
         </Paper>
 
         <Text size="xs" c="dimmed" ta="center" mt="md">

@@ -131,6 +131,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/", "/index.html", "/login.html", "/favicon.ico", "/static/**").permitAll()
+                .requestMatchers("/api/v1/client/**").permitAll()
                 .requestMatchers("/api/v1/admin/**").authenticated()
                 .anyRequest().authenticated()
             );

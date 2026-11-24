@@ -85,7 +85,9 @@ export const getRevocationEvents = (page = 0, size = 25) => api.get('/revocation
 export const checkCertStatus = (serialHex) => api.get(`/cert-check/${serialHex}`).then((r) => r.data);
 // ---- Replicated Certificates Inventory (Received from RabbitMQ) ----
 export const getReplicatedCertificates = () => api.get('/certificates').then((r) => r.data);
-// ---- Live RFC 6960 OCSP Request Test (Dispatched via ocsp-client) ----
+// ---- Live RFC 6960 OCSP Request Test (Dispatched via ocsp-responder /api/v1/client) ----
+export const getClientInfo = () => ocspClientApi.get('/info').then((r) => r.data);
+export const getClientPresets = () => ocspClientApi.get('/presets').then((r) => r.data);
 export const testOcspRequest = (serialHex, includeNonce, method = 'POST', issuerPem) => ocspClientApi.post('/check', {
     serialHex,
     includeNonce,
@@ -100,6 +102,11 @@ export const testOcspRequest = (serialHex, includeNonce, method = 'POST', issuer
         revocationReason: data.revocationReason,
         thisUpdate: data.thisUpdate,
         nextUpdate: data.nextUpdate,
+        producedAt: data.producedAt,
+        responderId: data.responderId,
+        signerSubject: data.signerSubject,
+        responseStatus: data.responseStatus,
+        httpStatus: data.httpStatus,
         includeNonce: data.includeNonce,
         nonceSent: data.nonceSent,
         nonceEchoed: data.nonceEchoed,
@@ -110,6 +117,7 @@ export const testOcspRequest = (serialHex, includeNonce, method = 'POST', issuer
         httpMethod: data.method || method,
         responseSizeBytes: data.responseSizeBytes,
         opensslCommand: data.opensslCommand ?? null,
+        checks: data.checks ?? [],
         cacheVerdict: data.cacheVerdict ?? 'DIRECT_SIGNING',
         error: data.error,
     };

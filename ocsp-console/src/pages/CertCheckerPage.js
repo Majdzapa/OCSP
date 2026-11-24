@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Box, Title, Text, Card, Grid, Paper, TextInput, Textarea, Button, Badge, Alert, Collapse, Tabs, Switch, Radio, Group, Stack, } from '@mantine/core';
-import { IconSearch, IconShieldCheck, IconShieldX, IconHelp, IconCopy, IconKey, IconBolt, IconGauge, IconCpu, IconTerminal2, IconAlertCircle, IconCheck, } from '@tabler/icons-react';
-import { checkCertStatus, testOcspRequest, getReplicatedCertificates, } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+import { Box, Title, Text, Card, Grid, Paper, TextInput, Textarea, Button, Badge, Alert, Collapse, Tabs, Switch, Radio, Group, Stack, Container, ThemeIcon, } from '@mantine/core';
+import { IconSearch, IconShieldCheck, IconShieldX, IconHelp, IconCopy, IconKey, IconBolt, IconGauge, IconCpu, IconTerminal2, IconAlertCircle, IconCheck, IconShieldLock, IconLogin, IconArrowLeft, } from '@tabler/icons-react';
+import { checkCertStatus, testOcspRequest, getReplicatedCertificates, getClientPresets, } from '../api/client';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -49,7 +50,9 @@ function DetailRow({ label, value, mono = false, }) {
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
-export function CertCheckerPage() {
+export function CertCheckerPage({ publicMode = false }) {
+    const navigate = useNavigate();
+    const isAuthenticated = Boolean(localStorage.getItem('ocsp_bearer_token'));
     const [activeTab, setActiveTab] = useState('ocsp-tester');
     // Tab 0: Live OCSP Protocol Tester
     const [testSerial, setTestSerial] = useState('');
@@ -58,6 +61,30 @@ export function CertCheckerPage() {
     const [sampleRevokedSerial, setSampleRevokedSerial] = useState(null);
     const [sampleHoldSerial, setSampleHoldSerial] = useState(null);
     useEffect(() => {
+        const loadFromPublicPresets = () => {
+            getClientPresets()
+                .then((presets) => {
+                const good = presets.find((p) => p.label?.includes('GOOD') && !p.label?.includes('HOLD'));
+                const revoked = presets.find((p) => p.label?.includes('REVOKED'));
+                const hold = presets.find((p) => p.label?.includes('HOLD'));
+                if (good?.serialHex) {
+                    setSampleGoodSerial(good.serialHex);
+                    setTestSerial((prev) => prev || good.serialHex);
+                    setSerial((prev) => prev || good.serialHex);
+                }
+                if (revoked?.serialHex)
+                    setSampleRevokedSerial(revoked.serialHex);
+                if (hold?.serialHex)
+                    setSampleHoldSerial(hold.serialHex);
+            })
+                .catch(() => {});
+        };
+
+        if (publicMode || !isAuthenticated) {
+            loadFromPublicPresets();
+            return;
+        }
+
         getReplicatedCertificates()
             .then((certs) => {
             const good = certs.find((c) => c.status === 'GOOD');
@@ -72,11 +99,14 @@ export function CertCheckerPage() {
                 setSampleRevokedSerial(revoked.serialNumberHex);
             if (hold)
                 setSampleHoldSerial(hold.serialNumberHex);
+            if (!good && !revoked && !hold) {
+                loadFromPublicPresets();
+            }
         })
             .catch(() => {
-            // Fallback if responder DB has no replicated certificates yet
+            loadFromPublicPresets();
         });
-    }, []);
+    }, [publicMode, isAuthenticated]);
     const [includeNonce, setIncludeNonce] = useState(false);
     const [httpMethod, setHttpMethod] = useState('POST');
     const [testLoading, setTestLoading] = useState(false);
@@ -138,17 +168,61 @@ export function CertCheckerPage() {
         }
     };
     const isRevoked = result?.status === 'REVOKED';
-    return (<Box className="page-enter">
+    const content = (<Box className="page-enter">
       {/* Header */}
-      <Box mb="lg">
-        <Title order={3} fw={700}>
-          Certificate & OCSP Testing
-        </Title>
-        <Text fz="sm" c="dimmed" mt={4}>
-          Test real RFC 6960 OCSP requests (Nonce vs Nonce-Free) to inspect
-          dynamic SoftHSM2 signing and verification, or check DB status.
-        </Text>
-      </Box>
+      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+        <Box>
+          <Group gap="sm">
+            {publicMode && (
+              <ThemeIcon size={36} radius="md" variant="gradient" gradient={{ from: 'teal.6', to: 'indigo.6' }}>
+                <IconShieldLock size={20} />
+              </ThemeIcon>
+            )}
+            <Box>
+              <Group gap="xs">
+                <Title order={3} fw={700} c="white">
+                  {publicMode ? 'Incert Public OCSP Client & RFC 6960 Validator' : 'Certificate & OCSP Testing'}
+                </Title>
+                {publicMode && (
+                  <Badge color="teal" variant="light" size="sm">
+                    PUBLIC ACCESS
+                  </Badge>
+                )}
+              </Group>
+              <Text fz="sm" c="dimmed" mt={4}>
+                Test real RFC 6960 OCSP requests (Nonce vs Nonce-Free) to inspect
+                dynamic PKCS#11 signing and signature verification against the responder.
+              </Text>
+            </Box>
+          </Group>
+        </Box>
+
+        {publicMode && (
+          <Group gap="xs">
+            {isAuthenticated ? (
+              <Button
+                variant="light"
+                color="indigo"
+                size="sm"
+                leftSection={<IconArrowLeft size={16} />}
+                onClick={() => navigate('/dashboard')}
+              >
+                Back to Admin Console
+              </Button>
+            ) : (
+              <Button
+                variant="gradient"
+                gradient={{ from: 'indigo.6', to: 'violet.6' }}
+                size="sm"
+                leftSection={<IconLogin size={16} />}
+                onClick={() => navigate('/login')}
+              >
+                Sign In to Admin Console
+              </Button>
+            )}
+          </Group>
+        )}
+      </Group>
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={setActiveTab} mb="lg" color="indigo">
@@ -156,9 +230,11 @@ export function CertCheckerPage() {
           <Tabs.Tab value="ocsp-tester" leftSection={<IconBolt size={16}/>}>
             Live OCSP Request Tester (RFC 6960)
           </Tabs.Tab>
-          <Tabs.Tab value="db-lookup" leftSection={<IconSearch size={16}/>}>
-            Database Status Lookup
-          </Tabs.Tab>
+          {!publicMode && (
+            <Tabs.Tab value="db-lookup" leftSection={<IconSearch size={16}/>}>
+              Database Status Lookup
+            </Tabs.Tab>
+          )}
         </Tabs.List>
 
         {/* =================================================================== */}
@@ -339,10 +415,53 @@ export function CertCheckerPage() {
                 {testResult.revocationReason && (<DetailRow label="Revocation Reason" value={testResult.revocationReason}/>)}
                 <DetailRow label="This Update" value={testResult.thisUpdate}/>
                 <DetailRow label="Next Update" value={testResult.nextUpdate}/>
+                {testResult.producedAt && (<DetailRow label="Produced At" value={testResult.producedAt}/>)}
+                {testResult.signerSubject && (<DetailRow label="Signer Subject" value={testResult.signerSubject} mono/>)}
+                {testResult.responderId && (<DetailRow label="Responder ID" value={testResult.responderId} mono/>)}
                 {testResult.nonceSent && (<DetailRow label="Nonce Sent" value={`0x${testResult.nonceSent}`} mono/>)}
                 {testResult.nonceEchoed && (<DetailRow label="Nonce Echoed" value={`0x${testResult.nonceEchoed}`} mono/>)}
                 <DetailRow label="Signing Mode" value={testResult.cacheVerdict}/>
               </Stack>
+
+              {/* RFC 6960 Step-by-Step Verification Checklist */}
+              {Array.isArray(testResult.checks) && testResult.checks.length > 0 && (
+                <Box mb="md">
+                  <Text fz="xs" fw={700} c="indigo.3" mb={6} tt="uppercase">
+                    RFC 6960 / RFC 8954 Cryptographic Verification Checks
+                  </Text>
+                  <Stack gap={6}>
+                    {testResult.checks.map((chk, idx) => {
+                      const color = chk.outcome === 'PASS' ? 'teal' : (chk.outcome === 'FAIL' ? 'red' : 'yellow');
+                      return (
+                        <Paper
+                          key={`${chk.name}-${idx}`}
+                          px="sm"
+                          py={6}
+                          radius="sm"
+                          style={{
+                            backgroundColor: 'var(--mantine-color-dark-5)',
+                            border: '1px solid var(--mantine-color-dark-4)',
+                          }}
+                        >
+                          <Group justify="space-between" wrap="nowrap" align="flex-start">
+                            <Group gap="xs" wrap="nowrap">
+                              <Badge size="xs" color={color} variant="filled">
+                                {chk.outcome}
+                              </Badge>
+                              <Text fz="xs" fw={600} c="white">
+                                {chk.name}
+                              </Text>
+                            </Group>
+                            <Text fz="xs" c="dimmed" ta="right" style={{ wordBreak: 'break-word' }}>
+                              {chk.detail}
+                            </Text>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                </Box>
+              )}
 
               {/* Terminal command */}
               <Box mt="md">
@@ -464,4 +583,24 @@ export function CertCheckerPage() {
         </Tabs.Panel>
       </Tabs>
     </Box>);
+
+    if (publicMode) {
+        return (
+            <Box
+                style={{
+                    minHeight: '100vh',
+                    backgroundColor: 'var(--mantine-color-dark-8)',
+                    backgroundImage: 'radial-gradient(circle at 50% 10%, rgba(99, 102, 241, 0.1) 0%, transparent 55%)',
+                    color: 'var(--mantine-color-dark-0)',
+                    padding: '32px 16px',
+                }}
+            >
+                <Container size="lg">
+                    {content}
+                </Container>
+            </Box>
+        );
+    }
+
+    return content;
 }

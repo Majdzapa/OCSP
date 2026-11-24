@@ -14,7 +14,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,8 +26,6 @@ import java.util.Map;
 @RequestMapping("/api/v1/client")
 @RequiredArgsConstructor
 @Tag(name = "OCSP Client & Tester", description = "RFC 6960 OCSP validation, nonce echo verification, and test utilities")
-@SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
-@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class OcspClientController {
 
     private final OcspClientService clientService;
@@ -39,18 +39,31 @@ public class OcspClientController {
         @ApiResponse(responseCode = "400", description = "Malformed check request")
     })
     @PostMapping("/check")
-    @PreAuthorize("hasPermission(null, 'CERT_CHECK_READ')")
     public ResponseEntity<OcspCheckResult> checkCertificate(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Check options including serial, nonce preference, and transport method", required = true)
             @RequestBody OcspCheckRequest request) {
-        OcspCheckResult result = clientService.check(request);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean authenticated = auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
+        OcspCheckRequest effectiveRequest = request;
+        if (!authenticated && request.responderUrl() != null && !request.responderUrl().isBlank()) {
+            // SSRF guard: unauthenticated public requests always target the configured local defaultResponderUrl
+            effectiveRequest = new OcspCheckRequest(
+                request.serialHex(),
+                request.certificatePem(),
+                request.issuerPem(),
+                request.trustedResponderPem(),
+                request.includeNonce(),
+                request.method(),
+                clientProperties.getDefaultResponderUrl()
+            );
+        }
+        OcspCheckResult result = clientService.check(effectiveRequest);
         return ResponseEntity.ok(result);
     }
 
     @Operation(summary = "Get client configuration info", description = "Returns service version, default responder URL, and RFC specifications supported")
     @ApiResponse(responseCode = "200", description = "Service metadata")
     @GetMapping("/info")
-    @PreAuthorize("hasPermission(null, 'CERT_CHECK_READ')")
     public ResponseEntity<Map<String, Object>> getInfo() {
         return ResponseEntity.ok(Map.of(
             "service", "Incert OCSP Client & Testing Service",
@@ -63,7 +76,6 @@ public class OcspClientController {
     @Operation(summary = "Get certificate test presets", description = "Returns list of predefined test certificates (good, revoked, hold) for quick UI testing")
     @ApiResponse(responseCode = "200", description = "List of preset certificates")
     @GetMapping("/presets")
-    @PreAuthorize("hasPermission(null, 'CERT_CHECK_READ')")
     public ResponseEntity<List<Map<String, String>>> getPresets() {
         return ResponseEntity.ok(List.of(
             Map.of("label", "ee-01 (Expected: GOOD)", "serialHex", "00b59d41baf78afe0de1bbe7ae28c0450f"),

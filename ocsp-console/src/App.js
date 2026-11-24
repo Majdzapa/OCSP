@@ -403,6 +403,7 @@ export default function App() {
         <AuthProvider>
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/ocsp-client" element={<CertCheckerPage publicMode />} />
                 <Route
                     path="/*"
                     element={
