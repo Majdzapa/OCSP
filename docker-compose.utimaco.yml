@@ -1,0 +1,23 @@
+# =============================================================================
+# Utimaco CryptoServer / SecurityServer PKCS#11 R3 Docker Compose Overlay
+#
+# Usage:
+#   1. Place your vendor binary at: ./utimaco/libcs_pkcs11_R3.so
+#   2. Set Device = 3001@<hsm-ip> in: ./utimaco/cs_pkcs11_R3.cfg
+#   3. Start with:
+#        docker compose -f docker-compose.yml -f docker-compose.utimaco.yml up -d
+#
+# Note (Apple Silicon / ARM64 hosts):
+#   Utimaco's libcs_pkcs11_R3.so is compiled for linux/amd64 (x86_64).
+#   Uncomment `platform: linux/amd64` below if running on an ARM64 Mac.
+# =============================================================================
+
+services:
+  ocsp-responder:
+    # platform: linux/amd64
+    environment:
+      CS_PKCS11_R3_CFG: /opt/utimaco/etc/cs_pkcs11_R3.cfg
+    volumes:
+      - ./utimaco/libcs_pkcs11_R3.so:/opt/utimaco/lib/libcs_pkcs11_R3.so:ro
+      - ./utimaco/cs_pkcs11_R3.cfg:/opt/utimaco/etc/cs_pkcs11_R3.cfg:ro
+

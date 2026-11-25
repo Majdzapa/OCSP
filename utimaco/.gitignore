@@ -1,0 +1,11 @@
+# Never commit proprietary Utimaco vendor binaries or SDK archives
+*.so
+*.so.*
+*.dll
+*.dylib
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.log
+
