@@ -76,9 +76,8 @@ class XiPkiSoftHsmIntegrationTest {
         Files.createDirectories(tokenDir);
         Files.writeString(confFile, "directories.tokendir = " + tokenDir.toAbsolutePath() + "\nobjectstore.backend = file\n");
 
-        Path extractedWrapper = baseDir.resolve("libpkcs11wrapper.so").toAbsolutePath().normalize();
-        lu.incert.ocsp.signing.pkcs11.XiPkiPkcs11Library.materializeBundledWrapper(extractedWrapper);
-        wrapperLib = extractedWrapper.toString();
+        // Use ipkcs11wrapper's built-in OS/arch native loader (no manual extraction or hardcoded path)
+        wrapperLib = null;
 
         initToken("xipki-dev-1");
         initToken("xipki-dev-2");

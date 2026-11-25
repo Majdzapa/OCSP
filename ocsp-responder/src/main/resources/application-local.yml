@@ -92,6 +92,7 @@ hsm:
   enabled: true
   mode: ${HSM_MODE:DATABASE}
   key-label: ocsp-signing-key
+  default-wrapper-path: ${HSM_DEFAULT_WRAPPER_PATH:}
   allowed-library-dirs: /opt/homebrew/lib/softhsm,/usr/lib/softhsm,/opt/pkcs11j,/opt/hsm
 
 logging:

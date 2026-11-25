@@ -24,6 +24,12 @@ public class HsmProperties {
     private String defaultProviderId;
     private String keyLabel = "ocsp-signing-key";
 
+    /**
+     * Optional pre-staged JNI wrapper binary path (e.g. for hardened containers with {@code noexec} /tmp).
+     * Leave blank (default) to let {@code org.xipki:ipkcs11wrapper} auto-load its bundled OS/arch binary.
+     */
+    private String defaultWrapperPath;
+
     private List<String> allowedLibraryDirs = new ArrayList<>(List.of(
             "/usr/lib/softhsm",
             "/usr/lib/x86_64-linux-gnu/softhsm",

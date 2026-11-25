@@ -21,10 +21,21 @@ class LibraryPathAllowlistTest {
                 .isEqualTo("/usr/lib/softhsm/libsofthsm2.so");
         assertThat(allowlist.validateWrapperPath("/opt/pkcs11j/libpkcs11wrapper.so"))
                 .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
-        assertThat(allowlist.validateWrapperPath(null))
-                .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
+        assertThat(allowlist.validateWrapperPath(null)).isNull();
+        assertThat(allowlist.validateWrapperPath("  ")).isNull();
+        assertThat(allowlist.validateWrapperPath("embedded")).isNull();
+        assertThat(allowlist.validateWrapperPath("auto")).isNull();
         assertThat(allowlist.validateWrapperPath("/opt/pkcs11j/libpkcs11j.so"))
                 .isEqualTo("/opt/pkcs11j/libpkcs11j.so");
+
+        LibraryPathAllowlist withConfiguredDefault = new LibraryPathAllowlist(
+                List.of("/usr/lib/softhsm", "/opt/pkcs11j"),
+                "/opt/pkcs11j/libpkcs11wrapper.so"
+        );
+        assertThat(withConfiguredDefault.validateWrapperPath(null))
+                .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
+        assertThat(withConfiguredDefault.validateWrapperPath("auto"))
+                .isEqualTo("/opt/pkcs11j/libpkcs11wrapper.so");
     }
 
     @Test

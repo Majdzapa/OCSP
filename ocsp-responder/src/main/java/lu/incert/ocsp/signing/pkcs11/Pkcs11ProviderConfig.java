@@ -24,7 +24,7 @@ public record Pkcs11ProviderConfig(
             throw new IllegalArgumentException("libraryPath must not be blank for provider '" + providerId + "'");
         }
         libraryWrapperPath = (libraryWrapperPath == null || libraryWrapperPath.isBlank())
-                ? XiPkiPkcs11Library.DEFAULT_WRAPPER_PATH
+                ? null
                 : libraryWrapperPath.trim();
         if (poolSize <= 0) {
             poolSize = 4;
@@ -41,7 +41,7 @@ public record Pkcs11ProviderConfig(
             char[] pin,
             int poolSize,
             boolean prehashInJvm) {
-        this(providerId, libraryPath, XiPkiPkcs11Library.DEFAULT_WRAPPER_PATH, tokenLabel, slotId, slotListIndex, pin, poolSize, prehashInJvm);
+        this(providerId, libraryPath, null, tokenLabel, slotId, slotListIndex, pin, poolSize, prehashInJvm);
     }
 
     public char[] pinCopy() {

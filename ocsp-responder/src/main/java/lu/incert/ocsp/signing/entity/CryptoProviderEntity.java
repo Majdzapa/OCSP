@@ -34,9 +34,8 @@ public class CryptoProviderEntity {
     @Column(name = "library_path", nullable = false, length = 500)
     private String libraryPath;
 
-    @Column(name = "library_wrapper_path", nullable = false, length = 500)
-    @Builder.Default
-    private String libraryWrapperPath = "/opt/pkcs11j/libpkcs11wrapper.so";
+    @Column(name = "library_wrapper_path", nullable = true, length = 500)
+    private String libraryWrapperPath;
 
     @Column(nullable = false)
     @Builder.Default

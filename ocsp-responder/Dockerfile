@@ -22,18 +22,9 @@ RUN rm -rf ./src/main/resources/static/*
 COPY --from=frontend-build /app/dist/ ./src/main/resources/static/console/
 COPY build/site/ ./src/main/resources/static/docs/
 
-RUN mvn package -DskipTests --batch-mode && \
-    mkdir -p /opt/pkcs11j && \
-    ARCH="$(uname -m)" && \
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-      WRAPPER_ENTRY="natives/unix/linux-aarch64/release/libpkcs11wrapper.so"; \
-    else \
-      WRAPPER_ENTRY="natives/unix/linux-x86_64/release/libpkcs11wrapper.so"; \
-    fi && \
-    (cd /tmp && jar xf /root/.m2/repository/org/xipki/ipkcs11wrapper/1.0.9/ipkcs11wrapper-1.0.9.jar "$WRAPPER_ENTRY" && \
-     cp "/tmp/$WRAPPER_ENTRY" /opt/pkcs11j/libpkcs11wrapper.so && chmod 755 /opt/pkcs11j/libpkcs11wrapper.so)
+RUN mvn package -DskipTests --batch-mode
 
-# Stage 3: Runtime image with SoftHSM2 PKCS#11 library, pre-staged JNI wrapper, and unified JAR
+# Stage 3: Runtime image with SoftHSM2 PKCS#11 library and unified JAR
 FROM eclipse-temurin:25-jdk-jammy
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,7 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=build /opt/pkcs11j/libpkcs11wrapper.so /opt/pkcs11j/libpkcs11wrapper.so
 COPY --from=build /build/target/ocsp-responder-*.jar /app/app.jar
 
 ENV SOFTHSM2_CONF=/etc/softhsm2/softhsm2.conf

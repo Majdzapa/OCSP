@@ -36,7 +36,7 @@ public class SigningConfig {
 
     @Bean
     public LibraryPathAllowlist libraryPathAllowlist() {
-        return new LibraryPathAllowlist(hsm.getAllowedLibraryDirs());
+        return new LibraryPathAllowlist(hsm.getAllowedLibraryDirs(), hsm.getDefaultWrapperPath());
     }
 
     @Bean(name = "pkcs11Engine", destroyMethod = "close")

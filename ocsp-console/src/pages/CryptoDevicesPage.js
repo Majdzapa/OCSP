@@ -29,7 +29,7 @@ export const CryptoDevicesPage = () => {
     const [provName, setProvName] = useState('');
     const [provWrapperType, setProvWrapperType] = useState('PKCS11J');
     const [provLibraryPath, setProvLibraryPath] = useState('/usr/lib/softhsm/libsofthsm2.so');
-    const [provWrapperPath, setProvWrapperPath] = useState('/opt/pkcs11j/libpkcs11wrapper.so');
+    const [provWrapperPath, setProvWrapperPath] = useState('');
     const [provEnabled, setProvEnabled] = useState(true);
 
     // Device modal (create / edit)
@@ -119,7 +119,7 @@ export const CryptoDevicesPage = () => {
         setProvName('');
         setProvWrapperType('PKCS11J');
         setProvLibraryPath('/usr/lib/softhsm/libsofthsm2.so');
-        setProvWrapperPath('/opt/pkcs11j/libpkcs11wrapper.so');
+        setProvWrapperPath('');
         setProvEnabled(true);
         setError(null);
         setProviderModalOpen(true);
@@ -131,7 +131,7 @@ export const CryptoDevicesPage = () => {
         setProvName(p.name);
         setProvWrapperType(p.wrapperType || 'PKCS11J');
         setProvLibraryPath(p.libraryPath || '');
-        setProvWrapperPath(p.libraryWrapperPath || '/opt/pkcs11j/libpkcs11wrapper.so');
+        setProvWrapperPath(p.libraryWrapperPath || '');
         setProvEnabled(Boolean(p.enabled));
         setError(null);
         setProviderModalOpen(true);
@@ -147,7 +147,7 @@ export const CryptoDevicesPage = () => {
                 name: provName.trim(),
                 wrapperType: provWrapperType,
                 libraryPath: provLibraryPath.trim(),
-                libraryWrapperPath: provWrapperPath.trim() || '/opt/pkcs11j/libpkcs11wrapper.so',
+                libraryWrapperPath: provWrapperPath.trim() || null,
                 enabled: provEnabled,
             };
             if (editingProviderId != null) {
@@ -451,7 +451,7 @@ export const CryptoDevicesPage = () => {
                                         Provider: <Code>{d.providerCode}</Code> · Token: <Code>{d.tokenLabel || 'by slot'}</Code> · Slot: <Code>{d.slotId != null ? d.slotId : `idx ${d.slotListIndex}`}</Code> · Pool: <Code>{d.poolSize}</Code>
                                     </Text>
                                     <Text size="xs" c="dimmed" mt={4}>
-                                        Driver: <Code>{d.libraryPath}</Code> · Wrapper: <Code>{d.libraryWrapperPath}</Code>
+                                        Driver: <Code>{d.libraryPath}</Code> · Wrapper: <Code>{d.libraryWrapperPath || 'built-in'}</Code>
                                     </Text>
                                     <Text size="xs" c="dimmed" mt={4}>
                                         Status: {d.statusMessage}
@@ -535,7 +535,7 @@ export const CryptoDevicesPage = () => {
                                         <Table.Td><Text size="sm" fw={600}>{p.name}</Text></Table.Td>
                                         <Table.Td><Badge size="xs" color="cyan" variant="light">{p.wrapperType}</Badge></Table.Td>
                                         <Table.Td><Code>{p.libraryPath}</Code></Table.Td>
-                                        <Table.Td><Code>{p.libraryWrapperPath}</Code></Table.Td>
+                                        <Table.Td><Code>{p.libraryWrapperPath || 'built-in'}</Code></Table.Td>
                                         <Table.Td><Badge size="xs" variant="outline">{p.deviceCount}</Badge></Table.Td>
                                         <Table.Td>
                                             <Badge size="xs" color={p.enabled ? 'teal' : 'gray'} variant="light">
@@ -628,12 +628,11 @@ export const CryptoDevicesPage = () => {
                             required
                         />
                         <TextInput
-                            label="JNI Library Wrapper Path (libraryWrapperPath)"
-                            description="Absolute path to the JNI wrapper binary inside hsm.allowed-library-dirs (default: /opt/pkcs11j/libpkcs11wrapper.so)"
-                            placeholder="/opt/pkcs11j/libpkcs11wrapper.so"
+                            label="JNI Library Wrapper Path (optional)"
+                            description="Leave blank to use ipkcs11wrapper's built-in OS/arch loader, or provide an explicit pre-staged binary path inside hsm.allowed-library-dirs"
+                            placeholder="built-in (auto-detected)"
                             value={provWrapperPath}
                             onChange={(e) => setProvWrapperPath(e.currentTarget.value)}
-                            required
                         />
                         <Switch label="Enabled" checked={provEnabled} onChange={(e) => setProvEnabled(e.currentTarget.checked)} />
                         <Group justify="flex-end">

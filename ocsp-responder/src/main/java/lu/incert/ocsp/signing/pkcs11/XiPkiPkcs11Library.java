@@ -11,20 +11,23 @@ import iaik.pkcs.pkcs11.wrapper.PKCS11Implementation;
 import org.xipki.pkcs11.wrapper.PKCS11Module;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * {@link Pkcs11LibraryPort} backed directly by Maven Central's {@code org.xipki:ipkcs11wrapper} JAR
- * (zero custom C compilation or build scripts).
+ * (zero custom C compilation or hardcoded native resource paths).
+ * <p>
+ * By default ({@code libraryWrapperPath == null}), delegates native JNI bridge loading to
+ * {@link PKCS11Module#getInstance(String)}, which automatically selects the matching OS/architecture
+ * binary bundled in {@code ipkcs11wrapper}. When an explicit pre-staged wrapper file path is supplied
+ * (for example via {@code hsm.default-wrapper-path} or {@code crypto_providers.library_wrapper_path}),
+ * the file must already exist on disk (fail-fast, zero runtime binary writes).
  * <p>
  * Connected {@link PKCS11} module handles are retained in a static cache so JVM garbage collection
  * never calls {@link PKCS11Implementation#finalize()} -&gt; {@code dlclose()} on active worker threads
@@ -32,8 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
 
-    public static final String DEFAULT_WRAPPER_PATH = "/opt/pkcs11j/libpkcs11wrapper.so";
-    public static final String EMBEDDED = "embedded";
+    private static final String BUILTIN_LOADER = "<builtin>";
 
     private static final Map<String, PKCS11> MODULE_CACHE = new ConcurrentHashMap<>();
     private static volatile String loadedWrapperSource;
@@ -42,7 +44,7 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
     private final PKCS11 pkcs11;
 
     public XiPkiPkcs11Library(String libraryPath) {
-        this(libraryPath, DEFAULT_WRAPPER_PATH);
+        this(libraryPath, null);
     }
 
     public XiPkiPkcs11Library(String libraryPath, String libraryWrapperPath) {
@@ -56,9 +58,10 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
     }
 
     private static synchronized PKCS11 acquireNativeModule(String canonicalLib, String explicitWrapper) {
-        if (explicitWrapper != null && loadedWrapperSource != null && !explicitWrapper.equals(loadedWrapperSource)) {
+        String requestedSource = explicitWrapper != null ? explicitWrapper : BUILTIN_LOADER;
+        if (loadedWrapperSource != null && !requestedSource.equals(loadedWrapperSource)) {
             throw new IllegalStateException("PKCS#11 JNI wrapper already loaded from '" + loadedWrapperSource
-                    + "' and cannot be reloaded with '" + explicitWrapper + "' in the same JVM");
+                    + "' and cannot be reloaded with '" + requestedSource + "' in the same JVM");
         }
         return MODULE_CACHE.computeIfAbsent(canonicalLib, path -> openNativeModule(path, explicitWrapper));
     }
@@ -67,20 +70,22 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
         try {
             if (loadedWrapperSource == null) {
                 if (explicitWrapper != null) {
-                    Path wrapperPath = Path.of(explicitWrapper);
+                    Path wrapperPath = Path.of(explicitWrapper).toAbsolutePath().normalize();
                     if (!Files.isRegularFile(wrapperPath)) {
-                        materializeBundledWrapper(wrapperPath);
+                        throw new IllegalStateException(
+                                "Configured PKCS#11 JNI wrapper does not exist on disk: '" + wrapperPath
+                                        + "' (pre-stage the binary or leave libraryWrapperPath blank to use the built-in loader)");
                     }
-                    System.load(wrapperPath.toAbsolutePath().normalize().toString());
+                    System.load(wrapperPath.toString());
                     PKCS11Implementation.initializeLibrary();
                     loadedWrapperSource = explicitWrapper;
                     return new PKCS11Implementation(canonicalLib);
                 }
                 PKCS11Module module = PKCS11Module.getInstance(canonicalLib);
-                loadedWrapperSource = EMBEDDED;
+                loadedWrapperSource = BUILTIN_LOADER;
                 return module.getPKCS11Module();
             }
-            if (EMBEDDED.equals(loadedWrapperSource)) {
+            if (BUILTIN_LOADER.equals(loadedWrapperSource)) {
                 return PKCS11Module.getInstance(canonicalLib).getPKCS11Module();
             }
             return new PKCS11Implementation(canonicalLib);
@@ -89,44 +94,12 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
         }
     }
 
-    /**
-     * Extracts the OS/arch-appropriate {@code libpkcs11wrapper} binary from {@code ipkcs11wrapper.jar}
-     * to {@code targetPath} if it has not already been pre-staged on disk.
-     */
-    public static void materializeBundledWrapper(Path targetPath) throws IOException {
-        if (Files.isRegularFile(targetPath)) {
-            return;
-        }
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        String resource;
-        if (os.contains("mac") || os.contains("darwin")) {
-            resource = "natives/unix/macosx_universal/release/libpkcs11wrapper.jnilib";
-        } else if (os.contains("win")) {
-            resource = "natives/windows/win-x86_64/release/pkcs11wrapper.dll";
-        } else if (arch.contains("aarch64") || arch.contains("arm64")) {
-            resource = "natives/unix/linux-aarch64/release/libpkcs11wrapper.so";
-        } else {
-            resource = "natives/unix/linux-x86_64/release/libpkcs11wrapper.so";
-        }
-        Path parent = targetPath.toAbsolutePath().normalize().getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        try (InputStream in = PKCS11Module.class.getClassLoader().getResourceAsStream(resource)) {
-            if (in == null) {
-                throw new IOException("Bundled PKCS#11 wrapper resource not found in classpath: " + resource);
-            }
-            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
     private static String normalizeWrapperPath(String raw) {
         if (raw == null || raw.isBlank()) {
-            return DEFAULT_WRAPPER_PATH;
+            return null;
         }
         String trimmed = raw.trim();
-        if (EMBEDDED.equalsIgnoreCase(trimmed) || "auto".equalsIgnoreCase(trimmed)) {
+        if ("embedded".equalsIgnoreCase(trimmed) || "auto".equalsIgnoreCase(trimmed)) {
             return null;
         }
         return Path.of(trimmed).toAbsolutePath().normalize().toString();

@@ -17,11 +17,14 @@ import java.util.Objects;
  */
 public final class LibraryPathAllowlist {
 
-    public static final String DEFAULT_WRAPPER_PATH = "/opt/pkcs11j/libpkcs11wrapper.so";
-
     private final List<NormalizedPath> allowedDirs;
+    private final String defaultWrapperPath;
 
     public LibraryPathAllowlist(List<String> directories) {
+        this(directories, null);
+    }
+
+    public LibraryPathAllowlist(List<String> directories, String defaultWrapperPath) {
         if (directories == null || directories.isEmpty()) {
             this.allowedDirs = List.of();
         } else {
@@ -33,6 +36,14 @@ public final class LibraryPathAllowlist {
                     .distinct()
                     .toList();
         }
+        String trimmedDefault = (defaultWrapperPath == null || defaultWrapperPath.isBlank())
+                ? null
+                : defaultWrapperPath.trim();
+        if (trimmedDefault != null && !"embedded".equalsIgnoreCase(trimmedDefault) && !"auto".equalsIgnoreCase(trimmedDefault)) {
+            this.defaultWrapperPath = validateNormalizedAbsoluteFile(trimmedDefault, "hsm.default-wrapper-path");
+        } else {
+            this.defaultWrapperPath = null;
+        }
     }
 
     public String validateLibraryPath(String libraryPath) {
@@ -42,13 +53,18 @@ public final class LibraryPathAllowlist {
         return validateNormalizedAbsoluteFile(libraryPath, "libraryPath");
     }
 
+    /**
+     * Validates an optional explicit JNI wrapper path.
+     * Returns {@code null} when blank/{@code embedded}/{@code auto} and no {@code hsm.default-wrapper-path}
+     * is configured (instructing {@code ipkcs11wrapper} to use its built-in OS/arch native loader).
+     */
     public String validateWrapperPath(String wrapperPath) {
         if (wrapperPath == null || wrapperPath.isBlank()) {
-            return validateNormalizedAbsoluteFile(DEFAULT_WRAPPER_PATH, "libraryWrapperPath");
+            return defaultWrapperPath;
         }
         String trimmed = wrapperPath.trim();
         if ("embedded".equalsIgnoreCase(trimmed) || "auto".equalsIgnoreCase(trimmed)) {
-            return validateNormalizedAbsoluteFile(DEFAULT_WRAPPER_PATH, "libraryWrapperPath");
+            return defaultWrapperPath;
         }
         return validateNormalizedAbsoluteFile(trimmed, "libraryWrapperPath");
     }
