@@ -54,3 +54,4 @@ public class SpaWebMvcConfig implements WebMvcConfigurer {
         registry.addRedirectViewController("/docs/", "/docs/ocsp/5.0/index.html");
     }
 }
+

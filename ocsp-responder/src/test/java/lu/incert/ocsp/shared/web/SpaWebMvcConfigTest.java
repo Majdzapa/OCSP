@@ -62,3 +62,4 @@ class SpaWebMvcConfigTest {
                 .andExpect(status().isNotFound());
     }
 }
+
