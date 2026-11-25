@@ -30,13 +30,51 @@ class LibraryPathAllowlistTest {
     @Test
     void rejectsTraversalRelativeAndUnlistedLibraryPaths() {
         assertThatThrownBy(() -> allowlist.validateLibraryPath("/usr/lib/softhsm/../evil.so"))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("traversal");
         assertThatThrownBy(() -> allowlist.validateLibraryPath("libsofthsm2.so"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must be an absolute path");
+        assertThatThrownBy(() -> allowlist.validateLibraryPath("/usr/lib/softhsm"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("outside hsm.allowed-library-dirs");
+        assertThatThrownBy(() -> allowlist.validateLibraryPath("/usr/lib/softhsm-evil/lib.so"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("outside hsm.allowed-library-dirs");
+        assertThatThrownBy(() -> allowlist.validateLibraryPath("/usr/lib/softhsm\\evil.so"))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> allowlist.validateLibraryPath("/tmp/arbitrary.so"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("outside hsm.allowed-library-dirs");
         assertThatThrownBy(() -> allowlist.validateWrapperPath("/tmp/evil_wrapper.so"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("outside hsm.allowed-library-dirs");
+    }
+
+    @Test
+    void validatesWindowsDrivePathsConsistentlyAcrossOperatingSystems() {
+        LibraryPathAllowlist winAllowlist = new LibraryPathAllowlist(List.of(
+                "C:\\SoftHSM2\\lib",
+                "D:/opt/pkcs11j"
+        ));
+
+        assertThat(winAllowlist.validateLibraryPath("C:\\SoftHSM2\\lib\\softhsm2-x64.dll"))
+                .isEqualTo("C:\\SoftHSM2\\lib\\softhsm2-x64.dll");
+        assertThat(winAllowlist.validateLibraryPath("c:/softhsm2/lib/softhsm2-x64.dll"))
+                .isEqualTo("C:\\softhsm2\\lib\\softhsm2-x64.dll");
+        assertThat(winAllowlist.validateWrapperPath("D:\\opt\\pkcs11j\\pkcs11wrapper.dll"))
+                .isEqualTo("D:\\opt\\pkcs11j\\pkcs11wrapper.dll");
+
+        assertThatThrownBy(() -> winAllowlist.validateLibraryPath("C:\\SoftHSM2\\lib\\..\\evil.dll"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("traversal");
+        assertThatThrownBy(() -> winAllowlist.validateLibraryPath("C:relative.dll"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must be an absolute path");
+        assertThatThrownBy(() -> winAllowlist.validateLibraryPath("\\\\attacker\\share\\evil.dll"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("UNC");
+        assertThatThrownBy(() -> winAllowlist.validateLibraryPath("C:\\Windows\\System32\\evil.dll"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("outside hsm.allowed-library-dirs");
     }
