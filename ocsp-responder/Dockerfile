@@ -17,9 +17,9 @@ WORKDIR /build
 COPY ocsp-responder/pom.xml ./pom.xml
 COPY ocsp-responder/src ./src
 
-# Embed compiled React frontend and Antora documentation into Spring Boot static resources
+# Embed compiled React frontend under /console/** and Antora docs under /docs/**
 RUN rm -rf ./src/main/resources/static/*
-COPY --from=frontend-build /app/dist/ ./src/main/resources/static/
+COPY --from=frontend-build /app/dist/ ./src/main/resources/static/console/
 COPY build/site/ ./src/main/resources/static/docs/
 
 RUN mvn package -DskipTests --batch-mode && \

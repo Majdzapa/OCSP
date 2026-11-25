@@ -86,7 +86,8 @@ export const LoginPage = () => {
             setError('Keycloak configuration is not available. Check server auth config.');
             return;
         }
-        const redirectUri = encodeURIComponent(`${window.location.origin}/login`);
+        const consoleBase = (import.meta.env.BASE_URL || '/console/').replace(/\/$/, '');
+        const redirectUri = encodeURIComponent(`${window.location.origin}${consoleBase}/login`);
         window.location.href =
             `${kc.authServerUrl}/realms/${kc.realm}/protocol/openid-connect/auth` +
                 `?client_id=${kc.clientId}&redirect_uri=${redirectUri}&response_type=token&scope=openid%20profile%20email`;

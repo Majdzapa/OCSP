@@ -129,10 +129,14 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+      - "9090:9090"
       - "3002:8080"
     environment:
       <<: *spring-opts
       OCSP_NODE_ID: ${OCSP_NODE_ID:-ocsp-node-1}
+      SECURITY_PORT_ISOLATION_ENABLED: ${SECURITY_PORT_ISOLATION_ENABLED:-false}
+      SECURITY_PORT_ISOLATION_OCSP_PORT: ${SECURITY_PORT_ISOLATION_OCSP_PORT:-8080}
+      SECURITY_PORT_ISOLATION_ADMIN_PORT: ${SECURITY_PORT_ISOLATION_ADMIN_PORT:-9090}
       MARIADB_HOST: mariadb
       MARIADB_PORT: 3306
       MARIADB_DB: ocsp
@@ -170,7 +174,7 @@ services:
       - hsm-conf:/etc/softhsm2
       - ./certs/rabbitmq:/certs/rabbitmq:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || curl -sf http://localhost:9090/actuator/health || exit 1"]
       start_period: 40s
       interval: 10s
       timeout: 5s

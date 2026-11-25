@@ -6,8 +6,9 @@ import '@mantine/core/styles.css';
 import App from './App';
 import { mantineTheme } from './theme/mantineTheme';
 import './index.css';
+const routerBase = (import.meta.env.BASE_URL || '/console/').replace(/\/$/, '');
 ReactDOM.createRoot(document.getElementById('root')).render(<React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={routerBase}>
       <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
         <App />
       </MantineProvider>

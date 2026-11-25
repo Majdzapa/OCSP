@@ -20,7 +20,11 @@ security:
     key-store-password: ${SECURITY_TLS_KEYSTORE_PASSWORD:}
     key-store-type: ${SECURITY_TLS_KEYSTORE_TYPE:PKCS12}
   cors:
-    allowed-origins: ${SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:3002,http://localhost:3000,http://localhost:5173}
+    allowed-origins: ${SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:3002,http://localhost:3000,http://localhost:5173,http://localhost:9090,https://localhost:8443}
+  port-isolation:
+    enabled: ${SECURITY_PORT_ISOLATION_ENABLED:false}
+    ocsp-port: ${SECURITY_PORT_ISOLATION_OCSP_PORT:${SERVER_PORT:8080}}
+    admin-port: ${SECURITY_PORT_ISOLATION_ADMIN_PORT:9090}
 
 rabbitmq:
   tls:

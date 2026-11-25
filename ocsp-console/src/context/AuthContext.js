@@ -30,7 +30,8 @@ export const AuthProvider = ({ children }) => {
         clearLocalAuth();
         if (wasKeycloakSession && authConfig?.keycloak?.authServerUrl) {
             const kc = authConfig.keycloak;
-            const postLogoutRedirectUri = encodeURIComponent(`${window.location.origin}/login`);
+            const consoleBase = (import.meta.env.BASE_URL || '/console/').replace(/\/$/, '');
+            const postLogoutRedirectUri = encodeURIComponent(`${window.location.origin}${consoleBase}/login`);
             let logoutUrl =
                 `${kc.authServerUrl}/realms/${kc.realm}/protocol/openid-connect/logout` +
                     `?client_id=${encodeURIComponent(kc.clientId)}&post_logout_redirect_uri=${postLogoutRedirectUri}`;

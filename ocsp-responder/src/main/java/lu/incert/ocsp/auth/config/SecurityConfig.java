@@ -131,13 +131,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(
-                        "/", "/index.html", "/login.html", "/favicon.ico",
-                        "/assets/**", "/static/**", "/docs/**",
-                        "/login", "/ocsp-client",
-                        "/dashboard", "/inbox", "/revocations",
-                        "/signing-cert", "/signing-certificates",
-                        "/hsm-devices", "/signing-validity",
-                        "/cert-checker", "/trusted-cas", "/users", "/audit"
+                        "/", "/console", "/console/**",
+                        "/docs", "/docs/**",
+                        "/favicon.ico"
                 ).permitAll()
                 .requestMatchers("/api/v1/client/**").permitAll()
                 .requestMatchers("/api/v1/admin/**").authenticated()

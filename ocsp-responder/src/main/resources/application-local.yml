@@ -39,7 +39,11 @@ security:
   tls:
     enabled: true
   cors:
-    allowed-origins: http://localhost:3002,http://localhost:3000,http://localhost:5173
+    allowed-origins: http://localhost:3002,http://localhost:3000,http://localhost:5173,http://localhost:9090,https://localhost:8443
+  port-isolation:
+    enabled: ${SECURITY_PORT_ISOLATION_ENABLED:false}
+    ocsp-port: ${SECURITY_PORT_ISOLATION_OCSP_PORT:8080}
+    admin-port: ${SECURITY_PORT_ISOLATION_ADMIN_PORT:9090}
 
 keycloak:
   auth-server-url: http://localhost:8081
