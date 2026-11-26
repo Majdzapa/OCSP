@@ -6,6 +6,8 @@ import lu.incert.ocsp.signing.dto.CryptoDeviceRequest;
 import lu.incert.ocsp.signing.dto.CryptoProviderDto;
 import lu.incert.ocsp.signing.dto.CryptoProviderRequest;
 import lu.incert.ocsp.signing.dto.CryptoSlotDto;
+import lu.incert.ocsp.signing.dto.InitializeTokenRequest;
+import lu.incert.ocsp.signing.dto.InitializeTokenResponse;
 import lu.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import lu.incert.ocsp.signing.entity.CryptoProviderEntity;
 import lu.incert.ocsp.signing.port.CryptoDeviceSpec;
@@ -88,6 +90,89 @@ public class CryptoDeviceService {
         return slots.stream()
                 .map(slot -> toSlotDto(slot, existingDevices, provider))
                 .toList();
+    }
+
+    /**
+     * Initializes a PKCS#11 token / creates a new virtual slot (Vslot) via {@code C_InitToken} + {@code C_InitPIN}
+     * and optionally registers it as a Pattern 2 {@code LOCKED} OCSP crypto device. Zero PINs are ever stored.
+     */
+    @Transactional
+    public InitializeTokenResponse initializeProviderToken(
+            Long providerId,
+            InitializeTokenRequest request,
+            char[] soPin,
+            char[] userPin) {
+        try {
+            CryptoProviderEntity provider = providerRepository.findById(providerId)
+                    .orElseThrow(() -> new IllegalArgumentException("Crypto provider not found: " + providerId));
+            String validatedLibrary = allowlist.validateLibraryPath(provider.getLibraryPath());
+            String validatedWrapper = allowlist.validateWrapperPath(provider.getLibraryWrapperPath());
+            CryptoDeviceAdapterFactory factory = requireFactory(provider.getWrapperType());
+
+            String cleanLabel = requireCleanId(request.tokenLabel(), "tokenLabel");
+            if (cleanLabel.length() > 32) {
+                throw new IllegalArgumentException("tokenLabel must be at most 32 characters (PKCS#11 limit)");
+            }
+
+            DiscoveredSlotInfo initialized = factory.initializeToken(
+                    validatedLibrary,
+                    validatedWrapper,
+                    request.slotId(),
+                    cleanLabel,
+                    soPin,
+                    userPin
+            );
+
+            CryptoDeviceDto registeredDevice = null;
+            if (Boolean.TRUE.equals(request.registerAsDevice())) {
+                String deviceId = (request.deviceId() != null && !request.deviceId().isBlank())
+                        ? request.deviceId().trim()
+                        : suggestDeviceId(provider.getCode(), initialized.tokenLabel(), initialized.slotId());
+                int poolSize = (request.poolSize() != null && request.poolSize() > 0) ? request.poolSize() : 4;
+                registeredDevice = createDevice(new CryptoDeviceRequest(
+                        deviceId,
+                        provider.getId(),
+                        initialized.tokenLabel(),
+                        // Resolve by tokenLabel so SoftHSM2's post-C_Finalize slotId reassignment never breaks unlock
+                        (initialized.tokenLabel() != null && !initialized.tokenLabel().isBlank()) ? null : initialized.slotId(),
+                        initialized.slotListIndex(),
+                        poolSize,
+                        false,
+                        Boolean.TRUE.equals(request.isDefault()),
+                        true
+                ));
+            }
+
+            List<CryptoDeviceEntity> existingDevices = deviceRepository.findAllByProviderId(provider.getId());
+            CryptoSlotDto slotDto = toSlotDto(initialized, existingDevices, provider);
+            String msg = registeredDevice != null
+                    ? "Token '" + initialized.tokenLabel() + "' initialized on slot " + initialized.slotId()
+                        + " and registered as LOCKED device '" + registeredDevice.deviceId()
+                        + "' (unlock with User PIN to activate)."
+                    : "Token '" + initialized.tokenLabel() + "' initialized cleanly on slot " + initialized.slotId()
+                        + " (PINs wiped from memory).";
+            log.info("Initialized token '{}' on provider '{}' slot {} (registeredDevice={})",
+                    initialized.tokenLabel(), provider.getCode(), initialized.slotId(),
+                    registeredDevice != null ? registeredDevice.deviceId() : "none");
+            return new InitializeTokenResponse(slotDto, registeredDevice, msg);
+        } finally {
+            if (soPin != null) {
+                Arrays.fill(soPin, '\0');
+            }
+            if (userPin != null) {
+                Arrays.fill(userPin, '\0');
+            }
+        }
+    }
+
+    private static String suggestDeviceId(String providerCode, String tokenLabel, long slotId) {
+        String base = (tokenLabel != null && !tokenLabel.isBlank()) ? tokenLabel : ("slot-" + slotId);
+        String slug = base.toLowerCase().replaceAll("[^a-z0-9-]+", "-").replaceAll("^-+|-+$", "");
+        if (slug.isEmpty()) {
+            slug = "slot-" + slotId;
+        }
+        String candidate = (providerCode != null && !providerCode.isBlank()) ? (providerCode + "-" + slug) : slug;
+        return candidate.length() > 95 ? candidate.substring(0, 95) : candidate;
     }
 
     private CryptoSlotDto toSlotDto(

@@ -5,6 +5,8 @@ import lu.incert.ocsp.signing.dto.CryptoDeviceRequest;
 import lu.incert.ocsp.signing.dto.CryptoProviderDto;
 import lu.incert.ocsp.signing.dto.CryptoProviderRequest;
 import lu.incert.ocsp.signing.dto.CryptoSlotDto;
+import lu.incert.ocsp.signing.dto.InitializeTokenRequest;
+import lu.incert.ocsp.signing.dto.InitializeTokenResponse;
 import lu.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import lu.incert.ocsp.signing.entity.CryptoProviderEntity;
 import lu.incert.ocsp.signing.port.ActivatableCryptoProvider;
@@ -74,6 +76,18 @@ class CryptoDeviceServiceTest {
                         new DiscoveredSlotInfo(101L, 0, "ocsp-signing", "SoftHSM", "SoftHSM v2", "AAA", true, 0x400L),
                         new DiscoveredSlotInfo(202L, 1, "ocsp-signing-2", "SoftHSM", "SoftHSM v2", "BBB", true, 0x400L)
                 );
+            }
+
+            @Override
+            public DiscoveredSlotInfo initializeToken(
+                    String libraryPath,
+                    String libraryWrapperPath,
+                    Long slotId,
+                    String tokenLabel,
+                    char[] soPin,
+                    char[] userPin) {
+                return new DiscoveredSlotInfo(
+                        slotId != null ? slotId : 303L, 2, tokenLabel, "SoftHSM", "SoftHSM v2", "CCC", true, 0x400L);
             }
         };
         service = new CryptoDeviceService(
@@ -187,6 +201,38 @@ class CryptoDeviceServiceTest {
         assertThat(slots.get(1).slotId()).isEqualTo(202L);
         assertThat(slots.get(1).configuredDeviceId()).isNull();
         assertThat(slots.get(1).configuredDeviceState()).isNull();
+    }
+
+    @Test
+    void initializeProviderTokenCreatesVslotWipesPinsAndOptionallyRegistersLockedDevice() {
+        CryptoProviderEntity provider = CryptoProviderEntity.builder()
+                .id(1L).code("softhsm2").name("SoftHSM").wrapperType("PKCS11J")
+                .libraryPath("/usr/lib/softhsm/libsofthsm2.so").libraryWrapperPath(null).enabled(true).build();
+
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(deviceRepository.existsByDeviceId("softhsm2-ocsp-ca-3")).thenReturn(false);
+        when(deviceRepository.save(any(CryptoDeviceEntity.class))).thenAnswer(inv -> {
+            CryptoDeviceEntity e = inv.getArgument(0);
+            e.setId(30L);
+            return e;
+        });
+        when(deviceRepository.findAllByProviderId(1L)).thenReturn(List.of());
+
+        char[] soPin = "12345678".toCharArray();
+        char[] userPin = "1234".toCharArray();
+        InitializeTokenRequest req = new InitializeTokenRequest(
+                null, "ocsp-ca-3", "12345678", "1234", true, null, 4, false);
+
+        InitializeTokenResponse res = service.initializeProviderToken(1L, req, soPin, userPin);
+
+        assertThat(soPin).containsOnly('\0');
+        assertThat(userPin).containsOnly('\0');
+        assertThat(res.slot().slotId()).isEqualTo(303L);
+        assertThat(res.slot().tokenLabel()).isEqualTo("ocsp-ca-3");
+        assertThat(res.slot().initialized()).isTrue();
+        assertThat(res.registeredDevice()).isNotNull();
+        assertThat(res.registeredDevice().deviceId()).isEqualTo("softhsm2-ocsp-ca-3");
+        assertThat(res.registeredDevice().activationState()).isEqualTo("LOCKED");
     }
 
     private static final class FakeActivatablePort implements CryptoProviderPort, ActivatableCryptoProvider {

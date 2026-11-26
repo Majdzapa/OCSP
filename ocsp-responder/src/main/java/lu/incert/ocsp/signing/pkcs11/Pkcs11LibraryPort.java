@@ -57,6 +57,21 @@ public interface Pkcs11LibraryPort extends AutoCloseable {
 
     long cLogout(long sessionHandle);
 
+    /**
+     * Initializes (or re-initializes) a token in {@code slotId} via PKCS#11 {@code C_InitToken}.
+     * On SoftHSM2, calling this on an uninitialized free slot creates a new virtual token slot (Vslot).
+     */
+    default void cInitToken(long slotId, char[] soPin, String label) {
+        throw new UnsupportedOperationException("C_InitToken is not supported by this PKCS#11 library port");
+    }
+
+    /**
+     * Initializes the normal user PIN via PKCS#11 {@code C_InitPIN} while logged in as {@code CKU_SO}.
+     */
+    default void cInitPin(long sessionHandle, char[] userPin) {
+        throw new UnsupportedOperationException("C_InitPIN is not supported by this PKCS#11 library port");
+    }
+
     void cFindObjectsInit(long sessionHandle, List<Pkcs11Attribute> template);
 
     long[] cFindObjects(long sessionHandle, int maxCount);

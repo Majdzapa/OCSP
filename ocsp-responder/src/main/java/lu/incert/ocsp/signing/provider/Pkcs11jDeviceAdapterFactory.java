@@ -61,4 +61,38 @@ public class Pkcs11jDeviceAdapterFactory implements CryptoDeviceAdapterFactory {
         }
         return out;
     }
+
+    @Override
+    public DiscoveredSlotInfo initializeToken(
+            String libraryPath,
+            String libraryWrapperPath,
+            Long slotId,
+            String tokenLabel,
+            char[] soPin,
+            char[] userPin) {
+        String safeLib = allowlist.validateLibraryPath(libraryPath);
+        String safeWrapper = allowlist.validateWrapperPath(libraryWrapperPath);
+        TokenInfo info = pkcs11Engine.initToken(safeLib, safeWrapper, slotId, tokenLabel, soPin, userPin);
+
+        // Determine updated slotListIndex for the newly initialized token
+        List<TokenInfo> allSlots = pkcs11Engine.discoverSlots(safeLib, safeWrapper);
+        int slotIdx = 0;
+        for (int i = 0; i < allSlots.size(); i++) {
+            if (allSlots.get(i).slotId() == info.slotId()) {
+                slotIdx = i;
+                break;
+            }
+        }
+        boolean initialized = (info.flags() & Pkcs11Constants.CKF_TOKEN_INITIALIZED) != 0L;
+        return new DiscoveredSlotInfo(
+                info.slotId(),
+                slotIdx,
+                info.label(),
+                info.manufacturerId(),
+                info.model(),
+                info.serialNumber(),
+                initialized,
+                info.flags()
+        );
+    }
 }

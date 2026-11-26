@@ -20,5 +20,15 @@ public interface CryptoDeviceAdapterFactory {
     default List<DiscoveredSlotInfo> discoverSlots(String libraryPath, String libraryWrapperPath) {
         return List.of();
     }
+
+    default DiscoveredSlotInfo initializeToken(
+            String libraryPath,
+            String libraryWrapperPath,
+            Long slotId,
+            String tokenLabel,
+            char[] soPin,
+            char[] userPin) {
+        throw new UnsupportedOperationException("Token / Vslot initialization is not supported by this provider factory");
+    }
 }
 

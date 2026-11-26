@@ -240,6 +240,42 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
     }
 
     @Override
+    public void cInitToken(long slotId, char[] soPin, String label) {
+        char[] pinCopy = soPin != null ? soPin.clone() : new char[0];
+        char[] paddedLabel = formatPkcs11TokenLabel(label);
+        try {
+            pkcs11.C_InitToken(slotId, pinCopy, paddedLabel, true);
+        } catch (PKCS11Exception e) {
+            throw translate("C_InitToken", e);
+        } finally {
+            Arrays.fill(pinCopy, '\0');
+        }
+    }
+
+    @Override
+    public void cInitPin(long sessionHandle, char[] userPin) {
+        char[] pinCopy = userPin != null ? userPin.clone() : new char[0];
+        try {
+            pkcs11.C_InitPIN(sessionHandle, pinCopy, true);
+        } catch (PKCS11Exception e) {
+            throw translate("C_InitPIN", e);
+        } finally {
+            Arrays.fill(pinCopy, '\0');
+        }
+    }
+
+    private static char[] formatPkcs11TokenLabel(String label) {
+        String clean = label != null ? label.trim() : "";
+        if (clean.isEmpty() || clean.length() > 32) {
+            throw new IllegalArgumentException("PKCS#11 token label must be 1..32 characters");
+        }
+        char[] padded = new char[32];
+        Arrays.fill(padded, ' ');
+        clean.getChars(0, clean.length(), padded, 0);
+        return padded;
+    }
+
+    @Override
     public void cFindObjectsInit(long sessionHandle, List<Pkcs11Attribute> template) {
         try {
             pkcs11.C_FindObjectsInit(sessionHandle, toCkAttributes(template), true);

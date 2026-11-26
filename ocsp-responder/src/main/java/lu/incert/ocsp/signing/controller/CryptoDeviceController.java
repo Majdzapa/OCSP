@@ -6,6 +6,7 @@ import lu.incert.ocsp.signing.dto.CryptoDeviceDto;
 import lu.incert.ocsp.signing.dto.CryptoDeviceRequest;
 import lu.incert.ocsp.signing.dto.CryptoProviderDto;
 import lu.incert.ocsp.signing.dto.CryptoProviderRequest;
+import lu.incert.ocsp.signing.dto.InitializeTokenRequest;
 import lu.incert.ocsp.signing.service.CryptoDeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -64,6 +65,30 @@ public class CryptoDeviceController {
             return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Create a virtual slot (Vslot) or initialize a PKCS#11 token via C_InitToken + C_InitPIN (zero PINs stored)")
+    @PostMapping("/crypto-providers/{id}/tokens/initialize")
+    @PreAuthorize("hasPermission(null, 'CRYPTO_DEVICE_MANAGE')")
+    public ResponseEntity<?> initializeProviderToken(
+            @PathVariable Long id,
+            @Valid @RequestBody InitializeTokenRequest request) {
+        char[] soPin = request.soPin().toCharArray();
+        char[] userPin = request.userPin().toCharArray();
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(cryptoDeviceService.initializeProviderToken(id, request, soPin, userPin));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = (e.getMessage() != null && e.getMessage().startsWith("Crypto provider not found"))
+                    ? HttpStatus.NOT_FOUND
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException | UnsupportedOperationException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } finally {
+            Arrays.fill(soPin, '\0');
+            Arrays.fill(userPin, '\0');
         }
     }
 

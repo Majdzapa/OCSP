@@ -184,6 +184,160 @@ public final class Pkcs11Engine implements AutoCloseable {
         }
     }
 
+    /**
+     * Initializes a PKCS#11 token (or creates a new virtual slot on SoftHSM2 when {@code slotId == null})
+     * via {@code C_InitToken} + SO {@code C_Login} + {@code C_InitPIN}. Both PINs are wiped immediately.
+     */
+    public synchronized TokenInfo initToken(
+            String libraryPath,
+            String libraryWrapperPath,
+            Long slotId,
+            String tokenLabel,
+            char[] soPin,
+            char[] userPin) {
+        try {
+            if (tokenLabel == null || tokenLabel.isBlank()) {
+                throw new IllegalArgumentException("tokenLabel must not be blank");
+            }
+            String cleanLabel = tokenLabel.trim();
+            if (cleanLabel.length() > 32) {
+                throw new IllegalArgumentException("tokenLabel must be at most 32 characters (PKCS#11 limit)");
+            }
+            if (soPin == null || soPin.length == 0) {
+                throw new IllegalArgumentException("Security Officer (SO) PIN is required");
+            }
+            if (userPin == null || userPin.length == 0) {
+                throw new IllegalArgumentException("User PIN is required");
+            }
+
+            Pkcs11LibraryPort library = moduleRegistry.acquire(libraryPath, libraryWrapperPath);
+            try {
+                long targetSlotId = resolveTargetSlotForInit(library, libraryPath, slotId, cleanLabel);
+
+                // Refuse to re-initialize a slot currently held open by an unlocked provider
+                synchronized (providersById) {
+                    for (Pkcs11Provider active : providersById.values()) {
+                        if (active.getSlotId() == targetSlotId) {
+                            throw new IllegalStateException("Slot " + targetSlotId
+                                    + " is currently ACTIVE on device '" + active.getProviderId()
+                                    + "'. Lock the device before re-initializing its token.");
+                        }
+                    }
+                }
+
+                // Step 1: C_InitToken (initializes token & creates new Vslot on SoftHSM2)
+                library.cInitToken(targetSlotId, soPin, cleanLabel);
+
+                // Step 2: Re-query slot list (SoftHSM2 reassigns a new slotId after C_InitToken)
+                TokenInfo initializedToken = findInitializedToken(library, targetSlotId, cleanLabel);
+
+                // Step 3: Open RW session as SO -> C_InitPIN(userPin) -> C_Logout -> C_CloseSession
+                long session = library.cOpenSession(
+                        initializedToken.slotId(),
+                        Pkcs11Constants.CKF_SERIAL_SESSION | Pkcs11Constants.CKF_RW_SESSION);
+                try {
+                    long rv = library.cLogin(session, Pkcs11Constants.CKU_SO, soPin);
+                    if (rv != Pkcs11Constants.CKR_OK && rv != Pkcs11Constants.CKR_USER_ALREADY_LOGGED_IN) {
+                        throw new Pkcs11Exception("C_Login(CKU_SO)", rv);
+                    }
+                    try {
+                        library.cInitPin(session, userPin);
+                    } finally {
+                        try {
+                            library.cLogout(session);
+                        } catch (Exception ignored) {}
+                    }
+                } finally {
+                    try {
+                        library.cCloseSession(session);
+                    } catch (Exception ignored) {}
+                }
+
+                TokenInfo finalInfo = library.cGetTokenInfo(initializedToken.slotId());
+                log.info("Initialized PKCS#11 token '{}' on slot {} (serial='{}', library='{}')",
+                        finalInfo.label(), finalInfo.slotId(), finalInfo.serialNumber(), libraryPath);
+                return finalInfo;
+            } finally {
+                moduleRegistry.release(libraryPath);
+            }
+        } finally {
+            if (soPin != null) {
+                java.util.Arrays.fill(soPin, '\0');
+            }
+            if (userPin != null) {
+                java.util.Arrays.fill(userPin, '\0');
+            }
+        }
+    }
+
+    private static long resolveTargetSlotForInit(
+            Pkcs11LibraryPort library,
+            String libraryPath,
+            Long requestedSlotId,
+            String cleanLabel) {
+        long[] slotIds = library.cGetSlotList(true);
+        if (slotIds == null || slotIds.length == 0) {
+            throw new IllegalStateException("No PKCS#11 slots with tokens present for library '" + libraryPath + "'");
+        }
+        // Prevent duplicate token labels on another slot when creating a new Vslot
+        for (long s : slotIds) {
+            try {
+                TokenInfo info = library.cGetTokenInfo(s);
+                boolean initialized = (info.flags() & Pkcs11Constants.CKF_TOKEN_INITIALIZED) != 0L;
+                if (initialized && cleanLabel.equals(info.label().trim())
+                        && (requestedSlotId == null || requestedSlotId != s)) {
+                    throw new IllegalArgumentException(
+                            "A token with label '" + cleanLabel + "' already exists on slot " + s
+                                    + ". Choose a unique token label or select slot " + s + " to re-initialize it.");
+                }
+            } catch (Pkcs11Exception ignored) {}
+        }
+
+        if (requestedSlotId != null) {
+            for (long s : slotIds) {
+                if (s == requestedSlotId) {
+                    return requestedSlotId;
+                }
+            }
+            throw new IllegalArgumentException("Requested PKCS#11 slot " + requestedSlotId
+                    + " not found in library '" + libraryPath + "'");
+        }
+
+        // Auto-select first uninitialized free slot (creates a brand-new Vslot on SoftHSM2)
+        for (long s : slotIds) {
+            try {
+                TokenInfo info = library.cGetTokenInfo(s);
+                boolean initialized = (info.flags() & Pkcs11Constants.CKF_TOKEN_INITIALIZED) != 0L;
+                if (!initialized) {
+                    return s;
+                }
+            } catch (Pkcs11Exception e) {
+                if (e.getErrorCode() != Pkcs11Constants.CKR_TOKEN_NOT_PRESENT) {
+                    return s;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "No free uninitialized PKCS#11 slot available on '" + libraryPath
+                        + "'. Select an existing slot ID to re-initialize or provision a new slot on the HSM.");
+    }
+
+    private static TokenInfo findInitializedToken(Pkcs11LibraryPort library, long originalSlotId, String cleanLabel) {
+        long[] updatedSlots = library.cGetSlotList(true);
+        if (updatedSlots != null) {
+            for (long s : updatedSlots) {
+                try {
+                    TokenInfo info = library.cGetTokenInfo(s);
+                    boolean initialized = (info.flags() & Pkcs11Constants.CKF_TOKEN_INITIALIZED) != 0L;
+                    if (initialized && cleanLabel.equals(info.label().trim())) {
+                        return info;
+                    }
+                } catch (Pkcs11Exception ignored) {}
+            }
+        }
+        return library.cGetTokenInfo(originalSlotId);
+    }
+
     @Override
     public synchronized void close() {
         List<Pkcs11Provider> snapshot;

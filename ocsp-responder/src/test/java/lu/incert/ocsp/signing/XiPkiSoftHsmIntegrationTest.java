@@ -93,6 +93,24 @@ class XiPkiSoftHsmIntegrationTest {
                     .contains("xipki-dev-1", "xipki-dev-2");
             assertThat(engine.loadedModuleCount()).isZero();
 
+            // 0a. Create a brand-new SoftHSM2 Virtual Slot (Vslot) & initialize token via C_InitToken + C_InitPIN
+            char[] soPin = "12345678".toCharArray();
+            char[] userPin = "4321".toCharArray();
+            var vslotToken = engine.initToken(softhsmLib, wrapperLib, null, "xipki-vslot-3", soPin, userPin);
+            assertThat(soPin).containsOnly('\0');
+            assertThat(userPin).containsOnly('\0');
+            assertThat(vslotToken.label()).isEqualTo("xipki-vslot-3");
+            assertThat(engine.discoverSlots(softhsmLib, wrapperLib))
+                    .extracting(lu.incert.ocsp.signing.pkcs11.TokenInfo::label)
+                    .contains("xipki-dev-1", "xipki-dev-2", "xipki-vslot-3");
+
+            // Unlock the newly created Vslot using its newly initialized User PIN ("4321")
+            Pkcs11Provider vslotDev = engine.register(new Pkcs11ProviderConfig(
+                    "softhsm-vslot-3", softhsmLib, wrapperLib, "xipki-vslot-3", null, 0, "4321".toCharArray(), 1, false));
+            assertThat(vslotDev.getTokenInfo().label()).isEqualTo("xipki-vslot-3");
+            assertThat(engine.unregister("softhsm-vslot-3")).isTrue();
+            assertThat(engine.loadedModuleCount()).isZero();
+
             Pkcs11Provider dev1 = engine.register(new Pkcs11ProviderConfig(
                     "softhsm-1", softhsmLib, wrapperLib, "xipki-dev-1", null, 0, "1234".toCharArray(), 4, false));
             Pkcs11Provider dev2 = engine.register(new Pkcs11ProviderConfig(

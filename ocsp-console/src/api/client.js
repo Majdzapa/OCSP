@@ -155,6 +155,7 @@ export const removeUserCertificate = (userId, certId) => api.delete(`/users/${us
 // ---- Cryptographic Providers & HSM Devices (DB + Pattern 2 Runtime Activation) ----
 export const getCryptoProviders = () => api.get('/crypto-providers').then((r) => r.data);
 export const discoverCryptoProviderSlots = (providerId) => api.get(`/crypto-providers/${providerId}/slots`).then((r) => r.data);
+export const initializeCryptoProviderToken = (providerId, req) => api.post(`/crypto-providers/${providerId}/tokens/initialize`, req).then((r) => r.data);
 export const getAllowedLibraryDirs = () => api.get('/crypto-providers/allowed-dirs').then((r) => r.data);
 export const createCryptoProvider = (req) => api.post('/crypto-providers', req).then((r) => r.data);
 export const updateCryptoProvider = (id, req) => api.put(`/crypto-providers/${id}`, req).then((r) => r.data);
