@@ -215,7 +215,7 @@ class SigningCertificateServiceTest {
 
     @Test
     void generateCsr_delegatesToOcspSigner() {
-        when(ocspSigner.generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false))
+        when(ocspSigner.generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, null, false))
                 .thenReturn("-----BEGIN CERTIFICATE REQUEST-----\nMII...\n-----END CERTIFICATE REQUEST-----\n");
 
         var req = new GenerateCsrRequest("key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
@@ -224,19 +224,19 @@ class SigningCertificateServiceTest {
         assertThat(res.providerId()).isEqualTo("default");
         assertThat(res.keyLabel()).isEqualTo("key-2");
         assertThat(res.csrPem()).contains("BEGIN CERTIFICATE REQUEST");
-        verify(ocspSigner).generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, false);
+        verify(ocspSigner).generateCsr("default", "key-2", "CN=OCSP Signer 2,O=Incert,C=CH", "RSA", 3072, null, false);
     }
 
     @Test
     void addAndCsrWithExplicitProviderIdRoutesToSelectedProvider() {
-        when(ocspSigner.generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false))
+        when(ocspSigner.generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, "SHA384withECDSA", false))
                 .thenReturn("-----BEGIN CERTIFICATE REQUEST-----\nEC...\n-----END CERTIFICATE REQUEST-----\n");
 
-        var csrReq = new GenerateCsrRequest("key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false, "softhsm-secondary");
+        var csrReq = new GenerateCsrRequest("key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false, "softhsm-secondary", "SHA384withECDSA");
         GenerateCsrResponse csrRes = service.generateCsr(csrReq);
 
         assertThat(csrRes.providerId()).isEqualTo("softhsm-secondary");
-        verify(ocspSigner).generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, false);
+        verify(ocspSigner).generateCsr("softhsm-secondary", "key-sec", "CN=Secondary,O=Incert,C=CH", "EC", 256, "SHA384withECDSA", false);
 
         when(repository.existsByAlias("sec-cert")).thenReturn(false);
         when(repository.save(any(SigningCertificate.class))).thenAnswer(inv -> {

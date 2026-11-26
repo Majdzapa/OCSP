@@ -20,16 +20,25 @@ public final class SignatureStrategies {
         }
     }
 
+    public List<SignatureStrategy> all() {
+        return List.copyOf(strategies);
+    }
+
     public SignatureStrategy resolve(String signatureAlgorithm) {
-        String alg = (signatureAlgorithm != null && !signatureAlgorithm.isBlank())
-                ? signatureAlgorithm.trim()
-                : "SHA256withRSA";
+        if (signatureAlgorithm == null || signatureAlgorithm.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Signature algorithm must be explicitly specified (registered: "
+                            + strategies.stream().flatMap(s -> s.supportedAlgorithms().stream()).toList() + ")");
+        }
+        String alg = signatureAlgorithm.trim();
         for (SignatureStrategy strategy : strategies) {
             if (strategy.supports(alg)) {
                 return strategy;
             }
         }
-        throw new IllegalArgumentException("Unsupported signature algorithm: " + alg);
+        throw new IllegalArgumentException("Unsupported signature algorithm: '" + alg
+                + "'. Registered: "
+                + strategies.stream().flatMap(s -> s.supportedAlgorithms().stream()).toList());
     }
 }
 

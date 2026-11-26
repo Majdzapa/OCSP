@@ -1,11 +1,13 @@
 package lu.incert.ocsp.signing.service;
 
 import lu.incert.ocsp.signing.dto.AddSigningCertificateRequest;
+import lu.incert.ocsp.signing.dto.AlgorithmCheckRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrResponse;
 import lu.incert.ocsp.signing.dto.HsmInfoDto;
 import lu.incert.ocsp.signing.dto.SigningCertificateDto;
 import lu.incert.ocsp.signing.entity.SigningCertificate;
+import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
@@ -105,7 +107,7 @@ public class SigningCertificateService {
                 ? request.keyLabel().trim()
                 : ocspSigner.getActiveKeyLabel();
 
-        String signatureAlgorithm = resolveSignatureAlgorithm(request.signatureAlgorithm(), holder);
+        String signatureAlgorithm = resolveSignatureAlgorithm(request.signatureAlgorithm(), holder, providerId, keyLabel);
 
         // Import and bind the signed certificate to its HSM private key on the target provider
         ocspSigner.importCertificateToToken(providerId, keyLabel, holder);
@@ -148,6 +150,18 @@ public class SigningCertificateService {
         if (!hsmKeys.isEmpty() && !hsmKeys.contains(target.getKeyLabel())) {
             throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
                     + "': HSM key '" + target.getKeyLabel() + "' not found on provider '" + target.getProviderId() + "'");
+        }
+
+        // Verify live HSM supports this certificate's signature algorithm and key type before activation
+        String targetProvider = resolveProviderId(target.getProviderId());
+        ProviderCapabilities liveCaps = ocspSigner.getProviderCapabilities(targetProvider);
+        if (liveCaps != null && liveCaps.liveIntrospected()) {
+            ProviderCapabilities.AlgorithmValidationResult check = ocspSigner.checkAlgorithmSupport(
+                    targetProvider, target.getKeyLabel(), null, null, target.getSignatureAlgorithm());
+            if (check != null && !check.supported()) {
+                throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
+                        + "': " + check.message());
+            }
         }
 
         // Deactivate any previously active signing certificate for the same Issuer CA or same HSM key
@@ -280,28 +294,63 @@ public class SigningCertificateService {
 
     public GenerateCsrResponse generateCsr(GenerateCsrRequest request) {
         String providerId = resolveProviderId(request.providerId());
+        boolean reuse = Boolean.TRUE.equals(request.reuseExistingKey());
         String alg = (request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
                 ? request.keyAlgorithm().trim().toUpperCase()
-                : "RSA";
+                : (reuse ? null : "RSA");
         int keySize = request.keySize() != null
                 ? request.keySize()
-                : ("EC".equals(alg) || "ECDSA".equals(alg) ? 256 : 3072);
-        boolean reuse = Boolean.TRUE.equals(request.reuseExistingKey());
+                : (alg != null && ("EC".equals(alg) || "ECDSA".equals(alg)) ? 256 : 3072);
+        String sigAlg = (request.signatureAlgorithm() != null && !request.signatureAlgorithm().isBlank())
+                ? request.signatureAlgorithm().trim()
+                : null;
+
+        // Pre-verify key algorithm, key size, and chosen CSR signing algorithm against live HSM capabilities
+        ProviderCapabilities liveCaps = ocspSigner.getProviderCapabilities(providerId);
+        if (liveCaps != null && liveCaps.liveIntrospected()) {
+            ProviderCapabilities.AlgorithmValidationResult check = ocspSigner.checkAlgorithmSupport(
+                    providerId,
+                    reuse ? request.keyLabel().trim() : null,
+                    reuse ? null : alg,
+                    reuse ? null : keySize,
+                    sigAlg
+            );
+            if (check != null && !check.supported()) {
+                throw new IllegalArgumentException(check.message());
+            }
+        }
 
         String csrPem = ocspSigner.generateCsr(
                 providerId,
                 request.keyLabel().trim(),
                 request.subjectDn().trim(),
-                alg,
+                alg != null ? alg : "RSA",
                 keySize,
+                sigAlg,
                 reuse
         );
         return new GenerateCsrResponse(
                 providerId,
                 request.keyLabel().trim(),
                 request.subjectDn().trim(),
-                alg,
+                alg != null ? alg : "EXISTING",
                 csrPem
+        );
+    }
+
+    public ProviderCapabilities getProviderCapabilities(String providerId) {
+        String resolved = resolveProviderId(providerId);
+        return ocspSigner.getProviderCapabilities(resolved);
+    }
+
+    public ProviderCapabilities.AlgorithmValidationResult checkAlgorithmSupport(AlgorithmCheckRequest request) {
+        String resolved = resolveProviderId(request != null ? request.providerId() : null);
+        return ocspSigner.checkAlgorithmSupport(
+                resolved,
+                request != null ? request.keyLabel() : null,
+                request != null ? request.keyAlgorithm() : null,
+                request != null ? request.keySize() : null,
+                request != null ? request.signatureAlgorithm() : null
         );
     }
 
@@ -310,9 +359,18 @@ public class SigningCertificateService {
     }
 
     public HsmInfoDto getHsmInfo() {
-        java.util.Map<String, java.util.List<String>> supportedByType = SigningAlgorithm.groupedByKeyType();
         List<ProviderDeviceInfo> providers = ocspSigner.listProviders();
         String defaultProviderId = resolveProviderId(null);
+        java.util.Map<String, java.util.List<String>> supportedByType = SigningAlgorithm.groupedByKeyType();
+        try {
+            ProviderCapabilities caps = ocspSigner.getProviderCapabilities(defaultProviderId);
+            if (caps != null && caps.liveIntrospected() && caps.supportedSignatureAlgorithms() != null
+                    && !caps.supportedSignatureAlgorithms().isEmpty()) {
+                supportedByType = caps.supportedSignatureAlgorithms();
+            }
+        } catch (Exception ignored) {
+            // Provider may still be LOCKED (Pattern 2); keep registered strategy list as fallback
+        }
 
         ProviderDeviceInfo primaryInfo = providers.stream()
                 .filter(p -> defaultProviderId.equals(p.providerId()))
@@ -410,12 +468,37 @@ public class SigningCertificateService {
         }
     }
 
-    private String resolveSignatureAlgorithm(String requested, X509CertificateHolder holder) {
+    private String resolveSignatureAlgorithm(
+            String requested,
+            X509CertificateHolder holder,
+            String providerId,
+            String keyLabel) {
         String keyType = isEcCertificate(holder) ? "EC" : "RSA";
+        ProviderCapabilities liveCaps = null;
+        try {
+            liveCaps = ocspSigner.getProviderCapabilities(providerId);
+        } catch (Exception ignored) {}
+
         if (requested == null || requested.isBlank()) {
+            if (liveCaps != null && liveCaps.liveIntrospected()) {
+                List<String> liveSupported = liveCaps.supportedSignatureAlgorithms().getOrDefault(keyType, List.of());
+                if (!liveSupported.isEmpty()) {
+                    return liveSupported.get(0);
+                }
+                throw new IllegalArgumentException(
+                        "No signing algorithms for key type " + keyType + " are supported on HSM provider '" + providerId + "'");
+            }
             return SigningAlgorithm.defaultForKeyType(keyType).getAlgorithmName();
         }
         String trimmed = requested.trim();
+        if (liveCaps != null && liveCaps.liveIntrospected()) {
+            ProviderCapabilities.AlgorithmValidationResult check =
+                    ocspSigner.checkAlgorithmSupport(providerId, keyLabel, keyType, null, trimmed);
+            if (check != null && !check.supported()) {
+                throw new IllegalArgumentException(check.message());
+            }
+            return trimmed;
+        }
         if (!SigningAlgorithm.isSupportedForKeyType(trimmed, keyType)) {
             throw new IllegalArgumentException("Unsupported or incompatible " + keyType + " signature algorithm '" + trimmed
                     + "'. Allowed: " + SigningAlgorithm.namesForKeyType(keyType));

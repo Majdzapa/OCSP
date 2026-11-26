@@ -14,11 +14,32 @@ import java.util.Locale;
 public final class RsaKeyPairStrategy implements KeyPairStrategy {
 
     private static final byte[] RSA_PUBLIC_EXPONENT = new byte[]{0x01, 0x00, 0x01};
+    private static final List<Integer> SUPPORTED_KEY_SIZES = List.of(2048, 3072, 4096);
+
+    @Override
+    public String keyAlgorithmName() {
+        return "RSA";
+    }
+
+    @Override
+    public long pkcs11KeyType() {
+        return Pkcs11Constants.CKK_RSA;
+    }
+
+    @Override
+    public long keyPairGenMechanism() {
+        return Pkcs11Constants.CKM_RSA_PKCS_KEY_PAIR_GEN;
+    }
+
+    @Override
+    public List<Integer> supportedKeySizes() {
+        return SUPPORTED_KEY_SIZES;
+    }
 
     @Override
     public boolean supports(String keyAlgorithm) {
-        return keyAlgorithm == null || keyAlgorithm.isBlank()
-                || "RSA".equalsIgnoreCase(keyAlgorithm.trim().toUpperCase(Locale.ROOT));
+        return keyAlgorithm != null && !keyAlgorithm.isBlank()
+                && "RSA".equalsIgnoreCase(keyAlgorithm.trim().toUpperCase(Locale.ROOT));
     }
 
     @Override
@@ -28,7 +49,11 @@ public final class RsaKeyPairStrategy implements KeyPairStrategy {
 
     @Override
     public long[] generate(Pkcs11LibraryPort library, long session, String keyLabel, byte[] keyId, int keySize) {
-        int rsaBits = (keySize == 2048 || keySize == 3072 || keySize == 4096) ? keySize : 3072;
+        if (!SUPPORTED_KEY_SIZES.contains(keySize)) {
+            throw new IllegalArgumentException(
+                    "Unsupported RSA key size: " + keySize + " bits. Supported sizes: " + SUPPORTED_KEY_SIZES);
+        }
+        int rsaBits = keySize;
         List<Pkcs11Attribute> pubTemplate = List.of(
                 Pkcs11Attribute.ofBool(Pkcs11Constants.CKA_TOKEN, true),
                 Pkcs11Attribute.ofBool(Pkcs11Constants.CKA_VERIFY, true),

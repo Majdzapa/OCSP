@@ -2,6 +2,7 @@ package lu.incert.ocsp.signing.hsm;
 
 import lu.incert.ocsp.signing.port.CryptoProviderPort;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
+import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lu.incert.ocsp.signing.provider.PkcsProviders;
 import lombok.extern.slf4j.Slf4j;
@@ -124,8 +125,36 @@ public class MultiProviderOcspSigner implements OcspSigner {
             String keyAlgorithm,
             int keySize,
             boolean reuseExistingKey) {
+        return generateCsr(providerId, keyLabel, subjectDn, keyAlgorithm, keySize, null, reuseExistingKey);
+    }
+
+    @Override
+    public String generateCsr(
+            String providerId,
+            String keyLabel,
+            String subjectDn,
+            String keyAlgorithm,
+            int keySize,
+            String signatureAlgorithm,
+            boolean reuseExistingKey) {
         return pkcsProviders.getProvider(providerId)
-                .generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
+                .generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, signatureAlgorithm, reuseExistingKey);
+    }
+
+    @Override
+    public ProviderCapabilities getProviderCapabilities(String providerId) {
+        return pkcsProviders.getProvider(providerId).getCapabilities();
+    }
+
+    @Override
+    public ProviderCapabilities.AlgorithmValidationResult checkAlgorithmSupport(
+            String providerId,
+            String keyLabel,
+            String keyAlgorithm,
+            Integer keySize,
+            String signatureAlgorithm) {
+        return pkcsProviders.getProvider(providerId)
+                .checkAlgorithmSupport(keyLabel, keyAlgorithm, keySize, signatureAlgorithm);
     }
 
     @Override

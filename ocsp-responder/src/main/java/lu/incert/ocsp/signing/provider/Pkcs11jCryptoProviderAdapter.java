@@ -10,6 +10,7 @@ import lu.incert.ocsp.signing.port.CryptoDeviceSpec;
 import lu.incert.ocsp.signing.port.CryptoProviderPort;
 import lu.incert.ocsp.signing.port.DeviceActivationState;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
+import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.operator.ContentSigner;
@@ -238,9 +239,66 @@ public final class Pkcs11jCryptoProviderAdapter implements CryptoProviderPort, A
             String keyAlgorithm,
             int keySize,
             boolean reuseExistingKey) {
+        return generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, null, reuseExistingKey);
+    }
+
+    @Override
+    public String generateCsr(
+            String keyLabel,
+            String subjectDn,
+            String keyAlgorithm,
+            int keySize,
+            String signatureAlgorithm,
+            boolean reuseExistingKey) {
         Pkcs11Provider provider = requireActive();
         try {
-            return provider.generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
+            return provider.generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, signatureAlgorithm, reuseExistingKey);
+        } catch (Pkcs11Exception e) {
+            throw translatePkcs11Exception(e);
+        }
+    }
+
+    @Override
+    public ProviderCapabilities getCapabilities() {
+        Pkcs11Provider provider = this.activeProvider;
+        if (state != DeviceActivationState.ACTIVE || provider == null) {
+            return new ProviderCapabilities(
+                    spec.deviceId(),
+                    false,
+                    "Device '" + spec.deviceId() + "' is LOCKED — unlock it with the HSM PIN to inspect live PKCS#11 mechanisms",
+                    List.of(),
+                    Map.of(),
+                    List.of()
+            );
+        }
+        try {
+            return provider.getCapabilities();
+        } catch (Pkcs11Exception e) {
+            throw translatePkcs11Exception(e);
+        }
+    }
+
+    @Override
+    public ProviderCapabilities.AlgorithmValidationResult checkAlgorithmSupport(
+            String keyLabel,
+            String keyAlgorithm,
+            Integer keySize,
+            String signatureAlgorithm) {
+        Pkcs11Provider provider = this.activeProvider;
+        if (state != DeviceActivationState.ACTIVE || provider == null) {
+            return new ProviderCapabilities.AlgorithmValidationResult(
+                    false,
+                    spec.deviceId(),
+                    keyAlgorithm,
+                    keySize,
+                    signatureAlgorithm,
+                    null,
+                    List.of(),
+                    "Device '" + spec.deviceId() + "' is LOCKED — unlock it with the HSM PIN first to check live mechanism support"
+            );
+        }
+        try {
+            return provider.checkAlgorithmSupport(keyLabel, keyAlgorithm, keySize, signatureAlgorithm);
         } catch (Pkcs11Exception e) {
             throw translatePkcs11Exception(e);
         }

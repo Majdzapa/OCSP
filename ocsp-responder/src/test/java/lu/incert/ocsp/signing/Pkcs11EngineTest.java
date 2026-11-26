@@ -147,6 +147,11 @@ class Pkcs11EngineTest {
 
         try (Pkcs11Engine engine = new Pkcs11Engine(path -> fake)) {
             engine.getSignatureStrategies().register(new SignatureStrategy() {
+                @Override public String keyType() { return "RSA"; }
+                @Override public long pkcs11KeyType() { return Pkcs11Constants.CKK_RSA; }
+                @Override public List<String> supportedAlgorithms() { return List.of("Ed25519"); }
+                @Override public long requiredMechanism(String alg, boolean prehashInJvm) { return Pkcs11Constants.CKM_RSA_PKCS; }
+
                 @Override
                 public boolean supports(String alg) {
                     return "Ed25519".equalsIgnoreCase(alg);

@@ -23,10 +23,23 @@ public record GenerateCsrRequest(
     Boolean reuseExistingKey,
 
     @Schema(description = "Target signing provider/device ID in PkcsProviders (defaults to default provider if omitted)", example = "softhsm-primary")
-    String providerId
+    String providerId,
+
+    @Schema(description = "Signature algorithm to sign the PKCS#10 CSR (chosen by user and verified against HSM mechanisms)", example = "SHA256withRSA")
+    String signatureAlgorithm
 ) {
     public GenerateCsrRequest(String keyLabel, String subjectDn, String keyAlgorithm, Integer keySize, Boolean reuseExistingKey) {
-        this(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey, null);
+        this(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey, null, null);
+    }
+
+    public GenerateCsrRequest(
+            String keyLabel,
+            String subjectDn,
+            String keyAlgorithm,
+            Integer keySize,
+            Boolean reuseExistingKey,
+            String providerId) {
+        this(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey, providerId, null);
     }
 }
 

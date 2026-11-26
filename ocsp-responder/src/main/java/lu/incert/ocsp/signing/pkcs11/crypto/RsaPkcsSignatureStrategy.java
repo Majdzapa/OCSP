@@ -9,10 +9,41 @@ import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.DigestInfo;
 
+import java.util.List;
+
 /**
  * PKCS#1 v1.5 RSA signing strategy ({@code SHA256withRSA}, {@code SHA384withRSA}, {@code SHA512withRSA}).
  */
 public final class RsaPkcsSignatureStrategy implements SignatureStrategy {
+
+    private static final List<String> ALGORITHMS = List.of("SHA256withRSA", "SHA384withRSA", "SHA512withRSA");
+
+    @Override
+    public String keyType() {
+        return "RSA";
+    }
+
+    @Override
+    public long pkcs11KeyType() {
+        return Pkcs11Constants.CKK_RSA;
+    }
+
+    @Override
+    public List<String> supportedAlgorithms() {
+        return ALGORITHMS;
+    }
+
+    @Override
+    public long requiredMechanism(String signatureAlgorithm, boolean prehashInJvm) {
+        if (prehashInJvm) {
+            return Pkcs11Constants.CKM_RSA_PKCS;
+        }
+        return switch (signatureAlgorithm) {
+            case "SHA384withRSA" -> Pkcs11Constants.CKM_SHA384_RSA_PKCS;
+            case "SHA512withRSA" -> Pkcs11Constants.CKM_SHA512_RSA_PKCS;
+            default -> Pkcs11Constants.CKM_SHA256_RSA_PKCS;
+        };
+    }
 
     @Override
     public boolean supports(String signatureAlgorithm) {
@@ -34,11 +65,7 @@ public final class RsaPkcsSignatureStrategy implements SignatureStrategy {
             library.cSignInit(session, Pkcs11Mechanism.of(Pkcs11Constants.CKM_RSA_PKCS), keyHandle);
             return library.cSign(session, digestInfo);
         }
-        long mech = switch (signatureAlgorithm) {
-            case "SHA384withRSA" -> Pkcs11Constants.CKM_SHA384_RSA_PKCS;
-            case "SHA512withRSA" -> Pkcs11Constants.CKM_SHA512_RSA_PKCS;
-            default -> Pkcs11Constants.CKM_SHA256_RSA_PKCS;
-        };
+        long mech = requiredMechanism(signatureAlgorithm, false);
         library.cSignInit(session, Pkcs11Mechanism.of(mech), keyHandle);
         return library.cSign(session, data);
     }

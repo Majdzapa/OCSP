@@ -9,17 +9,40 @@ import org.bouncycastle.asn1.DERSequence;
 
 import java.math.BigInteger;
 import java.util.Arrays;
-import java.util.Locale;
+import java.util.List;
 
 /**
  * ECDSA signing strategy ({@code SHA256withECDSA}, {@code SHA384withECDSA}, {@code SHA512withECDSA}).
  */
 public final class EcdsaSignatureStrategy implements SignatureStrategy {
 
+    private static final List<String> ALGORITHMS = List.of("SHA256withECDSA", "SHA384withECDSA", "SHA512withECDSA");
+
+    @Override
+    public String keyType() {
+        return "EC";
+    }
+
+    @Override
+    public long pkcs11KeyType() {
+        return Pkcs11Constants.CKK_EC;
+    }
+
+    @Override
+    public List<String> supportedAlgorithms() {
+        return ALGORITHMS;
+    }
+
+    @Override
+    public long requiredMechanism(String signatureAlgorithm, boolean prehashInJvm) {
+        return Pkcs11Constants.CKM_ECDSA;
+    }
+
     @Override
     public boolean supports(String signatureAlgorithm) {
-        return signatureAlgorithm != null
-                && signatureAlgorithm.toUpperCase(Locale.ROOT).contains("ECDSA");
+        return "SHA256withECDSA".equalsIgnoreCase(signatureAlgorithm)
+                || "SHA384withECDSA".equalsIgnoreCase(signatureAlgorithm)
+                || "SHA512withECDSA".equalsIgnoreCase(signatureAlgorithm);
     }
 
     @Override

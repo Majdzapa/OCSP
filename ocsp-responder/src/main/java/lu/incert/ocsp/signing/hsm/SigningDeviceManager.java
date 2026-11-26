@@ -1,5 +1,6 @@
 package lu.incert.ocsp.signing.hsm;
 
+import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 
@@ -66,6 +67,52 @@ public interface SigningDeviceManager {
             int keySize,
             boolean reuseExistingKey) {
         return generateCsr(keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
+    }
+
+    default String generateCsr(
+            String providerId,
+            String keyLabel,
+            String subjectDn,
+            String keyAlgorithm,
+            int keySize,
+            String signatureAlgorithm,
+            boolean reuseExistingKey) {
+        return generateCsr(providerId, keyLabel, subjectDn, keyAlgorithm, keySize, reuseExistingKey);
+    }
+
+    default ProviderCapabilities getProviderCapabilities(String providerId) {
+        return new ProviderCapabilities(
+                providerId != null ? providerId : getDefaultProviderId(),
+                false,
+                "Static software signer capabilities",
+                List.of(),
+                SigningAlgorithm.groupedByKeyType(),
+                List.of()
+        );
+    }
+
+    default ProviderCapabilities.AlgorithmValidationResult checkAlgorithmSupport(
+            String providerId,
+            String keyLabel,
+            String keyAlgorithm,
+            Integer keySize,
+            String signatureAlgorithm) {
+        String keyType = (keyAlgorithm != null && !keyAlgorithm.isBlank()) ? keyAlgorithm.trim().toUpperCase() : "RSA";
+        List<String> compatible = SigningAlgorithm.namesForKeyType(keyType);
+        boolean ok = signatureAlgorithm == null || signatureAlgorithm.isBlank()
+                ? !compatible.isEmpty()
+                : SigningAlgorithm.isSupportedForKeyType(signatureAlgorithm.trim(), keyType);
+        return new ProviderCapabilities.AlgorithmValidationResult(
+                ok,
+                providerId != null ? providerId : getDefaultProviderId(),
+                keyType,
+                keySize,
+                signatureAlgorithm,
+                null,
+                compatible,
+                ok ? "Supported by software signer"
+                   : "Unsupported algorithm '" + signatureAlgorithm + "' for key type " + keyType + ". Allowed: " + compatible
+        );
     }
 
     default void importCertificateToToken(String keyLabel, X509CertificateHolder certificate) {}

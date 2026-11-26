@@ -3,6 +3,7 @@ package lu.incert.ocsp.signing.pkcs11;
 import iaik.pkcs.pkcs11.wrapper.CK_ATTRIBUTE;
 import iaik.pkcs.pkcs11.wrapper.CK_C_INITIALIZE_ARGS;
 import iaik.pkcs.pkcs11.wrapper.CK_MECHANISM;
+import iaik.pkcs.pkcs11.wrapper.CK_MECHANISM_INFO;
 import iaik.pkcs.pkcs11.wrapper.CK_RSA_PKCS_PSS_PARAMS;
 import iaik.pkcs.pkcs11.wrapper.CK_TOKEN_INFO;
 import iaik.pkcs.pkcs11.wrapper.PKCS11;
@@ -160,6 +161,29 @@ public final class XiPkiPkcs11Library implements Pkcs11LibraryPort {
             );
         } catch (PKCS11Exception e) {
             throw translate("C_GetTokenInfo", e);
+        }
+    }
+
+    @Override
+    public long[] cGetMechanismList(long slotId) {
+        try {
+            long[] mechs = pkcs11.C_GetMechanismList(slotId);
+            return mechs != null ? mechs : new long[0];
+        } catch (PKCS11Exception e) {
+            throw translate("C_GetMechanismList", e);
+        }
+    }
+
+    @Override
+    public MechanismInfo cGetMechanismInfo(long slotId, long mechanismType) {
+        try {
+            CK_MECHANISM_INFO info = pkcs11.C_GetMechanismInfo(slotId, mechanismType);
+            if (info == null) {
+                return new MechanismInfo(mechanismType, 0L, 0L, 0L);
+            }
+            return new MechanismInfo(mechanismType, info.ulMinKeySize, info.ulMaxKeySize, info.flags);
+        } catch (PKCS11Exception e) {
+            throw translate("C_GetMechanismInfo", e);
         }
     }
 

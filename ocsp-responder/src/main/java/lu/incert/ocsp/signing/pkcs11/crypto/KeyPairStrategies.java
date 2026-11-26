@@ -19,13 +19,22 @@ public final class KeyPairStrategies {
         }
     }
 
+    public List<KeyPairStrategy> all() {
+        return List.copyOf(strategies);
+    }
+
     public KeyPairStrategy resolve(String keyAlgorithm) {
+        if (keyAlgorithm == null || keyAlgorithm.isBlank()) {
+            throw new IllegalArgumentException("Key algorithm must be explicitly specified (registered: "
+                    + strategies.stream().map(KeyPairStrategy::keyAlgorithmName).toList() + ")");
+        }
         for (KeyPairStrategy strategy : strategies) {
             if (strategy.supports(keyAlgorithm)) {
                 return strategy;
             }
         }
-        throw new IllegalArgumentException("Unsupported PKCS#11 key algorithm: " + keyAlgorithm);
+        throw new IllegalArgumentException("Unsupported PKCS#11 key algorithm: '" + keyAlgorithm
+                + "'. Registered: " + strategies.stream().map(KeyPairStrategy::keyAlgorithmName).toList());
     }
 }
 

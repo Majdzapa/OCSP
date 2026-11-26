@@ -105,17 +105,29 @@ class XiPkiSoftHsmIntegrationTest {
             assertThat(dev1.getTokenInfo().label()).isEqualTo("xipki-dev-1");
             assertThat(dev2.getTokenInfo().label()).isEqualTo("xipki-dev-2");
 
-            // 1. Device 1: Generate RSA-2048 keypair & CSR
+            // 0b. Live C_GetMechanismList / C_GetMechanismInfo introspection against SoftHSM2
+            var liveCaps = dev1.getCapabilities();
+            assertThat(liveCaps.liveIntrospected()).isTrue();
+            assertThat(liveCaps.supportedSignatureAlgorithms().get("RSA"))
+                    .contains("SHA256withRSA", "SHA384withRSA", "SHA512withRSA");
+            assertThat(liveCaps.supportedSignatureAlgorithms().get("EC"))
+                    .contains("SHA256withECDSA", "SHA384withECDSA");
+            assertThat(dev1.checkAlgorithmSupport(null, "RSA", 2048, "SHA384withRSA").supported()).isTrue();
+            assertThat(dev1.checkAlgorithmSupport(null, "RSA", 2048, "SHA256withECDSA").supported()).isFalse();
+
+            // 1. Device 1: Generate RSA-2048 keypair & CSR signed with user-chosen SHA384withRSA
             String rsaCsrPem = dev1.generateCsr(
-                    "ocsp-rsa-key", "CN=OCSP RSA Signer,O=Incert,C=CH", "RSA", 2048, false);
+                    "ocsp-rsa-key", "CN=OCSP RSA Signer,O=Incert,C=CH", "RSA", 2048, "SHA384withRSA", false);
             PKCS10CertificationRequest rsaCsr = parseCsr(rsaCsrPem);
             PublicKey rsaPub = new JcaPEMKeyConverter().getPublicKey(rsaCsr.getSubjectPublicKeyInfo());
             ContentVerifierProvider rsaVerifier = new JcaContentVerifierProviderBuilder().build(rsaPub);
             assertThat(rsaCsr.isSignatureValid(rsaVerifier)).isTrue();
+            // Reject incompatible ECDSA signing on RSA key BEFORE C_SignInit
+            assertThat(dev1.checkAlgorithmSupport("ocsp-rsa-key", null, null, "SHA256withECDSA").supported()).isFalse();
 
-            // 2. Device 2: Generate EC P-256 keypair & CSR
+            // 2. Device 2: Generate EC P-256 keypair & CSR signed with user-chosen SHA384withECDSA
             String ecCsrPem = dev2.generateCsr(
-                    "ocsp-ec-key", "CN=OCSP EC Signer,O=Incert,C=CH", "EC", 256, false);
+                    "ocsp-ec-key", "CN=OCSP EC Signer,O=Incert,C=CH", "EC", 256, "SHA384withECDSA", false);
             PKCS10CertificationRequest ecCsr = parseCsr(ecCsrPem);
             PublicKey ecPub = new JcaPEMKeyConverter().getPublicKey(ecCsr.getSubjectPublicKeyInfo());
             ContentVerifierProvider ecVerifier = new JcaContentVerifierProviderBuilder().build(ecPub);

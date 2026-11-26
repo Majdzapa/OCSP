@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, Textarea, PasswordInput, Switch, Select, Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, } from '@mantine/core';
-import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, IconLockOpen, } from '@tabler/icons-react';
-import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, generateSigningCsr, activateCryptoDevice, } from '../api/client';
+import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, IconLockOpen, IconSearch, IconX, } from '@tabler/icons-react';
+import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, getProviderCapabilities, checkSigningAlgorithm, generateSigningCsr, activateCryptoDevice, } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 function downloadTextFile(content, filename) {
     const blob = new Blob([content], { type: 'application/x-pem-file' });
@@ -30,18 +30,33 @@ export const SigningCertificatesPage = () => {
     const [alias, setAlias] = useState('');
     const [providerId, setProviderId] = useState('default');
     const [keyLabel, setKeyLabel] = useState('ocsp-signing-key');
-    const [signatureAlgorithm, setSignatureAlgorithm] = useState('SHA256withRSA');
+    const [signatureAlgorithm, setSignatureAlgorithm] = useState('');
     const [certificatePem, setCertificatePem] = useState('');
     const [activateImmediately, setActivateImmediately] = useState(false);
+    const [importCapabilities, setImportCapabilities] = useState(null);
+    const [importAlgCheck, setImportAlgCheck] = useState(null);
     // Generate CSR modal state
     const [csrModalOpen, setCsrModalOpen] = useState(false);
     const [csrProviderId, setCsrProviderId] = useState('default');
     const [csrKeyLabel, setCsrKeyLabel] = useState('ocsp-signing-key-2');
     const [csrSubjectDn, setCsrSubjectDn] = useState('CN=Incert Delegated OCSP Signer,O=Incert,C=CH');
-    const [csrAlgorithm, setCsrAlgorithm] = useState('RSA');
-    const [csrKeySize, setCsrKeySize] = useState('3072');
+    const [csrAlgorithm, setCsrAlgorithm] = useState('');
+    const [csrKeySize, setCsrKeySize] = useState('');
+    const [csrSignatureAlgorithm, setCsrSignatureAlgorithm] = useState('');
     const [csrReuseExisting, setCsrReuseExisting] = useState(false);
     const [csrResult, setCsrResult] = useState(null);
+    const [csrCapabilities, setCsrCapabilities] = useState(null);
+    const [csrAlgCheck, setCsrAlgCheck] = useState(null);
+    // Interactive Algorithm Support Checker modal state
+    const [checkModalOpen, setCheckModalOpen] = useState(false);
+    const [checkProviderId, setCheckProviderId] = useState('default');
+    const [checkKeyLabel, setCheckKeyLabel] = useState('');
+    const [checkKeyAlgorithm, setCheckKeyAlgorithm] = useState('');
+    const [checkKeySize, setCheckKeySize] = useState('');
+    const [checkSigAlgorithm, setCheckSigAlgorithm] = useState('');
+    const [checkCapabilities, setCheckCapabilities] = useState(null);
+    const [checkResult, setCheckResult] = useState(null);
+    const [checkLoading, setCheckLoading] = useState(false);
     // View PEM modal state
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [selectedCert, setSelectedCert] = useState(null);
@@ -61,6 +76,7 @@ export const SigningCertificatesPage = () => {
             const fallbackProvider = hsm?.defaultProviderId || hsm?.providers?.[0]?.providerId || 'default';
             setProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
             setCsrProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
+            setCheckProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
         }
         catch (err) {
             setError(err?.response?.data?.message || err?.message || 'Failed to load signing certificates');
@@ -143,7 +159,7 @@ export const SigningCertificatesPage = () => {
             setAlias('');
             setProviderId(hsmInfo?.defaultProviderId || hsmInfo?.providers?.[0]?.providerId || 'default');
             setKeyLabel(hsmInfo?.activeKeyLabel || 'ocsp-signing-key');
-            setSignatureAlgorithm('SHA256withRSA');
+            setSignatureAlgorithm('');
             setCertificatePem('');
             setActivateImmediately(false);
             await fetchAll();
@@ -161,6 +177,14 @@ export const SigningCertificatesPage = () => {
             setError('Key label and Subject DN are required');
             return;
         }
+        if (!csrSignatureAlgorithm) {
+            setError('Please select a CSR signature algorithm supported by the HSM');
+            return;
+        }
+        if (csrAlgCheck && !csrAlgCheck.supported) {
+            setError(csrAlgCheck.message || 'Selected algorithm is not supported by the HSM');
+            return;
+        }
         try {
             setActionLoading(true);
             setError(null);
@@ -168,12 +192,13 @@ export const SigningCertificatesPage = () => {
                 providerId: csrProviderId || hsmInfo?.defaultProviderId || 'default',
                 keyLabel: csrKeyLabel.trim(),
                 subjectDn: csrSubjectDn.trim(),
-                keyAlgorithm: csrAlgorithm,
-                keySize: Number(csrKeySize),
+                keyAlgorithm: csrReuseExisting ? null : csrAlgorithm,
+                keySize: csrReuseExisting ? null : (csrKeySize ? Number(csrKeySize) : null),
+                signatureAlgorithm: csrSignatureAlgorithm,
                 reuseExistingKey: csrReuseExisting,
             });
             setCsrResult(res);
-            setSuccess(`CSR generated on provider '${res.providerId || csrProviderId}' for key '${res.keyLabel}'. Download the CSR, have your CA sign it, then import the certificate.`);
+            setSuccess(`CSR generated on provider '${res.providerId || csrProviderId}' for key '${res.keyLabel}' using ${csrSignatureAlgorithm}. Download the CSR, have your CA sign it, then import the certificate.`);
             await fetchAll();
         }
         catch (err) {
@@ -181,6 +206,27 @@ export const SigningCertificatesPage = () => {
         }
         finally {
             setActionLoading(false);
+        }
+    };
+    const handleRunAlgorithmCheck = async (e) => {
+        if (e) e.preventDefault();
+        try {
+            setCheckLoading(true);
+            const res = await checkSigningAlgorithm({
+                providerId: checkProviderId || hsmInfo?.defaultProviderId || 'default',
+                keyLabel: checkKeyLabel.trim() || null,
+                keyAlgorithm: checkKeyLabel.trim() ? null : (checkKeyAlgorithm || null),
+                keySize: checkKeyLabel.trim() ? null : (checkKeySize ? Number(checkKeySize) : null),
+                signatureAlgorithm: checkSigAlgorithm.trim() || null,
+            });
+            setCheckResult(res);
+        } catch (err) {
+            setCheckResult({
+                supported: false,
+                message: err?.response?.data?.error || err?.message || 'Failed to check algorithm support',
+            });
+        } finally {
+            setCheckLoading(false);
         }
     };
     const handleFileUpload = (file) => {
@@ -226,17 +272,132 @@ export const SigningCertificatesPage = () => {
     const importKeyAlgorithms = selectedImportProvider?.keyAlgorithms ?? hsmInfo?.keyAlgorithms ?? {};
     const selectedCsrProvider = providers.find((p) => p.providerId === csrProviderId) || providers[0];
     const csrExistingKeyLabels = selectedCsrProvider?.keyLabels ?? hsmInfo?.tokenAliases ?? [];
-    const rawKeyAlg = importKeyAlgorithms?.[keyLabel] || 'RSA';
-    const normalizedKeyType = rawKeyAlg.toUpperCase().startsWith('EC') ? 'EC' : 'RSA';
-    const compatibleAlgorithms = hsmInfo?.supportedSignatureAlgorithms?.[normalizedKeyType] ??
-        (normalizedKeyType === 'EC'
-            ? ['SHA256withECDSA', 'SHA384withECDSA', 'SHA512withECDSA']
-            : ['SHA256withRSA', 'SHA384withRSA', 'SHA512withRSA', 'SHA256withRSAandMGF1']);
+    const csrKeyAlgorithms = selectedCsrProvider?.keyAlgorithms ?? hsmInfo?.keyAlgorithms ?? {};
+    const selectedCheckProvider = providers.find((p) => p.providerId === checkProviderId) || providers[0];
+    const checkExistingKeyLabels = selectedCheckProvider?.keyLabels ?? [];
+
+    // Load live HSM capabilities whenever the CSR modal is open or its provider changes
     useEffect(() => {
-        if (!compatibleAlgorithms.includes(signatureAlgorithm)) {
-            setSignatureAlgorithm(compatibleAlgorithms[0]);
+        if (!csrModalOpen || !csrProviderId) return;
+        let cancelled = false;
+        getProviderCapabilities(csrProviderId)
+            .then((caps) => {
+                if (cancelled) return;
+                setCsrCapabilities(caps);
+                const firstKeyCap = (caps.keyAlgorithms || []).find((k) => k.supported) || caps.keyAlgorithms?.[0];
+                if (!csrReuseExisting && firstKeyCap) {
+                    setCsrAlgorithm((prev) => {
+                        const valid = (caps.keyAlgorithms || []).some((k) => k.keyAlgorithm === prev);
+                        return valid ? prev : firstKeyCap.keyAlgorithm;
+                    });
+                }
+            })
+            .catch(() => { if (!cancelled) setCsrCapabilities(null); });
+        return () => { cancelled = true; };
+    }, [csrModalOpen, csrProviderId, csrReuseExisting]);
+
+    const csrEffectiveKeyType = csrReuseExisting
+        ? ((csrKeyAlgorithms?.[csrKeyLabel] || '').toUpperCase().startsWith('EC') ? 'EC' : (csrKeyAlgorithms?.[csrKeyLabel] ? 'RSA' : ''))
+        : csrAlgorithm;
+    const csrSelectedKeyCap = (csrCapabilities?.keyAlgorithms || []).find((k) => k.keyAlgorithm === csrAlgorithm);
+    const csrAvailableKeySizes = csrSelectedKeyCap?.supportedKeySizes ?? [];
+    const csrSigCaps = (csrCapabilities?.signatureAlgorithms || []).filter(
+        (s) => !csrEffectiveKeyType || s.keyType === csrEffectiveKeyType
+    );
+
+    // Sync CSR key size & signature algorithm when key algorithm or capabilities change
+    useEffect(() => {
+        if (!csrReuseExisting && csrAvailableKeySizes.length > 0 && !csrAvailableKeySizes.includes(Number(csrKeySize))) {
+            const preferred = csrAvailableKeySizes.includes(3072) ? 3072 : csrAvailableKeySizes[0];
+            setCsrKeySize(String(preferred));
         }
-    }, [normalizedKeyType, compatibleAlgorithms, signatureAlgorithm]);
+    }, [csrReuseExisting, csrAlgorithm, csrCapabilities]);
+
+    useEffect(() => {
+        if (csrSigCaps.length > 0 && !csrSigCaps.some((s) => s.algorithm === csrSignatureAlgorithm)) {
+            const firstSupported = csrSigCaps.find((s) => s.supported) || csrSigCaps[0];
+            setCsrSignatureAlgorithm(firstSupported?.algorithm || '');
+        }
+    }, [csrEffectiveKeyType, csrCapabilities]);
+
+    // Live pre-signing check inside CSR modal
+    useEffect(() => {
+        if (!csrModalOpen || !csrProviderId || !csrSignatureAlgorithm) {
+            setCsrAlgCheck(null);
+            return;
+        }
+        let cancelled = false;
+        checkSigningAlgorithm({
+            providerId: csrProviderId,
+            keyLabel: csrReuseExisting ? csrKeyLabel : null,
+            keyAlgorithm: csrReuseExisting ? null : (csrAlgorithm || null),
+            keySize: csrReuseExisting ? null : (csrKeySize ? Number(csrKeySize) : null),
+            signatureAlgorithm: csrSignatureAlgorithm,
+        }).then((res) => { if (!cancelled) setCsrAlgCheck(res); })
+          .catch(() => { if (!cancelled) setCsrAlgCheck(null); });
+        return () => { cancelled = true; };
+    }, [csrModalOpen, csrProviderId, csrReuseExisting, csrKeyLabel, csrAlgorithm, csrKeySize, csrSignatureAlgorithm]);
+
+    // Load live HSM capabilities whenever the Import modal is open or its provider changes
+    useEffect(() => {
+        if (!addModalOpen || !providerId) return;
+        let cancelled = false;
+        getProviderCapabilities(providerId)
+            .then((caps) => { if (!cancelled) setImportCapabilities(caps); })
+            .catch(() => { if (!cancelled) setImportCapabilities(null); });
+        return () => { cancelled = true; };
+    }, [addModalOpen, providerId]);
+
+    const rawKeyAlg = importKeyAlgorithms?.[keyLabel] || '';
+    const normalizedKeyType = rawKeyAlg ? (rawKeyAlg.toUpperCase().startsWith('EC') ? 'EC' : 'RSA') : '';
+    const importSigCaps = (importCapabilities?.signatureAlgorithms || []).filter(
+        (s) => !normalizedKeyType || s.keyType === normalizedKeyType
+    );
+    const importAlgOptions = importSigCaps.length > 0
+        ? importSigCaps.map((s) => ({
+            value: s.algorithm,
+            label: s.supported ? `${s.algorithm} — ✓ Supported (${s.mechanismName})` : `${s.algorithm} — ✗ Unsupported (${s.mechanismName})`,
+        }))
+        : Object.entries(hsmInfo?.supportedSignatureAlgorithms || {})
+            .filter(([kt]) => !normalizedKeyType || kt === normalizedKeyType)
+            .flatMap(([, algs]) => algs)
+            .map((alg) => ({ value: alg, label: alg }));
+
+    useEffect(() => {
+        if (importAlgOptions.length > 0 && !importAlgOptions.some((o) => o.value === signatureAlgorithm)) {
+            const firstSupported = importSigCaps.find((s) => s.supported)?.algorithm || importAlgOptions[0].value;
+            setSignatureAlgorithm(firstSupported);
+        }
+    }, [normalizedKeyType, importCapabilities, hsmInfo]);
+
+    // Live pre-import algorithm verification
+    useEffect(() => {
+        if (!addModalOpen || !providerId || !signatureAlgorithm) {
+            setImportAlgCheck(null);
+            return;
+        }
+        let cancelled = false;
+        checkSigningAlgorithm({
+            providerId,
+            keyLabel: keyLabel.trim() || null,
+            keyAlgorithm: normalizedKeyType || null,
+            keySize: null,
+            signatureAlgorithm,
+        }).then((res) => { if (!cancelled) setImportAlgCheck(res); })
+          .catch(() => { if (!cancelled) setImportAlgCheck(null); });
+        return () => { cancelled = true; };
+    }, [addModalOpen, providerId, keyLabel, normalizedKeyType, signatureAlgorithm]);
+
+    // Load live HSM capabilities whenever the Algorithm Checker modal opens or provider changes
+    useEffect(() => {
+        if (!checkModalOpen || !checkProviderId) return;
+        let cancelled = false;
+        getProviderCapabilities(checkProviderId)
+            .then((caps) => { if (!cancelled) setCheckCapabilities(caps); })
+            .catch(() => { if (!cancelled) setCheckCapabilities(null); });
+        return () => { cancelled = true; };
+    }, [checkModalOpen, checkProviderId]);
+
     return (<Container size="xl" py="lg">
       <Stack gap="lg">
         {/* Header */}
@@ -247,13 +408,18 @@ export const SigningCertificatesPage = () => {
             </Title>
             <Text c="dimmed" size="sm">
               Generate CSRs directly inside the PKCS#11 HSM and activate multiple CA-signed certificates simultaneously.
-              Before signing each OCSP response, the responder matches the request&apos;s issuing CA (Issuer DN &amp; Public Key hash)
-              against all active signing certificates.
+              Key and signing algorithms are queried live from each HSM via <Code>C_GetMechanismList</Code> and validated before signing.
             </Text>
           </Box>
           <Group>
             <Button variant="default" leftSection={<IconRefresh size={16}/>} onClick={fetchAll} loading={loading}>
               Refresh
+            </Button>
+            <Button variant="light" color="teal" leftSection={<IconSearch size={16}/>} onClick={() => {
+                setCheckResult(null);
+                setCheckModalOpen(true);
+            }}>
+              Check Algorithm Support
             </Button>
             {canOperateCsr && (<>
                 <Button variant="light" color="cyan" leftSection={<IconFileCertificate size={16}/>} onClick={() => {
@@ -506,31 +672,85 @@ export const SigningCertificatesPage = () => {
               <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert Delegated OCSP Signer,O=Incert,C=CH" value={csrSubjectDn} onChange={(e) => setCsrSubjectDn(e.currentTarget.value)} required/>
 
               {!csrReuseExisting && (<SimpleGrid cols={2}>
-                  <Select label="Key Algorithm" data={[
-                    { value: 'RSA', label: 'RSA' },
-                    { value: 'EC', label: 'ECDSA (Elliptic Curve)' },
-                ]} value={csrAlgorithm} onChange={(val) => {
-                    const alg = val || 'RSA';
-                    setCsrAlgorithm(alg);
-                    setCsrKeySize(alg === 'EC' ? '256' : '3072');
-                }}/>
-                  <Select label="Key Size / Curve" data={csrAlgorithm === 'EC'
-                    ? [
-                        { value: '256', label: 'P-256 (secp256r1)' },
-                        { value: '384', label: 'P-384 (secp384r1)' },
-                    ]
-                    : [
-                        { value: '2048', label: '2048 bits' },
-                        { value: '3072', label: '3072 bits (Recommended)' },
-                        { value: '4096', label: '4096 bits' },
-                    ]} value={csrKeySize} onChange={(val) => setCsrKeySize(val || '3072')}/>
+                  <Select
+                    label="Key Algorithm (queried from HSM)"
+                    placeholder={csrCapabilities?.liveIntrospected ? 'Select key algorithm' : 'Unlock device to query mechanisms'}
+                    data={(csrCapabilities?.keyAlgorithms || []).map((k) => ({
+                        value: k.keyAlgorithm,
+                        label: k.supported
+                            ? `${k.keyAlgorithm} — ✓ Supported (${k.mechanismName})`
+                            : `${k.keyAlgorithm} — ✗ Unsupported`,
+                    }))}
+                    value={csrAlgorithm}
+                    onChange={(val) => {
+                        const alg = val || '';
+                        setCsrAlgorithm(alg);
+                        const match = (csrCapabilities?.keyAlgorithms || []).find((k) => k.keyAlgorithm === alg);
+                        if (match?.supportedKeySizes?.length) {
+                            const pref = match.supportedKeySizes.includes(3072) ? 3072 : match.supportedKeySizes[0];
+                            setCsrKeySize(String(pref));
+                        } else {
+                            setCsrKeySize('');
+                        }
+                    }}
+                    required
+                  />
+                  <Select
+                    label="Key Size / Curve (HSM supported)"
+                    placeholder={csrAvailableKeySizes.length ? 'Select key size' : 'No supported sizes'}
+                    data={csrAvailableKeySizes.map((bits) => ({
+                        value: String(bits),
+                        label: csrAlgorithm === 'EC' ? `P-${bits} (${bits} bits)` : `${bits} bits`,
+                    }))}
+                    value={csrKeySize}
+                    onChange={(val) => setCsrKeySize(val || '')}
+                    disabled={csrAvailableKeySizes.length === 0}
+                    required
+                  />
                 </SimpleGrid>)}
+
+              <Select
+                label="CSR Signature Algorithm (user-selected & HSM-verified)"
+                description={csrCapabilities?.statusMessage || 'Algorithms dynamically queried from HSM C_GetMechanismList'}
+                placeholder="Select signature algorithm"
+                data={csrSigCaps.map((s) => ({
+                    value: s.algorithm,
+                    label: s.supported
+                        ? `${s.algorithm} — ✓ Supported (${s.mechanismName})`
+                        : `${s.algorithm} — ✗ Unsupported (${s.mechanismName})`,
+                }))}
+                value={csrSignatureAlgorithm}
+                onChange={(val) => setCsrSignatureAlgorithm(val || '')}
+                required
+              />
+
+              {csrCapabilities && !csrCapabilities.liveIntrospected && (
+                <Alert color="orange" icon={<IconAlertCircle size={16}/>} title="HSM Device Locked">
+                  {csrCapabilities.statusMessage}
+                </Alert>
+              )}
+
+              {csrAlgCheck && (
+                <Alert
+                  color={csrAlgCheck.supported ? 'teal' : 'red'}
+                  icon={csrAlgCheck.supported ? <IconCheck size={16}/> : <IconX size={16}/>}
+                  title={csrAlgCheck.supported ? 'Algorithm Verified on HSM' : 'Algorithm Not Supported on HSM'}
+                >
+                  {csrAlgCheck.message}
+                </Alert>
+              )}
 
               <Group justify="flex-end" mt="md">
                 <Button variant="default" onClick={() => setCsrModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" color="cyan" loading={actionLoading} leftSection={<IconFileCertificate size={16}/>}>
+                <Button
+                  type="submit"
+                  color="cyan"
+                  loading={actionLoading}
+                  disabled={!csrSignatureAlgorithm || (csrAlgCheck != null && !csrAlgCheck.supported)}
+                  leftSection={<IconFileCertificate size={16}/>}
+                >
                   Generate CSR
                 </Button>
               </Group>
@@ -601,7 +821,26 @@ export const SigningCertificatesPage = () => {
                 label: importKeyAlgorithms?.[a] ? `${a} (${importKeyAlgorithms[a]})` : a,
             }))} value={keyLabel} onChange={(val) => setKeyLabel(val || importKeyLabels[0])} searchable required/>) : (<TextInput label="HSM Key Label / Alias" placeholder="ocsp-signing-key" description="The private key label in the HSM token corresponding to this certificate" leftSection={<IconKey size={16}/>} value={keyLabel} onChange={(e) => setKeyLabel(e.currentTarget.value)} required/>)}
 
-            <Select label="Signature Algorithm" description={`Compatible algorithms for ${normalizedKeyType} key '${keyLabel}'`} data={compatibleAlgorithms.map((alg) => ({ value: alg, label: alg }))} value={signatureAlgorithm} onChange={(val) => setSignatureAlgorithm(val || compatibleAlgorithms[0])} required/>
+            <Select
+              label="Signature Algorithm (user-selected & HSM-verified)"
+              description={importCapabilities?.liveIntrospected
+                  ? `Live HSM mechanisms for ${normalizedKeyType || 'key'} '${keyLabel}'`
+                  : (importCapabilities?.statusMessage || `Algorithms for key '${keyLabel}'`)}
+              data={importAlgOptions}
+              value={signatureAlgorithm}
+              onChange={(val) => setSignatureAlgorithm(val || '')}
+              required
+            />
+
+            {importAlgCheck && (
+              <Alert
+                color={importAlgCheck.supported ? 'teal' : 'red'}
+                icon={importAlgCheck.supported ? <IconCheck size={16}/> : <IconX size={16}/>}
+                title={importAlgCheck.supported ? 'Algorithm Supported on HSM' : 'Algorithm Not Supported on HSM'}
+              >
+                {importAlgCheck.message}
+              </Alert>
+            )}
 
             <Group justify="space-between" align="flex-end">
               <Text size="sm" fw={500}>Certificate PEM</Text>
@@ -620,7 +859,13 @@ export const SigningCertificatesPage = () => {
               <Button variant="default" onClick={() => setAddModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} loading={actionLoading}>
+              <Button
+                type="submit"
+                variant="gradient"
+                gradient={{ from: 'indigo.6', to: 'violet.6' }}
+                loading={actionLoading}
+                disabled={importAlgCheck != null && !importAlgCheck.supported}
+              >
                 Import Certificate
               </Button>
             </Group>
@@ -665,6 +910,140 @@ export const SigningCertificatesPage = () => {
             <Group justify="flex-end">
               <Button variant="default" onClick={() => { setUnlockPin(''); setUnlockDeviceId(null); }}>Cancel</Button>
               <Button type="submit" color="green" loading={actionLoading} leftSection={<IconLockOpen size={16}/>}>Unlock</Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* Modal: Interactive HSM Algorithm Support Checker */}
+      <Modal
+        opened={checkModalOpen}
+        onClose={() => setCheckModalOpen(false)}
+        title={<Group gap="xs"><IconSearch size={20} color="#14b8a6"/><Text fw={700}>Check HSM Key &amp; Signing Algorithm Support</Text></Group>}
+        size="lg"
+      >
+        <form onSubmit={handleRunAlgorithmCheck}>
+          <Stack gap="md">
+            {providerOptions.length > 0 && (
+              <Select
+                label="HSM Device / Provider"
+                data={providerOptions}
+                value={checkProviderId}
+                onChange={(val) => {
+                    setCheckProviderId(val || hsmInfo?.defaultProviderId || 'default');
+                    setCheckKeyLabel('');
+                    setCheckResult(null);
+                }}
+                required
+              />
+            )}
+
+            {checkCapabilities && (
+              <Alert
+                color={checkCapabilities.liveIntrospected ? 'cyan' : 'orange'}
+                variant="light"
+                title={checkCapabilities.liveIntrospected ? 'Live HSM Capabilities (C_GetMechanismList)' : 'Device Not Unlocked'}
+              >
+                {checkCapabilities.statusMessage}
+              </Alert>
+            )}
+
+            <Select
+              label="Existing HSM Key Label (optional)"
+              description="Pick an existing key to check its actual hardware key type, or leave blank to test a key algorithm + size"
+              placeholder="None — test key algorithm directly"
+              clearable
+              data={checkExistingKeyLabels.map((k) => ({
+                  value: k,
+                  label: selectedCheckProvider?.keyAlgorithms?.[k] ? `${k} (${selectedCheckProvider.keyAlgorithms[k]})` : k,
+              }))}
+              value={checkKeyLabel || null}
+              onChange={(val) => { setCheckKeyLabel(val || ''); setCheckResult(null); }}
+            />
+
+            {!checkKeyLabel && (
+              <SimpleGrid cols={2}>
+                <TextInput
+                  label="Key Algorithm"
+                  placeholder="e.g. RSA, EC, Ed25519"
+                  description="Enter or pick any key algorithm to test"
+                  value={checkKeyAlgorithm}
+                  onChange={(e) => { setCheckKeyAlgorithm(e.currentTarget.value); setCheckResult(null); }}
+                />
+                <TextInput
+                  label="Key Size (bits, optional)"
+                  placeholder="e.g. 2048, 3072, 4096, 256, 384"
+                  value={checkKeySize}
+                  onChange={(e) => { setCheckKeySize(e.currentTarget.value); setCheckResult(null); }}
+                />
+              </SimpleGrid>
+            )}
+
+            <TextInput
+              label="Signing Algorithm to Verify"
+              placeholder="e.g. SHA256withRSA, SHA384withRSA, SHA256withRSAandMGF1, SHA384withECDSA"
+              description="Enter any signature algorithm name to check against live HSM mechanisms before signing"
+              value={checkSigAlgorithm}
+              onChange={(e) => { setCheckSigAlgorithm(e.currentTarget.value); setCheckResult(null); }}
+            />
+
+            {checkResult && (
+              <Alert
+                color={checkResult.supported ? 'teal' : 'red'}
+                icon={checkResult.supported ? <IconCheck size={18}/> : <IconX size={18}/>}
+                title={checkResult.supported ? 'SUPPORTED BY HSM' : 'NOT SUPPORTED'}
+              >
+                <Stack gap={4}>
+                  <Text size="sm">{checkResult.message}</Text>
+                  {checkResult.requiredMechanism && (
+                    <Text size="xs" c="dimmed">Required PKCS#11 mechanism: <Code>{checkResult.requiredMechanism}</Code></Text>
+                  )}
+                  {checkResult.compatibleSupportedAlgorithms?.length > 0 && (
+                    <Group gap={4} mt={4} wrap="wrap">
+                      <Text size="xs" c="dimmed">Supported alternatives:</Text>
+                      {checkResult.compatibleSupportedAlgorithms.map((a) => (
+                        <Badge key={a} size="xs" variant="light" color="teal" style={{ cursor: 'pointer' }} onClick={() => setCheckSigAlgorithm(a)}>
+                          {a}
+                        </Badge>
+                      ))}
+                    </Group>
+                  )}
+                </Stack>
+              </Alert>
+            )}
+
+            {checkCapabilities?.liveIntrospected && (
+              <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={6}>Live HSM Mechanism Matrix</Text>
+                <Group gap={6} wrap="wrap" mb={6}>
+                  {(checkCapabilities.keyAlgorithms || []).map((k) => (
+                    <Badge key={k.keyAlgorithm} size="xs" color={k.supported ? 'teal' : 'red'} variant="light">
+                      {k.supported ? '✓' : '✗'} {k.keyAlgorithm}{k.supportedKeySizes?.length ? ` [${k.supportedKeySizes.join('/')}]` : ''}
+                    </Badge>
+                  ))}
+                </Group>
+                <Group gap={6} wrap="wrap">
+                  {(checkCapabilities.signatureAlgorithms || []).map((s) => (
+                    <Badge
+                      key={s.algorithm}
+                      size="xs"
+                      color={s.supported ? 'cyan' : 'red'}
+                      variant="outline"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setCheckSigAlgorithm(s.algorithm)}
+                    >
+                      {s.supported ? '✓' : '✗'} {s.algorithm} ({s.mechanismName})
+                    </Badge>
+                  ))}
+                </Group>
+              </Paper>
+            )}
+
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setCheckModalOpen(false)}>Close</Button>
+              <Button type="submit" color="teal" loading={checkLoading} leftSection={<IconSearch size={16}/>}>
+                Check Support
+              </Button>
             </Group>
           </Stack>
         </form>

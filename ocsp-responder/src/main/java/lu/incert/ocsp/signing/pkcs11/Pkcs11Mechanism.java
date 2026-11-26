@@ -23,5 +23,25 @@ public record Pkcs11Mechanism(
                 32L
         );
     }
+
+    public static Pkcs11Mechanism rsaPssSha384() {
+        return new Pkcs11Mechanism(
+                Pkcs11Constants.CKM_SHA384_RSA_PKCS_PSS,
+                true,
+                Pkcs11Constants.CKM_SHA384,
+                Pkcs11Constants.CKG_MGF1_SHA384,
+                48L
+        );
+    }
+
+    public static Pkcs11Mechanism rsaPssSha512() {
+        return new Pkcs11Mechanism(
+                Pkcs11Constants.CKM_SHA512_RSA_PKCS_PSS,
+                true,
+                Pkcs11Constants.CKM_SHA512,
+                Pkcs11Constants.CKG_MGF1_SHA512,
+                64L
+        );
+    }
 }
 

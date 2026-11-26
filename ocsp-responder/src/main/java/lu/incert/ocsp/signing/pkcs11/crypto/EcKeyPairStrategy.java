@@ -15,6 +15,28 @@ import java.util.List;
  */
 public final class EcKeyPairStrategy implements KeyPairStrategy {
 
+    private static final List<Integer> SUPPORTED_KEY_SIZES = List.of(256, 384, 521);
+
+    @Override
+    public String keyAlgorithmName() {
+        return "EC";
+    }
+
+    @Override
+    public long pkcs11KeyType() {
+        return Pkcs11Constants.CKK_EC;
+    }
+
+    @Override
+    public long keyPairGenMechanism() {
+        return Pkcs11Constants.CKM_EC_KEY_PAIR_GEN;
+    }
+
+    @Override
+    public List<Integer> supportedKeySizes() {
+        return SUPPORTED_KEY_SIZES;
+    }
+
     @Override
     public boolean supports(String keyAlgorithm) {
         if (keyAlgorithm == null) {
@@ -31,9 +53,13 @@ public final class EcKeyPairStrategy implements KeyPairStrategy {
 
     @Override
     public long[] generate(Pkcs11LibraryPort library, long session, String keyLabel, byte[] keyId, int keySize) {
-        ASN1ObjectIdentifier curveOid = (keySize == 384)
-                ? SECObjectIdentifiers.secp384r1
-                : X9ObjectIdentifiers.prime256v1;
+        ASN1ObjectIdentifier curveOid = switch (keySize) {
+            case 256 -> X9ObjectIdentifiers.prime256v1;
+            case 384 -> SECObjectIdentifiers.secp384r1;
+            case 521 -> SECObjectIdentifiers.secp521r1;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported EC curve size: " + keySize + " bits. Supported curves: " + SUPPORTED_KEY_SIZES);
+        };
         byte[] ecParamsDer;
         try {
             ecParamsDer = curveOid.getEncoded();

@@ -2,11 +2,13 @@ package lu.incert.ocsp.signing.controller;
 
 import lu.incert.ocsp.shared.config.OpenApiConfig;
 import lu.incert.ocsp.signing.dto.AddSigningCertificateRequest;
+import lu.incert.ocsp.signing.dto.AlgorithmCheckRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrResponse;
 import lu.incert.ocsp.signing.dto.HsmInfoDto;
 import lu.incert.ocsp.signing.dto.SigningCertValidityReportDto;
 import lu.incert.ocsp.signing.dto.SigningCertificateDto;
+import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lu.incert.ocsp.signing.service.SigningCertificateService;
 import lu.incert.ocsp.signing.service.SigningCertificateValidityService;
@@ -142,6 +144,32 @@ public class SigningCertificateController {
     @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<List<ProviderDeviceInfo>> listProviders() {
         return ResponseEntity.ok(certificateService.listProviders());
+    }
+
+    @Operation(summary = "Inspect live HSM key & signature algorithm capabilities",
+               description = "Queries PKCS#11 C_GetMechanismList / C_GetMechanismInfo on the specified device to return supported key algorithms, key sizes, and signing algorithms")
+    @GetMapping("/providers/{providerId}/capabilities")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
+    public ResponseEntity<?> getProviderCapabilities(@PathVariable String providerId) {
+        try {
+            ProviderCapabilities caps = certificateService.getProviderCapabilities(providerId);
+            return ResponseEntity.ok(caps);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Check whether a key algorithm and signing algorithm are supported before signing",
+               description = "Validates a user-selected key algorithm / key size / existing key label and signature algorithm against the target HSM device's live mechanisms")
+    @PostMapping("/check-algorithm")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
+    public ResponseEntity<?> checkAlgorithmSupport(@RequestBody AlgorithmCheckRequest request) {
+        try {
+            ProviderCapabilities.AlgorithmValidationResult result = certificateService.checkAlgorithmSupport(request);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @Operation(summary = "Generate a PKCS#10 CSR from the HSM", description = "Generates (or reuses) a non-extractable keypair in the HSM and returns a PEM-encoded PKCS#10 CSR (ADMIN and AGENT)")

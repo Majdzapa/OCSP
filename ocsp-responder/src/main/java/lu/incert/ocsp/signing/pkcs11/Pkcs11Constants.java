@@ -20,6 +20,11 @@ public final class Pkcs11Constants {
     // Token flags
     public static final long CKF_TOKEN_INITIALIZED = 0x00000400L;
 
+    // Mechanism info flags
+    public static final long CKF_HW                = 0x00000001L;
+    public static final long CKF_SIGN              = 0x00000800L;
+    public static final long CKF_GENERATE_KEY_PAIR = 0x00010000L;
+
     // User types
     public static final long CKU_SO               = 0L;
     public static final long CKU_USER             = 1L;
@@ -144,8 +149,35 @@ public final class Pkcs11Constants {
             Map.entry(CKR_CRYPTOKI_ALREADY_INITIALIZED, "CKR_CRYPTOKI_ALREADY_INITIALIZED")
     );
 
+    private static final Map<Long, String> MECHANISM_NAMES = Map.ofEntries(
+            Map.entry(CKM_RSA_PKCS_KEY_PAIR_GEN, "CKM_RSA_PKCS_KEY_PAIR_GEN"),
+            Map.entry(CKM_RSA_PKCS, "CKM_RSA_PKCS"),
+            Map.entry(CKM_RSA_PKCS_PSS, "CKM_RSA_PKCS_PSS"),
+            Map.entry(CKM_SHA256_RSA_PKCS, "CKM_SHA256_RSA_PKCS"),
+            Map.entry(CKM_SHA384_RSA_PKCS, "CKM_SHA384_RSA_PKCS"),
+            Map.entry(CKM_SHA512_RSA_PKCS, "CKM_SHA512_RSA_PKCS"),
+            Map.entry(CKM_SHA256_RSA_PKCS_PSS, "CKM_SHA256_RSA_PKCS_PSS"),
+            Map.entry(CKM_SHA384_RSA_PKCS_PSS, "CKM_SHA384_RSA_PKCS_PSS"),
+            Map.entry(CKM_SHA512_RSA_PKCS_PSS, "CKM_SHA512_RSA_PKCS_PSS"),
+            Map.entry(CKM_SHA256, "CKM_SHA256"),
+            Map.entry(CKM_SHA384, "CKM_SHA384"),
+            Map.entry(CKM_SHA512, "CKM_SHA512"),
+            Map.entry(CKM_EC_KEY_PAIR_GEN, "CKM_EC_KEY_PAIR_GEN"),
+            Map.entry(CKM_ECDSA, "CKM_ECDSA")
+    );
+
     public static String errorName(long rv) {
         return ERROR_NAMES.getOrDefault(rv, String.format("0x%08x", rv));
+    }
+
+    public static String mechanismName(long mechanismCode) {
+        return MECHANISM_NAMES.getOrDefault(mechanismCode, String.format("0x%08x", mechanismCode));
+    }
+
+    public static String keyTypeName(long keyType) {
+        if (keyType == CKK_RSA) return "RSA";
+        if (keyType == CKK_EC) return "EC";
+        return String.format("0x%08x", keyType);
     }
 }
 

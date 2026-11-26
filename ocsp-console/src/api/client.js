@@ -136,6 +136,8 @@ export const deactivateSigningCertificate = (id) => api.put(`/signing-certificat
 export const deleteSigningCertificate = (id) => api.delete(`/signing-certificates/${id}`).then((r) => r.data);
 export const getHsmInfo = () => api.get('/signing-certificates/hsm-info').then((r) => r.data);
 export const getSigningProviders = () => api.get('/signing-certificates/providers').then((r) => r.data);
+export const getProviderCapabilities = (providerId) => api.get(`/signing-certificates/providers/${encodeURIComponent(providerId)}/capabilities`).then((r) => r.data);
+export const checkSigningAlgorithm = (req) => api.post('/signing-certificates/check-algorithm', req).then((r) => r.data);
 export const generateSigningCsr = (req) => api.post('/signing-certificates/csr', req).then((r) => r.data);
 export const getSigningCertValidityReport = () => api.get('/signing-certificates/validity').then((r) => r.data);
 export const runSigningCertValidityCheckNow = () => api.post('/signing-certificates/validity/check').then((r) => r.data);
