@@ -6,14 +6,15 @@ import lu.incert.ocsp.signing.dto.GenerateCsrRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrResponse;
 import lu.incert.ocsp.signing.dto.HsmInfoDto;
 import lu.incert.ocsp.signing.dto.SigningCertificateDto;
+import lu.incert.ocsp.signing.entity.OcspSignerEntity;
 import lu.incert.ocsp.signing.entity.SigningCertificate;
 import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
+import lu.incert.ocsp.signing.repository.OcspSignerRepository;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SigningAlgorithm;
 import lu.incert.ocsp.signing.usecase.FindSigningCertificateUseCase;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -21,6 +22,7 @@ import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
@@ -38,13 +40,35 @@ import java.util.Optional;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SigningCertificateService {
 
     private final SigningCertificateRepository repository;
     private final OcspSigner ocspSigner;
     private final ApplicationEventPublisher eventPublisher;
     private final FindSigningCertificateUseCase findSigningCertificate;
+    private final OcspSignerRepository signerRepository;
+
+    public SigningCertificateService(
+            SigningCertificateRepository repository,
+            OcspSigner ocspSigner,
+            ApplicationEventPublisher eventPublisher,
+            FindSigningCertificateUseCase findSigningCertificate) {
+        this(repository, ocspSigner, eventPublisher, findSigningCertificate, null);
+    }
+
+    @Autowired
+    public SigningCertificateService(
+            SigningCertificateRepository repository,
+            OcspSigner ocspSigner,
+            ApplicationEventPublisher eventPublisher,
+            FindSigningCertificateUseCase findSigningCertificate,
+            @Autowired(required = false) OcspSignerRepository signerRepository) {
+        this.repository = repository;
+        this.ocspSigner = ocspSigner;
+        this.eventPublisher = eventPublisher;
+        this.findSigningCertificate = findSigningCertificate;
+        this.signerRepository = signerRepository;
+    }
 
     /** Publishes a "no active signer / just resync with the HSM" event (repeated across flows). */
     private void publishSignerStateRefresh() {
@@ -276,8 +300,18 @@ public class SigningCertificateService {
                 .filter(c -> c.getNotAfter() == null || !now.isAfter(c.getNotAfter()))
                 .map(c -> {
                     try {
+                        List<String> orderedVslots = List.of(c.getProviderId());
+                        if (signerRepository != null && c.getId() != null) {
+                            Optional<OcspSignerEntity> linked = signerRepository.findBySigningCertificateId(c.getId());
+                            if (linked.isPresent() && linked.get().getVslots() != null && !linked.get().getVslots().isEmpty()) {
+                                orderedVslots = linked.get().getVslots().stream()
+                                        .map(v -> v.getDevice().getDeviceId())
+                                        .toList();
+                            }
+                        }
                         return new OcspSigner.RegisteredSigner(
                                 c.getProviderId(),
+                                orderedVslots,
                                 c.getKeyLabel(),
                                 parsePem(c.getCertificatePem()),
                                 c.isActive(),

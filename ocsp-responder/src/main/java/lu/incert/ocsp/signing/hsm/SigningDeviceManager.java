@@ -125,17 +125,29 @@ public interface SigningDeviceManager {
 
     record RegisteredSigner(
             String providerId,
+            List<String> providerIds,
             String keyLabel,
             X509CertificateHolder certificate,
             boolean preferred,
             String signatureAlgorithm) {
 
+        public RegisteredSigner(
+                String providerId,
+                String keyLabel,
+                X509CertificateHolder certificate,
+                boolean preferred,
+                String signatureAlgorithm) {
+            this(providerId,
+                 providerId != null ? List.of(providerId) : List.of("default"),
+                 keyLabel, certificate, preferred, signatureAlgorithm);
+        }
+
         public RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred, String signatureAlgorithm) {
-            this("default", keyLabel, certificate, preferred, signatureAlgorithm);
+            this("default", List.of("default"), keyLabel, certificate, preferred, signatureAlgorithm);
         }
 
         public RegisteredSigner(String keyLabel, X509CertificateHolder certificate, boolean preferred) {
-            this("default", keyLabel, certificate, preferred, null);
+            this("default", List.of("default"), keyLabel, certificate, preferred, null);
         }
     }
 }

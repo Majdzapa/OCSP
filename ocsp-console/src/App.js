@@ -11,6 +11,7 @@ import { InboxAuditPage } from './pages/InboxAuditPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { TrustedCasPage } from './pages/TrustedCasPage';
 import { CryptoDevicesPage } from './pages/CryptoDevicesPage';
+import { SignersPage } from './pages/SignersPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -37,6 +38,7 @@ const NAV_SECTIONS = [
         title: 'HSM & Signing',
         items: [
             { label: 'HSM Devices & Slots', path: '/hsm-devices', icon: IconCpu },
+            { label: 'OCSP Signers', path: '/signers', icon: IconKey },
             { label: 'Signing Certificates', path: '/signing-cert', aliases: ['/signing-certificates'], icon: IconCertificate },
             { label: 'Cert Validity', path: '/signing-validity', icon: IconClock, showExpiryBadge: true },
         ],
@@ -386,6 +388,7 @@ function MainLayout() {
                     <Route path="/revocations" element={<RevocationFeed />} />
                     <Route path="/signing-cert" element={<SigningCertificatesPage />} />
                     <Route path="/signing-certificates" element={<SigningCertificatesPage />} />
+                    <Route path="/signers" element={<SignersPage />} />
                     <Route path="/hsm-devices" element={<CryptoDevicesPage />} />
                     <Route path="/signing-validity" element={<SigningCertValidityPage />} />
                     <Route path="/cert-checker" element={<CertCheckerPage />} />

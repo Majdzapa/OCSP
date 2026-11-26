@@ -1,6 +1,8 @@
 package lu.incert.ocsp.signing.hsm;
 
+import lu.incert.ocsp.signing.port.ActivatableCryptoProvider;
 import lu.incert.ocsp.signing.port.CryptoProviderPort;
+import lu.incert.ocsp.signing.port.DeviceActivationState;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
 import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
@@ -210,9 +212,20 @@ public class MultiProviderOcspSigner implements OcspSigner {
                 if (holder == null || now.isAfter(holder.getNotAfter().toInstant())) {
                     continue;
                 }
-                CryptoProviderPort port = pkcsProviders.getProvider(rs.providerId());
+                List<String> candidateIds = new ArrayList<>();
+                if (rs.providerIds() != null && !rs.providerIds().isEmpty()) {
+                    for (String pid : rs.providerIds()) {
+                        try {
+                            candidateIds.add(pkcsProviders.getProvider(pid).providerId());
+                        } catch (Exception ignored) {}
+                    }
+                }
+                if (candidateIds.isEmpty()) {
+                    CryptoProviderPort port = pkcsProviders.getProvider(rs.providerId());
+                    candidateIds.add(port.providerId());
+                }
                 updated.add(CaSignerMatcher.MatchedSigner.of(
-                        new ProviderKeyRef(port.providerId(), rs.keyLabel()),
+                        new ProviderKeyRef(candidateIds.get(0), List.copyOf(candidateIds), rs.keyLabel()),
                         holder,
                         rs.signatureAlgorithm(),
                         rs.preferred()));
@@ -231,21 +244,44 @@ public class MultiProviderOcspSigner implements OcspSigner {
     public SigningSelection selectSigner(CertificateID certId) throws Exception {
         if (registeredSigners.isEmpty()) {
             throw new SignerNotConfiguredException(
-                    "No active signing certificate is configured (activate one under Signing Certificates)");
+                    "No active signing certificate is configured (activate one under Signers / Signing Certificates)");
         }
         CaSignerMatcher.MatchedSigner<ProviderKeyRef> selected =
                 CaSignerMatcher.selectBest(registeredSigners, certId).orElse(null);
         if (selected != null) {
             ProviderKeyRef ref = selected.target();
-            ContentSigner cs = pkcsProviders.getProvider(ref.providerId())
+            ContentSigner cs = resolveFailoverProvider(ref)
                     .createContentSigner(ref.keyLabel(), selected.algorithm());
             return new SigningSelection(selected.chain(), cs);
         }
 
         DefaultSignerState fallback = requireState();
-        ContentSigner cs = pkcsProviders.getProvider(fallback.target().providerId())
+        ContentSigner cs = resolveFailoverProvider(fallback.target())
                 .createContentSigner(fallback.target().keyLabel(), fallback.algorithm());
         return new SigningSelection(fallback.chain(), cs);
+    }
+
+    /**
+     * Picks the first unlocked/healthy HSM Vslot from the signer's ordered {@code providerIds}
+     * (automatic HA Vslot failover). Falls back to primary Vslot if all are locked.
+     */
+    private CryptoProviderPort resolveFailoverProvider(ProviderKeyRef ref) {
+        List<String> candidates = (ref.providerIds() != null && !ref.providerIds().isEmpty())
+                ? ref.providerIds()
+                : List.of(ref.providerId());
+        for (String pid : candidates) {
+            try {
+                CryptoProviderPort port = pkcsProviders.getProvider(pid);
+                if (port instanceof ActivatableCryptoProvider act) {
+                    if (act.activationState() == DeviceActivationState.ACTIVE) {
+                        return port;
+                    }
+                } else if (port.getDeviceInfo().healthy()) {
+                    return port;
+                }
+            } catch (Exception ignored) {}
+        }
+        return pkcsProviders.getProvider(ref.providerId());
     }
 
     private DefaultSignerState requireState() {
@@ -256,7 +292,11 @@ public class MultiProviderOcspSigner implements OcspSigner {
         return state;
     }
 
-    private record ProviderKeyRef(String providerId, String keyLabel) {}
+    private record ProviderKeyRef(String providerId, List<String> providerIds, String keyLabel) {
+        ProviderKeyRef(String providerId, String keyLabel) {
+            this(providerId, List.of(providerId), keyLabel);
+        }
+    }
 
     private record DefaultSignerState(
             ProviderKeyRef target,

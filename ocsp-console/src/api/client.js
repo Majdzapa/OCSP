@@ -167,6 +167,18 @@ export const deleteCryptoDevice = (id) => api.delete(`/crypto-devices/${id}`).th
 export const activateCryptoDevice = (deviceId, pin) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/activate`, { pin }).then((r) => r.data);
 export const deactivateCryptoDevice = (deviceId) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/deactivate`).then((r) => r.data);
 export const getOcspReadiness = () => axios.get('/ocsp/health', { validateStatus: (s) => s === 200 || s === 503 }).then((r) => ({ httpStatus: r.status, ...r.data }));
+// ---- First-Class OCSP Signers (HSM Vslots + Key + CSR + Cert) ----
+export const getSigners = () => api.get('/signers').then((r) => r.data);
+export const getSignerById = (id) => api.get(`/signers/${id}`).then((r) => r.data);
+export const createSigner = (req) => api.post('/signers', req).then((r) => r.data);
+export const updateSigner = (id, req) => api.put(`/signers/${id}`, req).then((r) => r.data);
+export const deleteSigner = (id) => api.delete(`/signers/${id}`).then((r) => r.data);
+export const generateSignerCsr = (id, req) => api.post(`/signers/${id}/csr`, req ?? {}).then((r) => r.data);
+export const getSignerCsr = (id, generateIfMissing = false) => api.get(`/signers/${id}/csr`, { params: { generateIfMissing } }).then((r) => r.data);
+export const getSignerCertificate = (id) => api.get(`/signers/${id}/cert`).then((r) => r.data);
+export const importSignerCertificate = (id, req) => api.post(`/signers/${id}/cert`, req).then((r) => r.data);
+export const activateSigner = (id) => api.put(`/signers/${id}/activate`).then((r) => r.data);
+export const deactivateSigner = (id) => api.put(`/signers/${id}/deactivate`).then((r) => r.data);
 // ---- Trusted CAs (Hot-reloaded mTLS Truststore) ----
 export const getTrustedCas = () => api.get('/trusted-cas').then((r) => r.data);
 export const importTrustedCa = (alias, certificatePem) => api.post('/trusted-cas', { alias, certificatePem }).then((r) => r.data);
