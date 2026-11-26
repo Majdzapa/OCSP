@@ -22,7 +22,7 @@ RUN rm -rf ./src/main/resources/static/*
 COPY --from=frontend-build /app/dist/ ./src/main/resources/static/console/
 COPY build/site/ ./src/main/resources/static/docs/
 
-RUN mvn package -DskipTests --batch-mode
+RUN --mount=type=cache,target=/root/.m2 mvn package -Dmaven.test.skip=true --batch-mode
 
 # Stage 3: Runtime image with SoftHSM2 PKCS#11 library and unified JAR
 FROM eclipse-temurin:25-jdk-jammy
