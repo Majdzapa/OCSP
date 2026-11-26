@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Paper, Title, Text, Group, Stack, Button, Badge, Table, ActionIcon, Modal, TextInput, Textarea, PasswordInput, Switch, Select, Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, } from '@mantine/core';
 import { IconCertificate, IconPlus, IconRefresh, IconCheck, IconTrash, IconEye, IconAlertCircle, IconKey, IconShieldCheck, IconCopy, IconDownload, IconUpload, IconFileCertificate, IconCpu, IconLockOpen, IconSearch, IconX, } from '@tabler/icons-react';
-import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, getProviderCapabilities, checkSigningAlgorithm, generateSigningCsr, activateCryptoDevice, } from '../api/client';
+import { getSigningCertificates, addSigningCertificate, activateSigningCertificate, deactivateSigningCertificate, deleteSigningCertificate, getHsmInfo, getProviderCapabilities, checkSigningAlgorithm, generateSigningCsr, activateCryptoDevice, getSigners, importSignerCertificate, generateSignerCsr, } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 function downloadTextFile(content, filename) {
     const blob = new Blob([content], { type: 'application/x-pem-file' });
@@ -20,13 +20,15 @@ export const SigningCertificatesPage = () => {
     const isAdmin = roleNames.includes('ROLE_ADMIN');
     const canOperateCsr = isAdmin || roleNames.includes('ROLE_AGENT');
     const [certificates, setCertificates] = useState([]);
+    const [signers, setSigners] = useState([]);
     const [hsmInfo, setHsmInfo] = useState(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
-    // Import/Add modal state
+    // Import/Add modal state (select Signer -> import into Signer via POST /signer/{id}/cert)
     const [addModalOpen, setAddModalOpen] = useState(false);
+    const [selectedSignerId, setSelectedSignerId] = useState('');
     const [alias, setAlias] = useState('');
     const [providerId, setProviderId] = useState('default');
     const [keyLabel, setKeyLabel] = useState('ocsp-signing-key');
@@ -37,6 +39,7 @@ export const SigningCertificatesPage = () => {
     const [importAlgCheck, setImportAlgCheck] = useState(null);
     // Generate CSR modal state
     const [csrModalOpen, setCsrModalOpen] = useState(false);
+    const [csrSignerId, setCsrSignerId] = useState('');
     const [csrProviderId, setCsrProviderId] = useState('default');
     const [csrKeyLabel, setCsrKeyLabel] = useState('ocsp-signing-key-2');
     const [csrSubjectDn, setCsrSubjectDn] = useState('CN=Incert Delegated OCSP Signer,O=Incert,C=CH');
@@ -67,12 +70,19 @@ export const SigningCertificatesPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const [certs, hsm] = await Promise.all([
+            const [certs, hsm, signerList] = await Promise.all([
                 getSigningCertificates(),
                 getHsmInfo().catch(() => null),
+                getSigners().catch(() => []),
             ]);
             setCertificates(certs);
             setHsmInfo(hsm);
+            setSigners(signerList || []);
+            if (signerList?.length > 0) {
+                const firstSigner = signerList[0];
+                setSelectedSignerId((prev) => (prev && signerList.some((s) => String(s.id) === String(prev)) ? prev : String(firstSigner.id)));
+                setCsrSignerId((prev) => (prev && signerList.some((s) => String(s.id) === String(prev)) ? prev : String(firstSigner.id)));
+            }
             const fallbackProvider = hsm?.defaultProviderId || hsm?.providers?.[0]?.providerId || 'default';
             setProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
             setCsrProviderId((prev) => (prev === 'default' ? fallbackProvider : prev));
@@ -138,34 +148,31 @@ export const SigningCertificatesPage = () => {
     };
     const handleAddSubmit = async (e) => {
         e.preventDefault();
-        if (!alias.trim() || !certificatePem.trim()) {
-            setError('Please provide both an alias and certificate PEM');
+        if (!selectedSignerId) {
+            setError('Please select an OCSP Signer first (or create one under OCSP Signers)');
             return;
         }
+        if (!certificatePem.trim()) {
+            setError('Please provide the certificate PEM');
+            return;
+        }
+        const targetSigner = signers.find((s) => String(s.id) === String(selectedSignerId));
         try {
             setActionLoading(true);
             setError(null);
-            const payload = {
-                alias: alias.trim(),
-                providerId: providerId || hsmInfo?.defaultProviderId || 'default',
-                keyLabel: keyLabel.trim() || 'ocsp-signing-key',
+            const updated = await importSignerCertificate(Number(selectedSignerId), {
                 certificatePem: certificatePem.trim(),
+                signatureAlgorithm: signatureAlgorithm || targetSigner?.signatureAlgorithm || null,
                 activateImmediately,
-                signatureAlgorithm,
-            };
-            await addSigningCertificate(payload);
-            setSuccess(`Signing certificate '${alias}' imported into provider '${payload.providerId}' and registered${activateImmediately ? ' (activated)' : ''}.`);
+            });
+            setSuccess(`Signing certificate imported into Signer '${updated.name}' (${updated.code})${activateImmediately ? ' and activated' : ''}.`);
             setAddModalOpen(false);
-            setAlias('');
-            setProviderId(hsmInfo?.defaultProviderId || hsmInfo?.providers?.[0]?.providerId || 'default');
-            setKeyLabel(hsmInfo?.activeKeyLabel || 'ocsp-signing-key');
-            setSignatureAlgorithm('');
             setCertificatePem('');
             setActivateImmediately(false);
             await fetchAll();
         }
         catch (err) {
-            setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to register certificate');
+            setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to import certificate into signer');
         }
         finally {
             setActionLoading(false);
@@ -173,36 +180,21 @@ export const SigningCertificatesPage = () => {
     };
     const handleGenerateCsr = async (e) => {
         e.preventDefault();
-        if (!csrKeyLabel.trim() || !csrSubjectDn.trim()) {
-            setError('Key label and Subject DN are required');
-            return;
-        }
-        if (!csrSignatureAlgorithm) {
-            setError('Please select a CSR signature algorithm supported by the HSM');
-            return;
-        }
-        if (csrAlgCheck && !csrAlgCheck.supported) {
-            setError(csrAlgCheck.message || 'Selected algorithm is not supported by the HSM');
+        if (!csrSignerId) {
+            setError('Please select an OCSP Signer first');
             return;
         }
         try {
             setActionLoading(true);
             setError(null);
-            const res = await generateSigningCsr({
-                providerId: csrProviderId || hsmInfo?.defaultProviderId || 'default',
-                keyLabel: csrKeyLabel.trim(),
-                subjectDn: csrSubjectDn.trim(),
-                keyAlgorithm: csrReuseExisting ? null : csrAlgorithm,
-                keySize: csrReuseExisting ? null : (csrKeySize ? Number(csrKeySize) : null),
-                signatureAlgorithm: csrSignatureAlgorithm,
-                reuseExistingKey: csrReuseExisting,
-            });
+            const res = await generateSignerCsr(Number(csrSignerId), {});
             setCsrResult(res);
-            setSuccess(`CSR generated on provider '${res.providerId || csrProviderId}' for key '${res.keyLabel}' using ${csrSignatureAlgorithm}. Download the CSR, have your CA sign it, then import the certificate.`);
+            setSelectedSignerId(String(csrSignerId));
+            setSuccess(`Key '${res.keyLabel}' & CSR generated for Signer '${res.signerCode}' on HSM Vslot '${res.vslotDeviceId}'.`);
             await fetchAll();
         }
         catch (err) {
-            setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to generate CSR from HSM');
+            setError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Failed to generate CSR from Signer');
         }
         finally {
             setActionLoading(false);
@@ -640,104 +632,52 @@ export const SigningCertificatesPage = () => {
         </Paper>
       </Stack>
 
-      {/* Modal: Generate CSR from HSM */}
+      {/* Modal: Generate CSR for Signer */}
       <Modal opened={csrModalOpen} onClose={() => setCsrModalOpen(false)} title={<Group gap="xs">
             <IconFileCertificate size={20} color="#38bdf8"/>
-            <Text fw={700}>Generate PKCS#10 CSR in HSM</Text>
+            <Text fw={700}>Generate PKCS#10 CSR for OCSP Signer</Text>
           </Group>} size="lg">
         {!csrResult ? (<form onSubmit={handleGenerateCsr}>
             <Stack gap="md">
-              {providerOptions.length > 0 && (<Select label="Signing Device / Provider" description="Select which HSM device/token generates and stores the private key" leftSection={<IconCpu size={16}/>} data={providerOptions} value={csrProviderId} onChange={(val) => {
-                    const nextProv = val || hsmInfo?.defaultProviderId || 'default';
-                    setCsrProviderId(nextProv);
-                    if (csrReuseExisting) {
-                        const target = providers.find((p) => p.providerId === nextProv);
-                        setCsrKeyLabel(target?.keyLabels?.[0] || '');
-                    }
-                }} required/>)}
-
-              <Switch label="Reuse existing HSM private key" description="Enable to generate a renewal CSR using an existing key label in the selected device" checked={csrReuseExisting} onChange={(e) => {
-                const checked = e.currentTarget.checked;
-                setCsrReuseExisting(checked);
-                if (checked && csrExistingKeyLabels.length) {
-                    setCsrKeyLabel(csrExistingKeyLabels[0]);
-                }
-                else if (!checked) {
-                    setCsrKeyLabel(`ocsp-signing-key-${certificates.length + 1}`);
-                }
-            }}/>
-
-              {csrReuseExisting && csrExistingKeyLabels.length ? (<Select label="Existing HSM Key Label" data={csrExistingKeyLabels} value={csrKeyLabel} onChange={(val) => setCsrKeyLabel(val || '')} required/>) : (<TextInput label="New HSM Key Label" placeholder="ocsp-signing-key-2" description="A non-extractable keypair will be generated inside the selected HSM token under this label" leftSection={<IconKey size={16}/>} value={csrKeyLabel} onChange={(e) => setCsrKeyLabel(e.currentTarget.value)} required/>)}
-
-              <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert Delegated OCSP Signer,O=Incert,C=CH" value={csrSubjectDn} onChange={(e) => setCsrSubjectDn(e.currentTarget.value)} required/>
-
-              {!csrReuseExisting && (<SimpleGrid cols={2}>
+              {signers.length === 0 ? (
+                <Alert color="orange" icon={<IconAlertCircle size={16}/>} title="No OCSP Signers Configured">
+                  Please create an OCSP Signer first on the <b>OCSP Signers</b> page. Each Signer already holds its UUID code, UUID HSM key label, ordered HSM Vslots, and signature algorithm.
+                </Alert>
+              ) : (
+                <>
                   <Select
-                    label="Key Algorithm (queried from HSM)"
-                    placeholder={csrCapabilities?.liveIntrospected ? 'Select key algorithm' : 'Unlock device to query mechanisms'}
-                    data={(csrCapabilities?.keyAlgorithms || []).map((k) => ({
-                        value: k.keyAlgorithm,
-                        label: k.supported
-                            ? `${k.keyAlgorithm} — ✓ Supported (${k.mechanismName})`
-                            : `${k.keyAlgorithm} — ✗ Unsupported`,
+                    label="OCSP Signer"
+                    description="Select the OCSP Signer for which to generate the HSM keypair and PKCS#10 CSR"
+                    leftSection={<IconKey size={16}/>}
+                    data={signers.map((s) => ({
+                        value: String(s.id),
+                        label: `${s.name} (${s.code} · ${s.keyAlgorithm} ${s.keySize} · ${s.signatureAlgorithm})`,
                     }))}
-                    value={csrAlgorithm}
-                    onChange={(val) => {
-                        const alg = val || '';
-                        setCsrAlgorithm(alg);
-                        const match = (csrCapabilities?.keyAlgorithms || []).find((k) => k.keyAlgorithm === alg);
-                        if (match?.supportedKeySizes?.length) {
-                            const pref = match.supportedKeySizes.includes(3072) ? 3072 : match.supportedKeySizes[0];
-                            setCsrKeySize(String(pref));
-                        } else {
-                            setCsrKeySize('');
-                        }
-                    }}
+                    value={csrSignerId}
+                    onChange={(val) => setCsrSignerId(val || '')}
+                    searchable
                     required
                   />
-                  <Select
-                    label="Key Size / Curve (HSM supported)"
-                    placeholder={csrAvailableKeySizes.length ? 'Select key size' : 'No supported sizes'}
-                    data={csrAvailableKeySizes.map((bits) => ({
-                        value: String(bits),
-                        label: csrAlgorithm === 'EC' ? `P-${bits} (${bits} bits)` : `${bits} bits`,
-                    }))}
-                    value={csrKeySize}
-                    onChange={(val) => setCsrKeySize(val || '')}
-                    disabled={csrAvailableKeySizes.length === 0}
-                    required
-                  />
-                </SimpleGrid>)}
-
-              <Select
-                label="CSR Signature Algorithm (user-selected & HSM-verified)"
-                description={csrCapabilities?.statusMessage || 'Algorithms dynamically queried from HSM C_GetMechanismList'}
-                placeholder="Select signature algorithm"
-                data={csrSigCaps.map((s) => ({
-                    value: s.algorithm,
-                    label: s.supported
-                        ? `${s.algorithm} — ✓ Supported (${s.mechanismName})`
-                        : `${s.algorithm} — ✗ Unsupported (${s.mechanismName})`,
-                }))}
-                value={csrSignatureAlgorithm}
-                onChange={(val) => setCsrSignatureAlgorithm(val || '')}
-                required
-              />
-
-              {csrCapabilities && !csrCapabilities.liveIntrospected && (
-                <Alert color="orange" icon={<IconAlertCircle size={16}/>} title="HSM Device Locked">
-                  {csrCapabilities.statusMessage}
-                </Alert>
-              )}
-
-              {csrAlgCheck && (
-                <Alert
-                  color={csrAlgCheck.supported ? 'teal' : 'red'}
-                  icon={csrAlgCheck.supported ? <IconCheck size={16}/> : <IconX size={16}/>}
-                  title={csrAlgCheck.supported ? 'Algorithm Verified on HSM' : 'Algorithm Not Supported on HSM'}
-                >
-                  {csrAlgCheck.message}
-                </Alert>
+                  {(() => {
+                      const s = signers.find((item) => String(item.id) === String(csrSignerId));
+                      if (!s) return null;
+                      return (
+                        <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}>
+                          <Stack gap={4}>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Signer Summary</Text>
+                              <Badge size="xs" color="indigo">{s.status}</Badge>
+                            </Group>
+                            <Text size="xs">Signer Code (UUID): <Code>{s.code}</Code></Text>
+                            <Text size="xs">HSM Key Label (UUID): <Code>{s.keyLabel}</Code></Text>
+                            <Text size="xs">Subject DN: <Code>{s.subjectDn}</Code></Text>
+                            <Text size="xs">Algorithm: <Code>{s.keyAlgorithm} {s.keySize}</Code> · <Code>{s.signatureAlgorithm}</Code></Text>
+                            <Text size="xs">Bound HSM Vslots: {(s.vslots || []).map((v) => `${v.deviceId} (${v.role})`).join(', ')}</Text>
+                          </Stack>
+                        </Paper>
+                      );
+                  })()}
+                </>
               )}
 
               <Group justify="flex-end" mt="md">
@@ -748,17 +688,17 @@ export const SigningCertificatesPage = () => {
                   type="submit"
                   color="cyan"
                   loading={actionLoading}
-                  disabled={!csrSignatureAlgorithm || (csrAlgCheck != null && !csrAlgCheck.supported)}
+                  disabled={!csrSignerId || signers.length === 0}
                   leftSection={<IconFileCertificate size={16}/>}
                 >
-                  Generate CSR
+                  Generate Key &amp; CSR
                 </Button>
               </Group>
             </Stack>
           </form>) : (<Stack gap="md">
             <Alert color="teal" icon={<IconCheck size={18}/>} title="CSR Generated & Signed by HSM">
-              Key label <Code>{csrResult.keyLabel}</Code> is stored in the HSM token. Submit this CSR to your CA
-              (with <Code>OCSPSigning</Code> EKU), then import the signed certificate using key label <Code>{csrResult.keyLabel}</Code>.
+              Key label <Code>{csrResult.keyLabel}</Code> is stored in HSM Vslot <Code>{csrResult.vslotDeviceId}</Code>. Submit this CSR to your CA
+              (with <Code>OCSPSigning</Code> EKU), then import the signed certificate into Signer <Code>{csrResult.signerCode}</Code>.
             </Alert>
 
             <Group justify="space-between">
@@ -769,7 +709,7 @@ export const SigningCertificatesPage = () => {
                       {copied ? 'Copied' : 'Copy CSR'}
                     </Button>)}
                 </CopyButton>
-                <Button size="xs" variant="filled" color="cyan" leftSection={<IconDownload size={14}/>} onClick={() => downloadTextFile(csrResult.csrPem, `${csrResult.keyLabel}.csr.pem`)}>
+                <Button size="xs" variant="filled" color="cyan" leftSection={<IconDownload size={14}/>} onClick={() => downloadTextFile(csrResult.csrPem, `${csrResult.signerCode || csrResult.keyLabel}.csr.pem`)}>
                   Download .csr
                 </Button>
               </Group>
@@ -781,15 +721,11 @@ export const SigningCertificatesPage = () => {
 
             <Group justify="space-between" mt="sm">
               <Button variant="light" color="indigo" onClick={() => {
-                if (csrResult.providerId) {
-                    setProviderId(csrResult.providerId);
-                }
-                setKeyLabel(csrResult.keyLabel);
-                setAlias(csrResult.keyLabel);
+                setSelectedSignerId(String(csrResult.signerId || csrSignerId));
                 setCsrModalOpen(false);
                 setAddModalOpen(true);
             }}>
-                Import Signed Certificate for '{csrResult.keyLabel}'
+                Import Signed Certificate into Signer
               </Button>
               <Button variant="default" onClick={() => setCsrModalOpen(false)}>
                 Close
@@ -798,48 +734,51 @@ export const SigningCertificatesPage = () => {
           </Stack>)}
       </Modal>
 
-      {/* Modal: Import / Add Signing Certificate */}
+      {/* Modal: Import Signing Certificate into Signer */}
       <Modal opened={addModalOpen} onClose={() => setAddModalOpen(false)} title={<Group gap="xs">
             <IconCertificate size={20} color="#6366f1"/>
-            <Text fw={700}>Import Signing Certificate</Text>
+            <Text fw={700}>Import Signing Certificate into Signer</Text>
           </Group>} size="lg">
         <form onSubmit={handleAddSubmit}>
           <Stack gap="md">
-            <TextInput label="Certificate Alias" placeholder="e.g. ocsp-signing-2027" value={alias} onChange={(e) => setAlias(e.currentTarget.value)} required/>
-
-            {providerOptions.length > 0 && (<Select label="Signing Device / Provider" description="Device holding the corresponding private key" leftSection={<IconCpu size={16}/>} data={providerOptions} value={providerId} onChange={(val) => {
-                const nextProv = val || hsmInfo?.defaultProviderId || 'default';
-                setProviderId(nextProv);
-                const target = providers.find((p) => p.providerId === nextProv);
-                if (target?.keyLabels?.length) {
-                    setKeyLabel(target.keyLabels[0]);
-                }
-            }} required/>)}
-
-            {importKeyLabels.length ? (<Select label="HSM Key Label / Alias" description={`Detected key type for '${keyLabel}': ${normalizedKeyType}`} leftSection={<IconKey size={16}/>} data={importKeyLabels.map((a) => ({
-                value: a,
-                label: importKeyAlgorithms?.[a] ? `${a} (${importKeyAlgorithms[a]})` : a,
-            }))} value={keyLabel} onChange={(val) => setKeyLabel(val || importKeyLabels[0])} searchable required/>) : (<TextInput label="HSM Key Label / Alias" placeholder="ocsp-signing-key" description="The private key label in the HSM token corresponding to this certificate" leftSection={<IconKey size={16}/>} value={keyLabel} onChange={(e) => setKeyLabel(e.currentTarget.value)} required/>)}
-
-            <Select
-              label="Signature Algorithm (user-selected & HSM-verified)"
-              description={importCapabilities?.liveIntrospected
-                  ? `Live HSM mechanisms for ${normalizedKeyType || 'key'} '${keyLabel}'`
-                  : (importCapabilities?.statusMessage || `Algorithms for key '${keyLabel}'`)}
-              data={importAlgOptions}
-              value={signatureAlgorithm}
-              onChange={(val) => setSignatureAlgorithm(val || '')}
-              required
-            />
-
-            {importAlgCheck && (
-              <Alert
-                color={importAlgCheck.supported ? 'teal' : 'red'}
-                icon={importAlgCheck.supported ? <IconCheck size={16}/> : <IconX size={16}/>}
-                title={importAlgCheck.supported ? 'Algorithm Supported on HSM' : 'Algorithm Not Supported on HSM'}
-              >
-                {importAlgCheck.message}
+            {signers.length === 0 ? (
+              <Alert color="orange" icon={<IconAlertCircle size={16}/>} title="No OCSP Signers Configured">
+                Please create an OCSP Signer first on the <b>OCSP Signers</b> page.
               </Alert>
+            ) : (
+              <>
+                <Select
+                  label="Select OCSP Signer"
+                  description="The certificate will be imported and bound directly to this Signer's HSM Vslots and UUID key label"
+                  leftSection={<IconKey size={16}/>}
+                  data={signers.map((s) => ({
+                      value: String(s.id),
+                      label: `${s.name} (${s.code})`,
+                  }))}
+                  value={selectedSignerId}
+                  onChange={(val) => setSelectedSignerId(val || '')}
+                  searchable
+                  required
+                />
+
+                {(() => {
+                    const s = signers.find((item) => String(item.id) === String(selectedSignerId));
+                    if (!s) return null;
+                    return (
+                      <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}>
+                        <Stack gap={4}>
+                          <Group justify="space-between">
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Bound Signer Configuration</Text>
+                            <Badge size="xs" color="teal">{s.signatureAlgorithm}</Badge>
+                          </Group>
+                          <Text size="xs">Signer Code (UUID): <Code>{s.code}</Code></Text>
+                          <Text size="xs">HSM Private Key Label (UUID): <Code>{s.keyLabel}</Code> ({s.keyAlgorithm} {s.keySize})</Text>
+                          <Text size="xs">HSM Vslots: {(s.vslots || []).map((v) => `${v.deviceId} [${v.role} · ${v.activationState}]`).join(', ')}</Text>
+                        </Stack>
+                      </Paper>
+                    );
+                })()}
+              </>
             )}
 
             <Group justify="space-between" align="flex-end">
@@ -853,7 +792,7 @@ export const SigningCertificatesPage = () => {
 
             <Textarea placeholder="-----BEGIN CERTIFICATE-----&#10;MIID...&#10;-----END CERTIFICATE-----" description="Paste or upload the CA-signed X.509 signing certificate in PEM format" minRows={6} maxRows={10} value={certificatePem} onChange={(e) => setCertificatePem(e.currentTarget.value)} required/>
 
-            {isAdmin && (<Switch label="Make active immediately" description="If checked, this certificate will immediately become the active signer for all OCSP responses (otherwise kept in standby)" checked={activateImmediately} onChange={(e) => setActivateImmediately(e.currentTarget.checked)} color="green"/>)}
+            {isAdmin && (<Switch label="Activate signer immediately" description="If checked, this signer and its certificate will immediately become active for OCSP responses" checked={activateImmediately} onChange={(e) => setActivateImmediately(e.currentTarget.checked)} color="green"/>)}
 
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={() => setAddModalOpen(false)}>
@@ -864,9 +803,9 @@ export const SigningCertificatesPage = () => {
                 variant="gradient"
                 gradient={{ from: 'indigo.6', to: 'violet.6' }}
                 loading={actionLoading}
-                disabled={importAlgCheck != null && !importAlgCheck.supported}
+                disabled={!selectedSignerId || signers.length === 0}
               >
-                Import Certificate
+                Import Certificate into Signer
               </Button>
             </Group>
           </Stack>

@@ -114,8 +114,35 @@ public class SigningCertificateService {
 
     @Transactional
     public SigningCertificateDto addCertificate(AddSigningCertificateRequest request) {
-        if (repository.existsByAlias(request.alias())) {
-            throw new IllegalArgumentException("Signing certificate with alias '" + request.alias() + "' already exists");
+        OcspSignerEntity targetSigner = null;
+        if (request.signerId() != null && signerRepository != null) {
+            targetSigner = signerRepository.findById(request.signerId())
+                    .orElseThrow(() -> new IllegalArgumentException("Signer not found: " + request.signerId()));
+        }
+
+        String rawAlias = (request.alias() != null && !request.alias().isBlank())
+                ? request.alias().trim()
+                : (targetSigner != null ? targetSigner.getCode() : null);
+        if (rawAlias == null || rawAlias.isBlank()) {
+            throw new IllegalArgumentException("Alias (or signerId) is required");
+        }
+
+        if (targetSigner != null && targetSigner.getSigningCertificateId() != null) {
+            repository.findById(targetSigner.getSigningCertificateId()).ifPresent(existing -> {
+                if (!existing.isActive()) {
+                    repository.delete(existing);
+                    repository.flush();
+                }
+            });
+        }
+
+        String resolvedAlias = rawAlias;
+        if (repository.existsByAlias(resolvedAlias)) {
+            if (targetSigner != null) {
+                resolvedAlias = targetSigner.getCode() + "-" + (System.currentTimeMillis() % 100000);
+            } else {
+                throw new IllegalArgumentException("Signing certificate with alias '" + resolvedAlias + "' already exists");
+            }
         }
 
         X509CertificateHolder holder = parsePem(request.certificatePem());
@@ -126,18 +153,32 @@ public class SigningCertificateService {
             throw new IllegalArgumentException("Cannot add an expired signing certificate (expired at: " + notAfter + ")");
         }
 
-        String providerId = resolveProviderId(request.providerId());
-        String keyLabel = (request.keyLabel() != null && !request.keyLabel().isBlank())
-                ? request.keyLabel().trim()
-                : ocspSigner.getActiveKeyLabel();
+        String providerId;
+        if (targetSigner != null && !targetSigner.getVslots().isEmpty()) {
+            providerId = resolveFirstActiveOrPrimaryVslot(targetSigner);
+        } else {
+            providerId = resolveProviderId(request.providerId());
+        }
 
-        String signatureAlgorithm = resolveSignatureAlgorithm(request.signatureAlgorithm(), holder, providerId, keyLabel);
+        String keyLabel;
+        if (targetSigner != null && targetSigner.getKeyLabel() != null && !targetSigner.getKeyLabel().isBlank()) {
+            keyLabel = targetSigner.getKeyLabel();
+        } else if (request.keyLabel() != null && !request.keyLabel().isBlank()) {
+            keyLabel = request.keyLabel().trim();
+        } else {
+            keyLabel = ocspSigner.getActiveKeyLabel();
+        }
+
+        String requestedSigAlg = (request.signatureAlgorithm() != null && !request.signatureAlgorithm().isBlank())
+                ? request.signatureAlgorithm().trim()
+                : (targetSigner != null ? targetSigner.getSignatureAlgorithm() : null);
+        String signatureAlgorithm = resolveSignatureAlgorithm(requestedSigAlg, holder, providerId, keyLabel);
 
         // Import and bind the signed certificate to its HSM private key on the target provider
         ocspSigner.importCertificateToToken(providerId, keyLabel, holder);
 
         SigningCertificate entity = SigningCertificate.builder()
-                .alias(request.alias().trim())
+                .alias(resolvedAlias)
                 .providerId(providerId)
                 .keyLabel(keyLabel)
                 .certificatePem(request.certificatePem().trim())
@@ -154,12 +195,45 @@ public class SigningCertificateService {
         log.info("Registered new signing certificate: alias='{}', keyLabel='{}', serial={}",
                 saved.getAlias(), saved.getKeyLabel(), saved.getSerialNumber());
 
+        if (targetSigner != null) {
+            targetSigner.setSignatureAlgorithm(saved.getSignatureAlgorithm());
+            targetSigner.setCertificatePem(saved.getCertificatePem());
+            targetSigner.setCertSubjectDn(saved.getSubjectDn());
+            targetSigner.setCertIssuerDn(saved.getIssuerDn());
+            targetSigner.setCertSerialNumber(saved.getSerialNumber());
+            targetSigner.setCertNotBefore(saved.getNotBefore());
+            targetSigner.setCertNotAfter(saved.getNotAfter());
+            targetSigner.setSigningCertificateId(saved.getId());
+            targetSigner.setStatus("CERT_IMPORTED");
+            signerRepository.save(targetSigner);
+        }
+
         if (Boolean.TRUE.equals(request.activateImmediately())) {
-            return activate(saved.getId());
+            SigningCertificateDto activated = activate(saved.getId());
+            if (targetSigner != null) {
+                targetSigner.setActive(true);
+                targetSigner.setActivatedAt(activated.activatedAt());
+                targetSigner.setStatus("ACTIVE");
+                signerRepository.save(targetSigner);
+            }
+            return activated;
         }
 
         publishSignerStateRefresh();
         return toDto(saved);
+    }
+
+    private String resolveFirstActiveOrPrimaryVslot(OcspSignerEntity signer) {
+        java.util.Map<String, ProviderDeviceInfo> live = ocspSigner.listProviders().stream()
+                .collect(java.util.stream.Collectors.toMap(ProviderDeviceInfo::providerId, p -> p, (a, b) -> a));
+        for (var v : signer.getVslots()) {
+            String devId = v.getDevice().getDeviceId();
+            ProviderDeviceInfo info = live.get(devId);
+            if (info != null && "ACTIVE".equals(info.activationState())) {
+                return devId;
+            }
+        }
+        return signer.getVslots().get(0).getDevice().getDeviceId();
     }
 
     @Transactional

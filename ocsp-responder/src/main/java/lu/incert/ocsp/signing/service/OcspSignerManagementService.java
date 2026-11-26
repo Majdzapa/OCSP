@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -70,10 +71,11 @@ public class OcspSignerManagementService {
 
     @Transactional
     public SignerDto createSigner(SignerRequest request) {
-        String cleanCode = requireClean(request.code(), "code");
+        String cleanCode = resolveOrGenerateUuid(request.code());
         if (signerRepository.existsByCode(cleanCode)) {
             throw new IllegalArgumentException("Signer with code '" + cleanCode + "' already exists");
         }
+        String cleanKeyLabel = resolveOrGenerateUuid(request.keyLabel());
         String keyAlg = normalizeKeyAlg(request.keyAlgorithm());
         int keySize = resolveKeySize(keyAlg, request.keySize());
         String sigAlg = validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg);
@@ -85,7 +87,7 @@ public class OcspSignerManagementService {
                 .name(requireClean(request.name(), "name"))
                 .status("DRAFT")
                 .subjectDn(requireClean(request.subjectDn(), "subjectDn"))
-                .keyLabel(requireClean(request.keyLabel(), "keyLabel"))
+                .keyLabel(cleanKeyLabel)
                 .keyAlgorithm(keyAlg)
                 .keySize(keySize)
                 .signatureAlgorithm(sigAlg)
@@ -104,12 +106,17 @@ public class OcspSignerManagementService {
     @Transactional
     public SignerDto updateSigner(Long id, SignerRequest request) {
         OcspSignerEntity signer = requireSigner(id);
-        String cleanCode = requireClean(request.code(), "code");
+        String cleanCode = (request.code() != null && !request.code().isBlank())
+                ? request.code().trim()
+                : signer.getCode();
         signerRepository.findByCode(cleanCode).ifPresent(existing -> {
             if (!existing.getId().equals(id)) {
                 throw new IllegalArgumentException("Another signer already uses code '" + cleanCode + "'");
             }
         });
+        String cleanKeyLabel = (request.keyLabel() != null && !request.keyLabel().isBlank())
+                ? request.keyLabel().trim()
+                : signer.getKeyLabel();
 
         String keyAlg = normalizeKeyAlg(request.keyAlgorithm());
         int keySize = resolveKeySize(keyAlg, request.keySize());
@@ -119,7 +126,7 @@ public class OcspSignerManagementService {
         signer.setCode(cleanCode);
         signer.setName(requireClean(request.name(), "name"));
         signer.setSubjectDn(requireClean(request.subjectDn(), "subjectDn"));
-        signer.setKeyLabel(requireClean(request.keyLabel(), "keyLabel"));
+        signer.setKeyLabel(cleanKeyLabel);
         signer.setKeyAlgorithm(keyAlg);
         signer.setKeySize(keySize);
         signer.setSignatureAlgorithm(sigAlg);
@@ -580,6 +587,13 @@ public class OcspSignerManagementService {
                     + ". Allowed: " + SigningAlgorithm.namesForKeyType(keyAlg));
         }
         return clean;
+    }
+
+    private static String resolveOrGenerateUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+        return raw.trim();
     }
 
     private static String requireClean(String value, String field) {

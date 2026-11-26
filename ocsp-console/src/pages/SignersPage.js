@@ -29,6 +29,17 @@ function downloadTextFile(content, filename) {
     URL.revokeObjectURL(url);
 }
 
+function generateUuid() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
+
 export const SignersPage = () => {
     const { user } = useAuth();
     const roleNames = (user?.roles ?? []).map((r) => typeof r === 'string' ? r : (r?.authority ?? ''));
@@ -130,10 +141,10 @@ export const SignersPage = () => {
     const openCreate = () => {
         setEditingId(null);
         const nextIdx = signers.length + 1;
-        setCode(`ocsp-signer-${nextIdx}`);
+        setCode(generateUuid());
         setName(`OCSP Delegated Signer ${nextIdx}`);
         setSubjectDn('CN=Incert Delegated OCSP Signer,O=Incert,C=LU');
-        setKeyLabel(`ocsp-signing-key-${nextIdx}`);
+        setKeyLabel(generateUuid());
         setKeyAlgorithm('RSA');
         setKeySize('3072');
         setSignatureAlgorithm('SHA256withRSA');
@@ -561,7 +572,20 @@ export const SignersPage = () => {
                 <form onSubmit={handleSaveSigner}>
                     <Stack gap="md">
                         <SimpleGrid cols={2}>
-                            <TextInput label="Signer Code" placeholder="lu-root-signer" value={code} onChange={(e) => setCode(e.currentTarget.value)} required />
+                            <TextInput
+                                label="Signer Code (UUID)"
+                                description="Auto-generated UUID identifier"
+                                value={code}
+                                onChange={(e) => setCode(e.currentTarget.value)}
+                                rightSection={editingId == null && (
+                                    <Tooltip label="Generate new UUID">
+                                        <ActionIcon variant="subtle" size="sm" onClick={() => setCode(generateUuid())}>
+                                            <IconRefresh size={14} />
+                                        </ActionIcon>
+                                    </Tooltip>
+                                )}
+                                required
+                            />
                             <TextInput label="Display Name" placeholder="Luxembourg Root CA Signer" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
                         </SimpleGrid>
 
@@ -577,7 +601,20 @@ export const SignersPage = () => {
                         />
 
                         <SimpleGrid cols={2}>
-                            <TextInput label="HSM Private Key Label" placeholder="ocsp-signing-key-1" value={keyLabel} onChange={(e) => setKeyLabel(e.currentTarget.value)} required />
+                            <TextInput
+                                label="HSM Private Key Label (UUID)"
+                                description="Auto-generated UUID label inside the HSM Vslot"
+                                value={keyLabel}
+                                onChange={(e) => setKeyLabel(e.currentTarget.value)}
+                                rightSection={editingId == null && (
+                                    <Tooltip label="Generate new UUID">
+                                        <ActionIcon variant="subtle" size="sm" onClick={() => setKeyLabel(generateUuid())}>
+                                            <IconRefresh size={14} />
+                                        </ActionIcon>
+                                    </Tooltip>
+                                )}
+                                required
+                            />
                             <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert OCSP Signer,O=Incert,C=LU" value={subjectDn} onChange={(e) => setSubjectDn(e.currentTarget.value)} required />
                         </SimpleGrid>
 

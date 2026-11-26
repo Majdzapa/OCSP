@@ -186,5 +186,30 @@ class OcspSignerManagementServiceTest {
         assertThat(certOpt.get().certificatePem()).contains("BEGIN CERTIFICATE");
         assertThat(certOpt.get().issuerDn()).contains("Incert Root CA");
     }
+
+    @Test
+    void createSignerAutoGeneratesUuidForCodeAndKeyLabelWhenOmitted() {
+        when(deviceRepository.findByDeviceId("softhsm-primary")).thenReturn(Optional.of(vslotPrimary));
+        when(ocspSigner.listProviders()).thenReturn(List.of());
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> {
+            OcspSignerEntity e = inv.getArgument(0);
+            e.setId(2L);
+            return e;
+        });
+
+        SignerDto created = service.createSigner(new SignerRequest(
+                null,
+                "UUID Signer",
+                "CN=Incert UUID Signer,O=Incert,C=LU",
+                "",
+                "RSA",
+                3072,
+                "SHA256withRSA",
+                List.of("softhsm-primary")
+        ));
+
+        assertThat(created.code()).matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        assertThat(created.keyLabel()).matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    }
 }
 

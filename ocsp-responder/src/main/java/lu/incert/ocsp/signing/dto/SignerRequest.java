@@ -8,8 +8,7 @@ import java.util.List;
 
 @Schema(description = "Request payload to create or update an OCSP Signer with its ordered HSM Vslots, key policy, and signing algorithm")
 public record SignerRequest(
-        @NotBlank(message = "Signer code is required")
-        @Schema(description = "Unique signer code", example = "luxembourg-ca-signer")
+        @Schema(description = "Unique signer code (UUID; auto-generated if omitted or blank)", example = "550e8400-e29b-41d4-a716-446655440000")
         String code,
 
         @NotBlank(message = "Signer display name is required")
@@ -20,8 +19,7 @@ public record SignerRequest(
         @Schema(description = "X.500 Subject Distinguished Name for the OCSP signing certificate", example = "CN=Incert OCSP Signer,O=Incert,C=LU")
         String subjectDn,
 
-        @NotBlank(message = "HSM key label is required")
-        @Schema(description = "Private key label in the bound HSM Vslot(s)", example = "ocsp-key-lu-2027")
+        @Schema(description = "Private key label in the bound HSM Vslot(s) (UUID; auto-generated if omitted or blank)", example = "a87ff679-a2f3-4e71-d918-1a67b7542122")
         String keyLabel,
 
         @NotBlank(message = "Key algorithm is required")
@@ -39,4 +37,5 @@ public record SignerRequest(
         @Schema(description = "Ordered list of HSM Vslot deviceIds (index 0 = PRIMARY, 1..N = FAILOVER)", example = "[\"softhsm-primary\", \"softhsm-secondary\"]")
         List<String> vslotDeviceIds
 ) {}
+
 
