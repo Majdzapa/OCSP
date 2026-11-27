@@ -12,6 +12,7 @@ import lu.incert.ocsp.signing.port.DeviceActivationState;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
 import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.operator.ContentSigner;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * In-process {@link CryptoProviderPort} + {@link ActivatableCryptoProvider} backed directly by
@@ -155,57 +157,20 @@ public final class Pkcs11jCryptoProviderAdapter implements CryptoProviderPort, A
                     Map.of()
             );
         }
-        try {
-            List<KeyMetadata> keys = provider.listKeys();
-            List<String> labels = keys.stream().map(KeyMetadata::keyLabel).distinct().toList();
-            Map<String, String> algs = new LinkedHashMap<>();
-            keys.forEach(k -> algs.putIfAbsent(k.keyLabel(), k.keyAlgorithm()));
-            return new ProviderDeviceInfo(
-                    spec.deviceId(),
-                    PROVIDER_TYPE,
-                    spec.libraryPath(),
-                    spec.libraryWrapperPath(),
-                    resolvedTokenLabel,
-                    resolvedSlotId,
-                    DeviceActivationState.ACTIVE.name(),
-                    true,
-                    statusMessage,
-                    labels,
-                    algs
-            );
-        } catch (Pkcs11Exception e) {
-            if (e.isNotLoggedIn()) {
-                handleSessionLoggedOut();
-                return getDeviceInfo();
-            }
-            return new ProviderDeviceInfo(
-                    spec.deviceId(),
-                    PROVIDER_TYPE,
-                    spec.libraryPath(),
-                    spec.libraryWrapperPath(),
-                    resolvedTokenLabel,
-                    resolvedSlotId,
-                    DeviceActivationState.ERROR.name(),
-                    false,
-                    "ERROR: " + e.getMessage(),
-                    List.of(),
-                    Map.of()
-            );
-        } catch (RuntimeException e) {
-            return new ProviderDeviceInfo(
-                    spec.deviceId(),
-                    PROVIDER_TYPE,
-                    spec.libraryPath(),
-                    spec.libraryWrapperPath(),
-                    resolvedTokenLabel,
-                    resolvedSlotId,
-                    DeviceActivationState.ERROR.name(),
-                    false,
-                    "ERROR: " + e.getMessage(),
-                    List.of(),
-                    Map.of()
-            );
-        }
+        // Zero PKCS#11 calls on status/health/UI polls: key metadata is persisted in `ocsp_keys`.
+        return new ProviderDeviceInfo(
+                spec.deviceId(),
+                PROVIDER_TYPE,
+                spec.libraryPath(),
+                spec.libraryWrapperPath(),
+                resolvedTokenLabel,
+                resolvedSlotId,
+                DeviceActivationState.ACTIVE.name(),
+                true,
+                statusMessage,
+                List.of(),
+                Map.of()
+        );
     }
 
     @Override
@@ -227,6 +192,16 @@ public final class Pkcs11jCryptoProviderAdapter implements CryptoProviderPort, A
                 out.putIfAbsent(km.keyLabel(), km.keyAlgorithm());
             }
             return out;
+        } catch (Pkcs11Exception e) {
+            throw translatePkcs11Exception(e);
+        }
+    }
+
+    @Override
+    public Optional<SubjectPublicKeyInfo> readPublicKeyInfo(String keyLabel) {
+        Pkcs11Provider provider = requireActive();
+        try {
+            return Optional.ofNullable(provider.getPublicKey(keyLabel));
         } catch (Pkcs11Exception e) {
             throw translatePkcs11Exception(e);
         }

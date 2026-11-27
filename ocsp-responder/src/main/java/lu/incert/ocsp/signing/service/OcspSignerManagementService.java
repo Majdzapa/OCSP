@@ -3,6 +3,7 @@ package lu.incert.ocsp.signing.service;
 import lu.incert.ocsp.signing.dto.AddSigningCertificateRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrResponse;
+import lu.incert.ocsp.signing.dto.OcspKeyDto;
 import lu.incert.ocsp.signing.dto.SignerCertImportRequest;
 import lu.incert.ocsp.signing.dto.SignerCsrRequest;
 import lu.incert.ocsp.signing.dto.SignerDto;
@@ -10,25 +11,29 @@ import lu.incert.ocsp.signing.dto.SignerRequest;
 import lu.incert.ocsp.signing.dto.SigningCertificateDto;
 import lu.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import lu.incert.ocsp.signing.entity.CryptoProviderEntity;
+import lu.incert.ocsp.signing.entity.OcspKeyEntity;
 import lu.incert.ocsp.signing.entity.OcspSignerEntity;
-import lu.incert.ocsp.signing.entity.OcspSignerVslotEntity;
+import lu.incert.ocsp.signing.entity.OcspSignerTokenEntity;
 import lu.incert.ocsp.signing.entity.SigningCertificate;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SigningAlgorithm;
 import lu.incert.ocsp.signing.port.DeviceActivationState;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lu.incert.ocsp.signing.repository.CryptoDeviceRepository;
+import lu.incert.ocsp.signing.repository.OcspKeyRepository;
 import lu.incert.ocsp.signing.repository.OcspSignerRepository;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,10 +44,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Manages the lifecycle of first-class OCSP {@code Signer} aggregates ({@code ocsp_signers}),
- * including ordered HSM Vslots ({@code ocsp_signer_vslots}), key + CSR generation
- * ({@code POST/GET /signers/{id}/csr}), and X.509 certificate import/retrieval
- * ({@code POST/GET /signers/{id}/cert}).
+ * Manages first-class OCSP {@code Signer} aggregates ({@code ocsp_signers}), their persisted
+ * cryptographic keys ({@code ocsp_keys}), and their ordered PKCS#11 HSM Tokens ({@code ocsp_signer_tokens}).
+ * <p>
+ * Minimal Token Touch Policy: the hardware PKCS#11 token is ONLY touched during keypair/CSR generation
+ * ({@code POST /signers/{id}/csr}) and live OCSP response signing ({@code POST /ocsp}). All UI reads,
+ * health checks, and X.509 certificate imports execute against {@code ocsp_keys} in MariaDB with zero
+ * PKCS#11 object scans or NVRAM writes.
  */
 @Slf4j
 @Service
@@ -50,6 +58,7 @@ import java.util.stream.Collectors;
 public class OcspSignerManagementService {
 
     private final OcspSignerRepository signerRepository;
+    private final OcspKeyRepository keyRepository;
     private final CryptoDeviceRepository deviceRepository;
     private final SigningCertificateRepository signingCertRepository;
     private final SigningCertificateService signingCertificateService;
@@ -60,6 +69,13 @@ public class OcspSignerManagementService {
         Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
         return signerRepository.findAllByOrderByIdAsc().stream()
                 .map(s -> toDto(s, liveDevices))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<OcspKeyDto> listKeys() {
+        return keyRepository.findAllByOrderByIdDesc().stream()
+                .map(OcspSignerManagementService::toKeyDto)
                 .toList();
     }
 
@@ -75,18 +91,40 @@ public class OcspSignerManagementService {
         if (signerRepository.existsByCode(cleanCode)) {
             throw new IllegalArgumentException("Signer with code '" + cleanCode + "' already exists");
         }
-        String cleanKeyLabel = resolveOrGenerateUuid(request.keyLabel());
-        String keyAlg = normalizeKeyAlg(request.keyAlgorithm());
-        int keySize = resolveKeySize(keyAlg, request.keySize());
-        String sigAlg = validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg);
 
-        List<CryptoDeviceEntity> orderedDevices = resolveVslotDevices(request.vslotDeviceIds());
+        List<CryptoDeviceEntity> orderedTokens = resolveTokenDevices(request.tokenDeviceIds());
+
+        OcspKeyEntity linkedKey = null;
+        String cleanKeyLabel;
+        String keyAlg;
+        int keySize;
+
+        if (request.keyId() != null) {
+            linkedKey = keyRepository.findById(request.keyId())
+                    .orElseThrow(() -> new IllegalArgumentException("Key not found: " + request.keyId()));
+            cleanKeyLabel = linkedKey.getKeyLabel();
+            keyAlg = linkedKey.getKeyAlgorithm();
+            keySize = linkedKey.getKeySize();
+        } else {
+            cleanKeyLabel = resolveOrGenerateUuid(request.keyLabel());
+            linkedKey = keyRepository.findByKeyLabel(cleanKeyLabel).orElse(null);
+            if (linkedKey != null) {
+                keyAlg = linkedKey.getKeyAlgorithm();
+                keySize = linkedKey.getKeySize();
+            } else {
+                keyAlg = normalizeKeyAlg(request.keyAlgorithm() != null ? request.keyAlgorithm() : "RSA");
+                keySize = resolveKeySize(keyAlg, request.keySize());
+            }
+        }
+
+        String sigAlg = validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg);
 
         OcspSignerEntity signer = OcspSignerEntity.builder()
                 .code(cleanCode)
                 .name(requireClean(request.name(), "name"))
                 .status("DRAFT")
                 .subjectDn(requireClean(request.subjectDn(), "subjectDn"))
+                .key(linkedKey)
                 .keyLabel(cleanKeyLabel)
                 .keyAlgorithm(keyAlg)
                 .keySize(keySize)
@@ -94,12 +132,14 @@ public class OcspSignerManagementService {
                 .active(false)
                 .build();
 
-        bindVslots(signer, orderedDevices);
+        bindTokens(signer, orderedTokens);
         OcspSignerEntity saved = signerRepository.save(signer);
-        log.info("Created OCSP Signer '{}' (id={}, keyLabel='{}', key={} {}, sigAlg={}, vslots={})",
-                saved.getCode(), saved.getId(), saved.getKeyLabel(), saved.getKeyAlgorithm(),
+        log.info("Created OCSP Signer '{}' (id={}, keyId={}, keyLabel='{}', key={} {}, sigAlg={}, tokens={})",
+                saved.getCode(), saved.getId(),
+                saved.getKey() != null ? saved.getKey().getId() : null,
+                saved.getKeyLabel(), saved.getKeyAlgorithm(),
                 saved.getKeySize(), saved.getSignatureAlgorithm(),
-                orderedDevices.stream().map(CryptoDeviceEntity::getDeviceId).toList());
+                orderedTokens.stream().map(CryptoDeviceEntity::getDeviceId).toList());
         return toDto(saved, mapLiveDevices());
     }
 
@@ -114,28 +154,52 @@ public class OcspSignerManagementService {
                 throw new IllegalArgumentException("Another signer already uses code '" + cleanCode + "'");
             }
         });
-        String cleanKeyLabel = (request.keyLabel() != null && !request.keyLabel().isBlank())
-                ? request.keyLabel().trim()
-                : signer.getKeyLabel();
 
-        String keyAlg = normalizeKeyAlg(request.keyAlgorithm());
-        int keySize = resolveKeySize(keyAlg, request.keySize());
+        List<CryptoDeviceEntity> orderedTokens = resolveTokenDevices(request.tokenDeviceIds());
+
+        OcspKeyEntity linkedKey = signer.getKey();
+        String cleanKeyLabel;
+        String keyAlg;
+        int keySize;
+
+        if (request.keyId() != null) {
+            linkedKey = keyRepository.findById(request.keyId())
+                    .orElseThrow(() -> new IllegalArgumentException("Key not found: " + request.keyId()));
+            cleanKeyLabel = linkedKey.getKeyLabel();
+            keyAlg = linkedKey.getKeyAlgorithm();
+            keySize = linkedKey.getKeySize();
+        } else {
+            cleanKeyLabel = (request.keyLabel() != null && !request.keyLabel().isBlank())
+                    ? request.keyLabel().trim()
+                    : signer.getKeyLabel();
+            if (linkedKey != null && !linkedKey.getKeyLabel().equals(cleanKeyLabel)) {
+                linkedKey = keyRepository.findByKeyLabel(cleanKeyLabel).orElse(null);
+            }
+            if (linkedKey != null) {
+                keyAlg = linkedKey.getKeyAlgorithm();
+                keySize = linkedKey.getKeySize();
+            } else {
+                keyAlg = normalizeKeyAlg(request.keyAlgorithm() != null ? request.keyAlgorithm() : signer.getKeyAlgorithm());
+                keySize = resolveKeySize(keyAlg, request.keySize() != null ? request.keySize() : signer.getKeySize());
+            }
+        }
+
         String sigAlg = validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg);
-        List<CryptoDeviceEntity> orderedDevices = resolveVslotDevices(request.vslotDeviceIds());
 
         signer.setCode(cleanCode);
         signer.setName(requireClean(request.name(), "name"));
         signer.setSubjectDn(requireClean(request.subjectDn(), "subjectDn"));
+        signer.setKey(linkedKey);
         signer.setKeyLabel(cleanKeyLabel);
         signer.setKeyAlgorithm(keyAlg);
         signer.setKeySize(keySize);
         signer.setSignatureAlgorithm(sigAlg);
-        bindVslots(signer, orderedDevices);
+        bindTokens(signer, orderedTokens);
 
         OcspSignerEntity saved = signerRepository.save(signer);
         if (saved.getSigningCertificateId() != null) {
             signingCertRepository.findById(saved.getSigningCertificateId()).ifPresent(sc -> {
-                sc.setProviderId(orderedDevices.get(0).getDeviceId());
+                sc.setProviderId(orderedTokens.get(0).getDeviceId());
                 sc.setKeyLabel(saved.getKeyLabel());
                 sc.setSignatureAlgorithm(saved.getSignatureAlgorithm());
                 signingCertRepository.save(sc);
@@ -164,36 +228,45 @@ public class OcspSignerManagementService {
     }
 
     /**
-     * Generates a non-extractable keypair (or reuses existing key) inside the signer's primary / first
-     * active HSM Vslot, signs a PKCS#10 CSR with the verified signature algorithm, and stores {@code csrPem}.
+     * Touches the unlocked PKCS#11 HSM Token to generate a non-extractable keypair (or reuse a linked key),
+     * persists the extracted {@link SubjectPublicKeyInfo} once into {@code ocsp_keys}, signs a PKCS#10 CSR,
+     * and stores {@code csrPem} on the Signer.
      */
     @Transactional
     public SignerCsrRequest.SignerCsrResponse generateCsr(Long id, SignerCsrRequest request) {
         OcspSignerEntity signer = requireSigner(id);
         Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
 
-        String targetVslot = resolveTargetVslotForCsr(signer, request != null ? request.vslotDeviceId() : null, liveDevices);
+        CryptoDeviceEntity targetTokenEntity = resolveTargetTokenEntityForCsr(
+                signer, request != null ? request.tokenDeviceId() : null, liveDevices);
+        String targetTokenId = targetTokenEntity != null
+                ? targetTokenEntity.getDeviceId()
+                : ocspSigner.getDefaultProviderId();
+
+        OcspKeyEntity existingKey = signer.getKey() != null
+                ? signer.getKey()
+                : keyRepository.findByKeyLabel(signer.getKeyLabel()).orElse(null);
+
         String subjectDn = (request != null && request.subjectDn() != null && !request.subjectDn().isBlank())
                 ? request.subjectDn().trim()
                 : signer.getSubjectDn();
-        String keyAlg = (request != null && request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
-                ? normalizeKeyAlg(request.keyAlgorithm())
-                : signer.getKeyAlgorithm();
-        int keySize = (request != null && request.keySize() != null)
-                ? resolveKeySize(keyAlg, request.keySize())
-                : signer.getKeySize();
+        String keyAlg = existingKey != null
+                ? existingKey.getKeyAlgorithm()
+                : ((request != null && request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
+                        ? normalizeKeyAlg(request.keyAlgorithm())
+                        : signer.getKeyAlgorithm());
+        int keySize = existingKey != null
+                ? existingKey.getKeySize()
+                : ((request != null && request.keySize() != null)
+                        ? resolveKeySize(keyAlg, request.keySize())
+                        : signer.getKeySize());
         String sigAlg = (request != null && request.signatureAlgorithm() != null && !request.signatureAlgorithm().isBlank())
                 ? validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg)
                 : signer.getSignatureAlgorithm();
 
-        // Auto-detect whether keyLabel already exists on targetVslot when reuseExistingKey is omitted
-        ProviderDeviceInfo vslotInfo = liveDevices.get(targetVslot);
-        boolean keyAlreadyOnToken = vslotInfo != null
-                && vslotInfo.keyLabels() != null
-                && vslotInfo.keyLabels().contains(signer.getKeyLabel());
         boolean reuse = (request != null && request.reuseExistingKey() != null)
                 ? request.reuseExistingKey()
-                : keyAlreadyOnToken;
+                : (existingKey != null);
 
         GenerateCsrResponse csrRes = signingCertificateService.generateCsr(new GenerateCsrRequest(
                 signer.getKeyLabel(),
@@ -201,11 +274,29 @@ public class OcspSignerManagementService {
                 keyAlg,
                 keySize,
                 reuse,
-                targetVslot,
+                targetTokenId,
                 sigAlg
         ));
 
         Instant now = Instant.now();
+        OcspKeyEntity persistedKey = existingKey;
+        if (persistedKey == null) {
+            SubjectPublicKeyInfo spki = SigningCertificateService.extractPublicKeyFromCsrPem(csrRes.csrPem());
+            if (spki != null) {
+                persistedKey = keyRepository.save(OcspKeyEntity.builder()
+                        .keyLabel(signer.getKeyLabel())
+                        .ckaIdHex(HexFormat.of().formatHex(signer.getKeyLabel().getBytes(StandardCharsets.UTF_8)))
+                        .tokenDevice(targetTokenEntity)
+                        .keyAlgorithm(keyAlg)
+                        .keySize(keySize)
+                        .publicKeyPem(SigningCertificateService.toPublicKeyPem(spki))
+                        .publicKeySha1(SigningCertificateService.computePublicKeySha1Hex(spki))
+                        .generatedAt(now)
+                        .build());
+            }
+        }
+
+        signer.setKey(persistedKey);
         signer.setSubjectDn(subjectDn);
         signer.setKeyAlgorithm(keyAlg);
         signer.setKeySize(keySize);
@@ -217,16 +308,20 @@ public class OcspSignerManagementService {
         }
         signerRepository.save(signer);
 
-        log.info("Generated CSR for Signer '{}' (id={}) on Vslot '{}' (keyLabel='{}', key={} {}, sigAlg={}, reuse={})",
-                signer.getCode(), signer.getId(), targetVslot, signer.getKeyLabel(), keyAlg, keySize, sigAlg, reuse);
+        log.info("Generated CSR for Signer '{}' (id={}) on Token '{}' (keyId={}, keyLabel='{}', key={} {}, sigAlg={}, reuse={})",
+                signer.getCode(), signer.getId(), targetTokenId,
+                persistedKey != null ? persistedKey.getId() : null,
+                signer.getKeyLabel(), keyAlg, keySize, sigAlg, reuse);
 
         return new SignerCsrRequest.SignerCsrResponse(
                 signer.getId(),
                 signer.getCode(),
-                targetVslot,
+                targetTokenId,
+                persistedKey != null ? persistedKey.getId() : null,
                 signer.getKeyLabel(),
                 keyAlg,
                 keySize,
+                persistedKey != null ? persistedKey.getPublicKeySha1() : null,
                 sigAlg,
                 subjectDn,
                 csrRes.csrPem(),
@@ -235,7 +330,7 @@ public class OcspSignerManagementService {
     }
 
     /**
-     * Retrieves the signer's generated CSR (or generates it on demand when {@code generateIfMissing=true}).
+     * Retrieves the signer's generated CSR from MariaDB (zero HSM calls unless {@code generateIfMissing=true}).
      */
     @Transactional
     public Optional<SignerCsrRequest.SignerCsrResponse> getCsr(Long id, boolean generateIfMissing) {
@@ -246,16 +341,19 @@ public class OcspSignerManagementService {
         if (signer.getCsrPem() == null || signer.getCsrPem().isBlank()) {
             return Optional.empty();
         }
-        String primaryVslot = signer.getVslots().isEmpty()
+        String primaryToken = signer.getTokens().isEmpty()
                 ? ocspSigner.getDefaultProviderId()
-                : signer.getVslots().get(0).getDevice().getDeviceId();
+                : signer.getTokens().get(0).getTokenDevice().getDeviceId();
+        OcspKeyEntity key = signer.getKey();
         return Optional.of(new SignerCsrRequest.SignerCsrResponse(
                 signer.getId(),
                 signer.getCode(),
-                primaryVslot,
+                primaryToken,
+                key != null ? key.getId() : null,
                 signer.getKeyLabel(),
                 signer.getKeyAlgorithm(),
                 signer.getKeySize(),
+                key != null ? key.getPublicKeySha1() : null,
                 signer.getSignatureAlgorithm(),
                 signer.getSubjectDn(),
                 signer.getCsrPem(),
@@ -264,7 +362,7 @@ public class OcspSignerManagementService {
     }
 
     /**
-     * Returns the signer's imported X.509 certificate if present.
+     * Returns the signer's imported X.509 certificate from MariaDB (zero HSM calls).
      */
     @Transactional(readOnly = true)
     public Optional<SignerDto.SignerCertificateDto> getCertificate(Long id) {
@@ -273,21 +371,24 @@ public class OcspSignerManagementService {
     }
 
     /**
-     * Imports a CA-signed X.509 certificate into the signer and its bound HSM Vslot(s),
-     * verifying key compatibility and live HSM mechanism support.
+     * Imports a CA-signed X.509 certificate into the Signer with ZERO PKCS#11 token calls:
+     * public-key ownership is verified directly against {@code ocsp_keys.public_key_pem} in MariaDB,
+     * avoiding HSM NVRAM {@code CKO_CERTIFICATE} clutter and working even while tokens are {@code LOCKED}.
      */
     @Transactional
     public SignerDto importCertificate(Long id, SignerCertImportRequest request) {
         OcspSignerEntity signer = requireSigner(id);
         Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
-        String primaryVslot = resolveTargetVslotForCsr(signer, null, liveDevices);
+        CryptoDeviceEntity primaryTokenEntity = resolveTargetTokenEntityForCsr(signer, null, liveDevices);
+        String primaryTokenId = primaryTokenEntity != null
+                ? primaryTokenEntity.getDeviceId()
+                : ocspSigner.getDefaultProviderId();
 
         String sigAlg = (request.signatureAlgorithm() != null && !request.signatureAlgorithm().isBlank())
                 ? request.signatureAlgorithm().trim()
                 : signer.getSignatureAlgorithm();
         boolean activateNow = request.activateImmediately() == null || Boolean.TRUE.equals(request.activateImmediately());
 
-        // Remove previous unactivated/superseded signing_certificates row linked ONLY to this signer code if alias collides
         String certAlias = signer.getCode();
         if (signer.getSigningCertificateId() != null) {
             signingCertRepository.findById(signer.getSigningCertificateId()).ifPresent(existing -> {
@@ -307,25 +408,9 @@ public class OcspSignerManagementService {
                 request.certificatePem().trim(),
                 false,
                 sigAlg,
-                primaryVslot
+                primaryTokenId,
+                signer.getId()
         ));
-
-        // Also import certificate object into any additional ACTIVE failover Vslots holding the same keyLabel
-        X509CertificateHolder holder = SigningCertificateService.parsePem(request.certificatePem().trim());
-        for (OcspSignerVslotEntity binding : signer.getVslots()) {
-            String devId = binding.getDevice().getDeviceId();
-            if (!devId.equals(primaryVslot)) {
-                ProviderDeviceInfo info = liveDevices.get(devId);
-                if (info != null && DeviceActivationState.ACTIVE.name().equals(info.activationState())
-                        && info.keyLabels() != null && info.keyLabels().contains(signer.getKeyLabel())) {
-                    try {
-                        ocspSigner.importCertificateToToken(devId, signer.getKeyLabel(), holder);
-                    } catch (Exception e) {
-                        log.warn("Optional certificate import to failover Vslot '{}' skipped: {}", devId, e.getMessage());
-                    }
-                }
-            }
-        }
 
         signer.setSignatureAlgorithm(imported.signatureAlgorithm());
         signer.setCertificatePem(imported.certificatePem());
@@ -353,7 +438,6 @@ public class OcspSignerManagementService {
         }
         SigningCertificateDto activated = signingCertificateService.activate(signer.getSigningCertificateId());
 
-        // Sync active flags across all signers whose underlying signing_certificates were auto-superseded
         for (OcspSignerEntity other : signerRepository.findAll()) {
             if (!other.getId().equals(signer.getId()) && other.getSigningCertificateId() != null) {
                 boolean stillActive = signingCertRepository.findById(other.getSigningCertificateId())
@@ -396,9 +480,9 @@ public class OcspSignerManagementService {
                 .orElseThrow(() -> new IllegalArgumentException("Signer not found: " + id));
     }
 
-    private List<CryptoDeviceEntity> resolveVslotDevices(List<String> deviceIds) {
+    private List<CryptoDeviceEntity> resolveTokenDevices(List<String> deviceIds) {
         if (deviceIds == null || deviceIds.isEmpty()) {
-            throw new IllegalArgumentException("At least one HSM Vslot (deviceId) is required");
+            throw new IllegalArgumentException("At least one HSM Token (deviceId) is required");
         }
         Set<String> uniqueIds = new LinkedHashSet<>();
         for (String raw : deviceIds) {
@@ -407,54 +491,53 @@ public class OcspSignerManagementService {
             }
         }
         if (uniqueIds.isEmpty()) {
-            throw new IllegalArgumentException("At least one non-blank HSM Vslot (deviceId) is required");
+            throw new IllegalArgumentException("At least one non-blank HSM Token (deviceId) is required");
         }
         List<CryptoDeviceEntity> resolved = new ArrayList<>(uniqueIds.size());
         for (String devId : uniqueIds) {
             CryptoDeviceEntity dev = deviceRepository.findByDeviceId(devId)
-                    .orElseThrow(() -> new IllegalArgumentException("HSM Vslot / device not found: '" + devId + "'"));
+                    .orElseThrow(() -> new IllegalArgumentException("HSM Token / device not found: '" + devId + "'"));
             resolved.add(dev);
         }
         return resolved;
     }
 
-    private static void bindVslots(OcspSignerEntity signer, List<CryptoDeviceEntity> orderedDevices) {
-        signer.getVslots().clear();
-        for (int i = 0; i < orderedDevices.size(); i++) {
-            signer.getVslots().add(OcspSignerVslotEntity.builder()
+    private static void bindTokens(OcspSignerEntity signer, List<CryptoDeviceEntity> orderedTokens) {
+        signer.getTokens().clear();
+        for (int i = 0; i < orderedTokens.size(); i++) {
+            signer.getTokens().add(OcspSignerTokenEntity.builder()
                     .signer(signer)
-                    .device(orderedDevices.get(i))
+                    .tokenDevice(orderedTokens.get(i))
                     .priorityOrder(i)
                     .role(i == 0 ? "PRIMARY" : "FAILOVER")
                     .build());
         }
     }
 
-    private String resolveTargetVslotForCsr(
+    private CryptoDeviceEntity resolveTargetTokenEntityForCsr(
             OcspSignerEntity signer,
-            String explicitVslot,
+            String explicitTokenDeviceId,
             Map<String, ProviderDeviceInfo> liveDevices) {
-        if (explicitVslot != null && !explicitVslot.isBlank()) {
-            String trimmed = explicitVslot.trim();
-            boolean bound = signer.getVslots().stream()
-                    .anyMatch(v -> trimmed.equals(v.getDevice().getDeviceId()));
-            if (!bound) {
-                throw new IllegalArgumentException("Vslot '" + trimmed + "' is not bound to signer '" + signer.getCode() + "'");
-            }
-            return trimmed;
+        if (explicitTokenDeviceId != null && !explicitTokenDeviceId.isBlank()) {
+            String trimmed = explicitTokenDeviceId.trim();
+            return signer.getTokens().stream()
+                    .map(OcspSignerTokenEntity::getTokenDevice)
+                    .filter(d -> trimmed.equals(d.getDeviceId()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Token '" + trimmed + "' is not bound to signer '" + signer.getCode() + "'"));
         }
-        // Prefer the first ACTIVE (unlocked) Vslot in priority order; otherwise return PRIMARY (index 0)
-        for (OcspSignerVslotEntity binding : signer.getVslots()) {
-            String devId = binding.getDevice().getDeviceId();
-            ProviderDeviceInfo live = liveDevices.get(devId);
+        for (OcspSignerTokenEntity binding : signer.getTokens()) {
+            CryptoDeviceEntity dev = binding.getTokenDevice();
+            ProviderDeviceInfo live = liveDevices.get(dev.getDeviceId());
             if (live != null && DeviceActivationState.ACTIVE.name().equals(live.activationState())) {
-                return devId;
+                return dev;
             }
         }
-        if (!signer.getVslots().isEmpty()) {
-            return signer.getVslots().get(0).getDevice().getDeviceId();
+        if (!signer.getTokens().isEmpty()) {
+            return signer.getTokens().get(0).getTokenDevice();
         }
-        return ocspSigner.getDefaultProviderId();
+        return null;
     }
 
     private Map<String, ProviderDeviceInfo> mapLiveDevices() {
@@ -463,16 +546,21 @@ public class OcspSignerManagementService {
     }
 
     private SignerDto toDto(OcspSignerEntity entity, Map<String, ProviderDeviceInfo> liveDevices) {
-        List<SignerDto.SignerVslotDto> vslotDtos = new ArrayList<>();
-        if (entity.getVslots() != null) {
-            for (OcspSignerVslotEntity v : entity.getVslots()) {
-                CryptoDeviceEntity dev = v.getDevice();
+        OcspKeyEntity keyEntity = entity.getKey();
+        OcspKeyDto keyDto = keyEntity != null ? toKeyDto(keyEntity) : null;
+
+        List<SignerDto.SignerTokenDto> tokenDtos = new ArrayList<>();
+        if (entity.getTokens() != null) {
+            for (OcspSignerTokenEntity t : entity.getTokens()) {
+                CryptoDeviceEntity dev = t.getTokenDevice();
                 CryptoProviderEntity prov = dev.getProvider();
                 ProviderDeviceInfo live = liveDevices.get(dev.getDeviceId());
                 String state = live != null ? live.activationState() : DeviceActivationState.LOCKED.name();
                 boolean healthy = live != null && live.healthy();
-                boolean keyPresent = live != null && live.keyLabels() != null
-                        && live.keyLabels().contains(entity.getKeyLabel());
+                boolean keyRegistered = keyEntity != null
+                        && (keyEntity.getTokenDevice() == null
+                                || keyEntity.getTokenDevice().getId() == null
+                                || keyEntity.getTokenDevice().getId().equals(dev.getId()));
                 Long resolvedSlotId = dev.getSlotId() != null
                         ? dev.getSlotId()
                         : (live != null && healthy ? live.slotId() : null);
@@ -480,7 +568,7 @@ public class OcspSignerManagementService {
                         ? dev.getTokenLabel()
                         : (live != null ? live.tokenLabel() : null);
 
-                vslotDtos.add(new SignerDto.SignerVslotDto(
+                tokenDtos.add(new SignerDto.SignerTokenDto(
                         dev.getId(),
                         dev.getDeviceId(),
                         prov.getId(),
@@ -492,11 +580,11 @@ public class OcspSignerManagementService {
                         resolvedToken,
                         resolvedSlotId,
                         dev.getSlotListIndex(),
-                        v.getPriorityOrder(),
-                        v.getRole(),
+                        t.getPriorityOrder(),
+                        t.getRole(),
                         state,
                         healthy,
-                        keyPresent
+                        keyRegistered
                 ));
             }
         }
@@ -517,11 +605,13 @@ public class OcspSignerManagementService {
                 entity.getName(),
                 effectiveStatus,
                 entity.getSubjectDn(),
+                keyEntity != null ? keyEntity.getId() : null,
+                keyDto,
                 entity.getKeyLabel(),
                 entity.getKeyAlgorithm(),
                 entity.getKeySize(),
                 entity.getSignatureAlgorithm(),
-                List.copyOf(vslotDtos),
+                List.copyOf(tokenDtos),
                 hasCsr,
                 entity.getCsrPem(),
                 entity.getCsrGeneratedAt(),
@@ -531,6 +621,24 @@ public class OcspSignerManagementService {
                 entity.getActivatedAt(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
+        );
+    }
+
+    private static OcspKeyDto toKeyDto(OcspKeyEntity entity) {
+        CryptoDeviceEntity td = entity.getTokenDevice();
+        return new OcspKeyDto(
+                entity.getId(),
+                entity.getKeyLabel(),
+                entity.getCkaIdHex(),
+                td != null ? td.getId() : null,
+                td != null ? td.getDeviceId() : null,
+                td != null ? td.getTokenLabel() : null,
+                entity.getKeyAlgorithm(),
+                entity.getKeySize(),
+                entity.getPublicKeyPem(),
+                entity.getPublicKeySha1(),
+                entity.getGeneratedAt(),
+                entity.getCreatedAt()
         );
     }
 
@@ -603,4 +711,3 @@ public class OcspSignerManagementService {
         return value.trim();
     }
 }
-

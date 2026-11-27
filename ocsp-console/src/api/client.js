@@ -169,9 +169,11 @@ export const updateCryptoDevice = (id, req) => api.put(`/crypto-devices/${id}`, 
 export const deleteCryptoDevice = (id) => api.delete(`/crypto-devices/${id}`).then((r) => r.data);
 export const activateCryptoDevice = (deviceId, pin) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/activate`, { pin }).then((r) => r.data);
 export const deactivateCryptoDevice = (deviceId) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/deactivate`).then((r) => r.data);
+export const syncCryptoDeviceKeys = (deviceId) => api.post(`/crypto-devices/${encodeURIComponent(deviceId)}/sync-keys`).then((r) => r.data);
 export const getOcspReadiness = () => axios.get('/ocsp/health', { validateStatus: (s) => s === 200 || s === 503 }).then((r) => ({ httpStatus: r.status, ...r.data }));
-// ---- First-Class OCSP Signers (HSM Vslots + Key + CSR + Cert) ----
+// ---- First-Class OCSP Signers (HSM Tokens + Key + CSR + Cert) ----
 export const getSigners = () => api.get('/signers').then((r) => r.data);
+export const getOcspKeys = () => api.get('/signers/keys').then((r) => r.data);
 export const getSignerById = (id) => api.get(`/signers/${id}`).then((r) => r.data);
 export const createSigner = (req) => api.post('/signers', req).then((r) => r.data);
 export const updateSigner = (id, req) => api.put(`/signers/${id}`, req).then((r) => r.data);

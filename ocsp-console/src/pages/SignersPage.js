@@ -6,11 +6,11 @@ import {
 } from '@mantine/core';
 import {
     IconKey, IconPlus, IconRefresh, IconCheck, IconTrash, IconEdit, IconEye,
-    IconAlertCircle, IconCpu, IconLockOpen, IconFileCertificate, IconCertificate,
+    IconAlertCircle, IconLockOpen, IconFileCertificate, IconCertificate,
     IconCopy, IconDownload, IconUpload, IconX,
 } from '@tabler/icons-react';
 import {
-    getSigners, createSigner, updateSigner, deleteSigner,
+    getSigners, getOcspKeys, createSigner, updateSigner, deleteSigner,
     generateSignerCsr, getSignerCsr, getSignerCertificate, importSignerCertificate,
     activateSigner, deactivateSigner, getCryptoDevices, activateCryptoDevice,
     getProviderCapabilities, checkSigningAlgorithm,
@@ -47,6 +47,7 @@ export const SignersPage = () => {
     const canOperate = isAdmin || roleNames.includes('ROLE_AGENT');
 
     const [signers, setSigners] = useState([]);
+    const [keys, setKeys] = useState([]);
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -59,13 +60,18 @@ export const SignersPage = () => {
     const [code, setCode] = useState('');
     const [name, setName] = useState('');
     const [subjectDn, setSubjectDn] = useState('CN=Incert Delegated OCSP Signer,O=Incert,C=LU');
+    const [useExistingKey, setUseExistingKey] = useState(false);
+    const [selectedKeyId, setSelectedKeyId] = useState('');
     const [keyLabel, setKeyLabel] = useState('');
     const [keyAlgorithm, setKeyAlgorithm] = useState('RSA');
     const [keySize, setKeySize] = useState('3072');
     const [signatureAlgorithm, setSignatureAlgorithm] = useState('SHA256withRSA');
-    const [vslotIds, setVslotIds] = useState([]);
+    const [tokenIds, setTokenIds] = useState([]);
     const [capabilities, setCapabilities] = useState(null);
     const [algCheck, setAlgCheck] = useState(null);
+
+    // Public Key viewer modal (from ocsp_keys — 0 HSM calls)
+    const [viewKeyModal, setViewKeyModal] = useState(null);
 
     // CSR modal (GET / POST /signer/{id}/csr)
     const [csrModalSigner, setCsrModalSigner] = useState(null);
@@ -79,7 +85,7 @@ export const SignersPage = () => {
     const [certActivateNow, setCertActivateNow] = useState(true);
     const [certLoading, setCertLoading] = useState(false);
 
-    // Quick Unlock modal for LOCKED Vslots
+    // Quick Unlock modal for LOCKED HSM Tokens
     const [unlockDeviceId, setUnlockDeviceId] = useState(null);
     const [unlockPin, setUnlockPin] = useState('');
 
@@ -87,11 +93,13 @@ export const SignersPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const [sList, dList] = await Promise.all([
+            const [sList, kList, dList] = await Promise.all([
                 getSigners(),
+                getOcspKeys().catch(() => []),
                 getCryptoDevices().catch(() => []),
             ]);
             setSigners(sList);
+            setKeys(kList);
             setDevices(dList);
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to load OCSP Signers');
@@ -104,30 +112,30 @@ export const SignersPage = () => {
         fetchAll();
     }, [fetchAll]);
 
-    const primaryVslotId = vslotIds[0] || '';
+    const primaryTokenId = tokenIds[0] || '';
 
-    // Load live HSM capabilities for the primary selected Vslot
+    // Load cached HSM capabilities for the primary selected Token
     useEffect(() => {
-        if (!formOpen || !primaryVslotId) {
+        if (!formOpen || !primaryTokenId) {
             setCapabilities(null);
             return;
         }
         let cancelled = false;
-        getProviderCapabilities(primaryVslotId)
+        getProviderCapabilities(primaryTokenId)
             .then((caps) => { if (!cancelled) setCapabilities(caps); })
             .catch(() => { if (!cancelled) setCapabilities(null); });
         return () => { cancelled = true; };
-    }, [formOpen, primaryVslotId]);
+    }, [formOpen, primaryTokenId]);
 
-    // Live check key + signature algorithm against the primary Vslot
+    // Pre-verify key + signature algorithm against the primary Token's cached mechanism list (0 token object scans)
     useEffect(() => {
-        if (!formOpen || !primaryVslotId || !signatureAlgorithm) {
+        if (!formOpen || !primaryTokenId || !signatureAlgorithm) {
             setAlgCheck(null);
             return;
         }
         let cancelled = false;
         checkSigningAlgorithm({
-            providerId: primaryVslotId,
+            providerId: primaryTokenId,
             keyLabel: null,
             keyAlgorithm,
             keySize: keySize ? Number(keySize) : null,
@@ -136,7 +144,7 @@ export const SignersPage = () => {
             .then((res) => { if (!cancelled) setAlgCheck(res); })
             .catch(() => { if (!cancelled) setAlgCheck(null); });
         return () => { cancelled = true; };
-    }, [formOpen, primaryVslotId, keyAlgorithm, keySize, signatureAlgorithm]);
+    }, [formOpen, primaryTokenId, keyAlgorithm, keySize, signatureAlgorithm]);
 
     const openCreate = () => {
         setEditingId(null);
@@ -144,12 +152,14 @@ export const SignersPage = () => {
         setCode(generateUuid());
         setName(`OCSP Delegated Signer ${nextIdx}`);
         setSubjectDn('CN=Incert Delegated OCSP Signer,O=Incert,C=LU');
+        setUseExistingKey(false);
+        setSelectedKeyId('');
         setKeyLabel(generateUuid());
         setKeyAlgorithm('RSA');
         setKeySize('3072');
         setSignatureAlgorithm('SHA256withRSA');
         const defaultDev = devices.find((d) => d.isDefault) || devices[0];
-        setVslotIds(defaultDev ? [defaultDev.deviceId] : []);
+        setTokenIds(defaultDev ? [defaultDev.deviceId] : []);
         setError(null);
         setFormOpen(true);
     };
@@ -159,19 +169,30 @@ export const SignersPage = () => {
         setCode(s.code);
         setName(s.name);
         setSubjectDn(s.subjectDn);
+        if (s.keyId != null) {
+            setUseExistingKey(true);
+            setSelectedKeyId(String(s.keyId));
+        } else {
+            setUseExistingKey(false);
+            setSelectedKeyId('');
+        }
         setKeyLabel(s.keyLabel);
         setKeyAlgorithm(s.keyAlgorithm || 'RSA');
         setKeySize(String(s.keySize || 3072));
         setSignatureAlgorithm(s.signatureAlgorithm || 'SHA256withRSA');
-        setVslotIds((s.vslots || []).map((v) => v.deviceId));
+        setTokenIds((s.tokens || []).map((t) => t.deviceId));
         setError(null);
         setFormOpen(true);
     };
 
     const handleSaveSigner = async (e) => {
         e.preventDefault();
-        if (vslotIds.length === 0) {
-            setError('Select at least one HSM Vslot for this signer');
+        if (tokenIds.length === 0) {
+            setError('Select at least one HSM Token for this signer');
+            return;
+        }
+        if (useExistingKey && !selectedKeyId) {
+            setError('Select an existing cryptographic key from ocsp_keys');
             return;
         }
         try {
@@ -181,18 +202,19 @@ export const SignersPage = () => {
                 code: code.trim(),
                 name: name.trim(),
                 subjectDn: subjectDn.trim(),
-                keyLabel: keyLabel.trim(),
+                keyId: useExistingKey && selectedKeyId ? Number(selectedKeyId) : null,
+                keyLabel: useExistingKey ? null : keyLabel.trim(),
                 keyAlgorithm,
                 keySize: Number(keySize),
                 signatureAlgorithm,
-                vslotDeviceIds: vslotIds,
+                tokenDeviceIds: tokenIds,
             };
             if (editingId != null) {
                 await updateSigner(editingId, payload);
                 setSuccess(`Signer '${payload.code}' updated.`);
             } else {
                 await createSigner(payload);
-                setSuccess(`Signer '${payload.code}' created with ${vslotIds.length} HSM Vslot(s).`);
+                setSuccess(`Signer '${payload.code}' created with ${tokenIds.length} HSM Token(s).`);
             }
             setFormOpen(false);
             await fetchAll();
@@ -228,7 +250,7 @@ export const SignersPage = () => {
             if (generateNow || !s.hasCsr) {
                 const generated = await generateSignerCsr(s.id, {});
                 setCsrData(generated);
-                setSuccess(`Generated key '${generated.keyLabel}' & signed CSR on Vslot '${generated.vslotDeviceId}'.`);
+                setSuccess(`Generated key '${generated.keyLabel}' (persisted to ocsp_keys) & signed CSR on Token '${generated.tokenDeviceId}'.`);
                 await fetchAll();
             } else {
                 const existing = await getSignerCsr(s.id, false);
@@ -241,7 +263,7 @@ export const SignersPage = () => {
         }
     };
 
-    // ---- Certificate Workflow (GET /signer/{id}/cert & POST /signer/{id}/cert) ----
+    // ---- Certificate Workflow (GET /signer/{id}/cert & POST /signer/{id}/cert — 0 HSM Token Calls) ----
     const openCertModal = async (s) => {
         setCertModalSigner(s);
         setCertData(null);
@@ -274,7 +296,7 @@ export const SignersPage = () => {
             });
             setCertData(updated.certificate);
             setCertPemInput('');
-            setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.code}'.`);
+            setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.code}' (verified against ocsp_keys with zero HSM token calls).`);
             await fetchAll();
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to import certificate into signer');
@@ -321,18 +343,23 @@ export const SignersPage = () => {
             setError(null);
             await activateCryptoDevice(unlockDeviceId, pin);
             setUnlockDeviceId(null);
-            setSuccess(`HSM Vslot '${unlockDeviceId}' unlocked via C_Login.`);
+            setSuccess(`HSM Token '${unlockDeviceId}' unlocked via C_Login.`);
             await fetchAll();
         } catch (err) {
-            setError(err?.response?.data?.error || err?.message || 'Failed to unlock HSM Vslot');
+            setError(err?.response?.data?.error || err?.message || 'Failed to unlock HSM Token');
         } finally {
             setSaving(false);
         }
     };
 
-    const vslotOptions = devices.map((d) => ({
+    const tokenOptions = devices.map((d) => ({
         value: d.deviceId,
         label: `${d.deviceId} (${d.providerCode} · token: ${d.tokenLabel || 'slot ' + d.slotId} · ${d.activationState})`,
+    }));
+
+    const existingKeyOptions = keys.map((k) => ({
+        value: String(k.id),
+        label: `Key #${k.id} · ${k.keyLabel} (${k.keyAlgorithm} ${k.keySize}${k.tokenDeviceCode ? ' · ' + k.tokenDeviceCode : ''})`,
     }));
 
     const keyCapList = capabilities?.keyAlgorithms || [];
@@ -379,11 +406,11 @@ export const SignersPage = () => {
                         <Group gap="xs">
                             <IconKey size={26} color="#818cf8" />
                             <Title order={2} c="white">OCSP Signers</Title>
-                            <Badge color="indigo" variant="light">MULTI-VSLOT · CSR · CERT</Badge>
+                            <Badge color="indigo" variant="light">KEY ENTITY · TOKENS · CSR · CERT</Badge>
                         </Group>
                         <Text c="dimmed" size="sm" mt={2}>
-                            Unified Signer aggregate binding ordered HSM Vslots (Primary + Failover), key &amp; signing algorithm policy,
-                            PKCS#10 CSR (<Code>POST/GET /signer/&#123;id&#125;/csr</Code>), and X.509 certificate (<Code>POST/GET /signer/&#123;id&#125;/cert</Code>).
+                            Unified Signer aggregate linking persisted Keys (<Code>ocsp_keys</Code>) and ordered HSM Tokens (<Code>ocsp_signer_tokens</Code>).
+                            Hardware tokens are touched <b>only</b> during keygen/CSR (<Code>POST /signer/&#123;id&#125;/csr</Code>) and live OCSP signing (<Code>POST /ocsp</Code>).
                         </Text>
                     </Box>
                     <Group gap="xs">
@@ -476,7 +503,7 @@ export const SignersPage = () => {
                                                 </Button>
                                             )}
                                             {canOperate && (
-                                                <Tooltip label="Edit signer & Vslots">
+                                                <Tooltip label="Edit signer, Key & Tokens">
                                                     <ActionIcon variant="light" color="blue" onClick={() => openEdit(s)}>
                                                         <IconEdit size={15} />
                                                     </ActionIcon>
@@ -492,37 +519,56 @@ export const SignersPage = () => {
                                         </Group>
                                     </Group>
 
-                                    {/* Middle Row: Key Policy + Certificate Summary + Bound HSM Vslots */}
+                                    {/* Middle Row: Key Entity (ocsp_keys) + Bound HSM Tokens (ocsp_signer_tokens) + Certificate */}
                                     <SimpleGrid cols={{ base: 1, md: 3 }} spacing="sm">
                                         <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                                            <Text size="10px" c="dimmed" tt="uppercase" fw={700}>Key &amp; Signing Policy</Text>
+                                            <Group justify="space-between">
+                                                <Text size="10px" c="dimmed" tt="uppercase" fw={700}>Key Entity (ocsp_keys)</Text>
+                                                {s.key ? (
+                                                    <Group gap={4}>
+                                                        <Badge size="xs" color="teal" variant="light">KEY #{s.key.id}</Badge>
+                                                        <Tooltip label="View persisted Public Key SPKI (0 HSM calls)">
+                                                            <ActionIcon size="xs" variant="subtle" color="cyan" onClick={() => setViewKeyModal(s.key)}>
+                                                                <IconEye size={13} />
+                                                            </ActionIcon>
+                                                        </Tooltip>
+                                                    </Group>
+                                                ) : (
+                                                    <Badge size="xs" color="gray" variant="outline">PENDING KEYGEN</Badge>
+                                                )}
+                                            </Group>
                                             <Group gap={6} mt={4} wrap="wrap">
-                                                <Badge size="xs" color="indigo" variant="outline">Key: {s.keyLabel}</Badge>
+                                                <Badge size="xs" color="indigo" variant="outline">{s.keyLabel}</Badge>
                                                 <Badge size="xs" color="cyan" variant="light">{s.keyAlgorithm} {s.keySize}</Badge>
                                                 <Badge size="xs" color="teal" variant="light">{s.signatureAlgorithm}</Badge>
                                             </Group>
-                                            <Text size="xs" c="dimmed" mt={4} lineClamp={1}>DN: {s.subjectDn}</Text>
+                                            {s.key?.publicKeySha1 && (
+                                                <Text size="11px" c="dimmed" mt={4} lineClamp={1}>
+                                                    Key SHA-1: <Code>{s.key.publicKeySha1}</Code>
+                                                </Text>
+                                            )}
+                                            <Text size="xs" c="dimmed" mt={2} lineClamp={1}>DN: {s.subjectDn}</Text>
                                         </Paper>
 
                                         <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                                            <Text size="10px" c="dimmed" tt="uppercase" fw={700}>HSM Vslots ({(s.vslots || []).length})</Text>
+                                            <Text size="10px" c="dimmed" tt="uppercase" fw={700}>HSM Tokens ({(s.tokens || []).length})</Text>
                                             <Stack gap={4} mt={4}>
-                                                {(s.vslots || []).map((v) => (
-                                                    <Group key={v.deviceId} justify="space-between" gap={4} wrap="nowrap">
+                                                {(s.tokens || []).map((t) => (
+                                                    <Group key={t.deviceId} justify="space-between" gap={4} wrap="nowrap">
                                                         <Group gap={4} wrap="nowrap">
-                                                            <Badge size="xs" color={v.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
-                                                                {v.role}
+                                                            <Badge size="xs" color={t.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
+                                                                {t.role}
                                                             </Badge>
-                                                            <Code>{v.deviceId}</Code>
-                                                            <Text size="11px" c="dimmed">({v.tokenLabel || `slot ${v.slotId}`})</Text>
+                                                            <Code>{t.deviceId}</Code>
+                                                            <Text size="11px" c="dimmed">({t.tokenLabel || `slot ${t.slotId}`})</Text>
                                                         </Group>
                                                         <Group gap={4} wrap="nowrap">
-                                                            {v.keyPresent && <Badge size="xs" color="teal" variant="outline">KEY OK</Badge>}
-                                                            <Badge size="xs" color={v.activationState === 'ACTIVE' ? 'green' : 'orange'} variant="dot">
-                                                                {v.activationState}
+                                                            {t.keyRegistered && <Badge size="xs" color="teal" variant="outline">KEY BOUND</Badge>}
+                                                            <Badge size="xs" color={t.activationState === 'ACTIVE' ? 'green' : 'orange'} variant="dot">
+                                                                {t.activationState}
                                                             </Badge>
-                                                            {isAdmin && v.activationState !== 'ACTIVE' && (
-                                                                <Button size="compact-xs" variant="subtle" color="green" onClick={() => { setUnlockPin(''); setUnlockDeviceId(v.deviceId); }}>
+                                                            {isAdmin && t.activationState !== 'ACTIVE' && (
+                                                                <Button size="compact-xs" variant="subtle" color="green" onClick={() => { setUnlockPin(''); setUnlockDeviceId(t.deviceId); }}>
                                                                     Unlock
                                                                 </Button>
                                                             )}
@@ -546,7 +592,7 @@ export const SignersPage = () => {
                                                 </Stack>
                                             ) : s.hasCsr ? (
                                                 <Text size="xs" c="cyan.3" mt={6}>
-                                                    CSR generated — sign with your CA and click <b>Import Certificate</b>.
+                                                    CSR generated — sign with your CA and click <b>Import Certificate</b> (0 HSM calls).
                                                 </Text>
                                             ) : (
                                                 <Text size="xs" c="dimmed" mt={6}>
@@ -590,39 +636,81 @@ export const SignersPage = () => {
                         </SimpleGrid>
 
                         <MultiSelect
-                            label="Bound HSM Vslots (Ordered: 1st = PRIMARY, others = FAILOVER)"
-                            description="Attach one or more HSM Vslots / devices. OCSP signing automatically fails over across unlocked Vslots."
-                            placeholder="Select HSM Vslot(s)"
-                            data={vslotOptions}
-                            value={vslotIds}
-                            onChange={setVslotIds}
+                            label="Bound HSM Tokens (ocsp_signer_tokens: 1st = PRIMARY, others = FAILOVER)"
+                            description="Attach one or more PKCS#11 HSM Tokens. Live OCSP signing fails over across unlocked tokens."
+                            placeholder="Select HSM Token(s)"
+                            data={tokenOptions}
+                            value={tokenIds}
+                            onChange={setTokenIds}
                             searchable
                             required
                         />
 
-                        <SimpleGrid cols={2}>
-                            <TextInput
-                                label="HSM Private Key Label (UUID)"
-                                description="Auto-generated UUID label inside the HSM Vslot"
-                                value={keyLabel}
-                                onChange={(e) => setKeyLabel(e.currentTarget.value)}
-                                rightSection={editingId == null && (
-                                    <Tooltip label="Generate new UUID">
-                                        <ActionIcon variant="subtle" size="sm" onClick={() => setKeyLabel(generateUuid())}>
-                                            <IconRefresh size={14} />
-                                        </ActionIcon>
-                                    </Tooltip>
-                                )}
-                                required
+                        {keys.length > 0 && (
+                            <Switch
+                                label="Bind an existing cryptographic key from ocsp_keys (e.g. for certificate renewal)"
+                                checked={useExistingKey}
+                                onChange={(e) => {
+                                    const checked = e.currentTarget.checked;
+                                    setUseExistingKey(checked);
+                                    if (checked && keys.length > 0) {
+                                        const first = keys[0];
+                                        setSelectedKeyId(String(first.id));
+                                        setKeyAlgorithm(first.keyAlgorithm);
+                                        setKeySize(String(first.keySize));
+                                        setSignatureAlgorithm(first.keyAlgorithm === 'EC' ? 'SHA256withECDSA' : 'SHA256withRSA');
+                                    }
+                                }}
                             />
-                            <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert OCSP Signer,O=Incert,C=LU" value={subjectDn} onChange={(e) => setSubjectDn(e.currentTarget.value)} required />
-                        </SimpleGrid>
+                        )}
+
+                        {useExistingKey ? (
+                            <SimpleGrid cols={2}>
+                                <Select
+                                    label="Persisted Key (ocsp_keys)"
+                                    description="Metadata loaded from DB (zero HSM calls)"
+                                    data={existingKeyOptions}
+                                    value={selectedKeyId}
+                                    onChange={(val) => {
+                                        setSelectedKeyId(val || '');
+                                        const k = keys.find((item) => String(item.id) === String(val));
+                                        if (k) {
+                                            setKeyAlgorithm(k.keyAlgorithm);
+                                            setKeySize(String(k.keySize));
+                                            setSignatureAlgorithm(k.keyAlgorithm === 'EC' ? 'SHA256withECDSA' : 'SHA256withRSA');
+                                        }
+                                    }}
+                                    searchable
+                                    required
+                                />
+                                <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert OCSP Signer,O=Incert,C=LU" value={subjectDn} onChange={(e) => setSubjectDn(e.currentTarget.value)} required />
+                            </SimpleGrid>
+                        ) : (
+                            <SimpleGrid cols={2}>
+                                <TextInput
+                                    label="HSM Private Key Label (UUID)"
+                                    description="Created on token & persisted to ocsp_keys when CSR is generated"
+                                    value={keyLabel}
+                                    onChange={(e) => setKeyLabel(e.currentTarget.value)}
+                                    rightSection={editingId == null && (
+                                        <Tooltip label="Generate new UUID">
+                                            <ActionIcon variant="subtle" size="sm" onClick={() => setKeyLabel(generateUuid())}>
+                                                <IconRefresh size={14} />
+                                            </ActionIcon>
+                                        </Tooltip>
+                                    )}
+                                    required
+                                />
+                                <TextInput label="Subject Distinguished Name (DN)" placeholder="CN=Incert OCSP Signer,O=Incert,C=LU" value={subjectDn} onChange={(e) => setSubjectDn(e.currentTarget.value)} required />
+                            </SimpleGrid>
+                        )}
 
                         <SimpleGrid cols={3}>
                             <Select
                                 label="Key Algorithm"
                                 data={keyAlgOptions}
                                 value={keyAlgorithm}
+                                disabled={useExistingKey}
                                 onChange={(val) => {
                                     const nextAlg = val || 'RSA';
                                     setKeyAlgorithm(nextAlg);
@@ -635,6 +723,7 @@ export const SignersPage = () => {
                                 label="Key Size / Curve"
                                 data={keySizeOptions}
                                 value={keySize}
+                                disabled={useExistingKey}
                                 onChange={(val) => setKeySize(val || '3072')}
                                 required
                             />
@@ -651,7 +740,7 @@ export const SignersPage = () => {
                             <Alert
                                 color={algCheck.supported ? 'teal' : 'red'}
                                 icon={algCheck.supported ? <IconCheck size={16} /> : <IconX size={16} />}
-                                title={algCheck.supported ? 'Verified Against Primary HSM Vslot' : 'Unsupported by Primary HSM Vslot'}
+                                title={algCheck.supported ? 'Verified Against Primary HSM Token' : 'Unsupported by Primary HSM Token'}
                             >
                                 {algCheck.message}
                             </Alert>
@@ -667,6 +756,36 @@ export const SignersPage = () => {
                 </form>
             </Modal>
 
+            {/* Modal: View Persisted Public Key (ocsp_keys — 0 HSM calls) */}
+            <Modal
+                opened={Boolean(viewKeyModal)}
+                onClose={() => setViewKeyModal(null)}
+                title={<Group gap="xs"><IconKey size={20} color="#2dd4bf" /><Text fw={700}>Key Entity #{viewKeyModal?.id}: {viewKeyModal?.keyLabel}</Text></Group>}
+                size="lg"
+            >
+                {viewKeyModal && (
+                    <Stack gap="sm">
+                        <Alert color="teal" variant="light">
+                            Loaded from <Code>ocsp_keys</Code> in MariaDB (zero PKCS#11 token calls). Private key remains non-extractable inside HSM Token <Code>{viewKeyModal.tokenDeviceCode || 'HSM'}</Code>.
+                        </Alert>
+                        <Text size="xs">Algorithm: <Code>{viewKeyModal.keyAlgorithm} {viewKeyModal.keySize}</Code> · Public Key SHA-1 (SKI): <Code>{viewKeyModal.publicKeySha1}</Code></Text>
+                        <Group justify="space-between">
+                            <Text size="xs" c="dimmed" fw={700}>SubjectPublicKeyInfo (PEM)</Text>
+                            <CopyButton value={viewKeyModal.publicKeyPem}>
+                                {({ copied, copy }) => (
+                                    <Button size="compact-xs" variant="light" color={copied ? 'teal' : 'indigo'} leftSection={<IconCopy size={13} />} onClick={copy}>
+                                        {copied ? 'Copied' : 'Copy Public Key'}
+                                    </Button>
+                                )}
+                            </CopyButton>
+                        </Group>
+                        <Code block style={{ maxHeight: 240, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                            {viewKeyModal.publicKeyPem}
+                        </Code>
+                    </Stack>
+                )}
+            </Modal>
+
             {/* Modal: View / Generate CSR (GET & POST /signer/{id}/csr) */}
             <Modal
                 opened={Boolean(csrModalSigner)}
@@ -679,7 +798,7 @@ export const SignersPage = () => {
                 ) : csrData ? (
                     <Stack gap="md">
                         <Alert color="teal" variant="light">
-                            Generated on Vslot <Code>{csrData.vslotDeviceId}</Code> · Key <Code>{csrData.keyLabel}</Code> ({csrData.keyAlgorithm} {csrData.keySize}) · Algorithm <Code>{csrData.signatureAlgorithm}</Code>
+                            Generated on HSM Token <Code>{csrData.tokenDeviceId}</Code> · Key <Code>{csrData.keyLabel}</Code> ({csrData.keyAlgorithm} {csrData.keySize}) · Algorithm <Code>{csrData.signatureAlgorithm}</Code>
                         </Alert>
                         <Group justify="space-between">
                             <Text size="xs" c="dimmed" fw={700}>GET /api/v1/admin/signer/{csrModalSigner?.id}/csr</Text>
@@ -735,7 +854,7 @@ export const SignersPage = () => {
                 )}
             </Modal>
 
-            {/* Modal: View / Import Certificate (GET & POST /signer/{id}/cert) */}
+            {/* Modal: View / Import Certificate (GET & POST /signer/{id}/cert — 0 HSM calls) */}
             <Modal
                 opened={Boolean(certModalSigner)}
                 onClose={() => { setCertModalSigner(null); setCertData(null); setCertPemInput(''); }}
@@ -776,7 +895,7 @@ export const SignersPage = () => {
                         </Paper>
                     ) : (
                         <Alert color="gray" variant="light">
-                            No certificate imported yet (<Code>GET /api/v1/admin/signer/{certModalSigner?.id}/cert</Code> → 404). Import the CA-signed PEM below.
+                            No certificate imported yet (<Code>GET /api/v1/admin/signer/{certModalSigner?.id}/cert</Code> → 404). Import the CA-signed PEM below (verified against <Code>ocsp_keys</Code> in MariaDB with zero HSM token calls).
                         </Alert>
                     )}
 
@@ -824,14 +943,17 @@ export const SignersPage = () => {
                 </Stack>
             </Modal>
 
-            {/* Modal: Quick Unlock Vslot */}
-            <Modal opened={Boolean(unlockDeviceId)} onClose={() => { setUnlockPin(''); setUnlockDeviceId(null); }} title={<Group gap="xs"><IconLockOpen size={20} color="#22c55e" /><Text fw={700}>Unlock HSM Vslot: {unlockDeviceId}</Text></Group>}>
+            {/* Modal: Quick Unlock HSM Token */}
+            <Modal opened={Boolean(unlockDeviceId)} onClose={() => { setUnlockPin(''); setUnlockDeviceId(null); }} title={<Group gap="xs"><IconLockOpen size={20} color="#22c55e" /><Text fw={700}>Unlock HSM Token: {unlockDeviceId}</Text></Group>}>
                 <form onSubmit={handleQuickUnlock}>
                     <Stack gap="md">
-                        <PasswordInput label="PKCS#11 User PIN" placeholder="Enter User PIN" value={unlockPin} onChange={(e) => setUnlockPin(e.currentTarget.value)} autoFocus required />
+                        <Alert color="cyan" variant="light">
+                            Enter the User PIN for <Code>{unlockDeviceId}</Code>. PIN is used once for <Code>C_Login</Code> and immediately wiped from memory.
+                        </Alert>
+                        <PasswordInput label="PKCS#11 User PIN" placeholder="Enter PIN" value={unlockPin} onChange={(e) => setUnlockPin(e.currentTarget.value)} autoFocus required />
                         <Group justify="flex-end">
                             <Button variant="default" onClick={() => { setUnlockPin(''); setUnlockDeviceId(null); }}>Cancel</Button>
-                            <Button type="submit" color="green" loading={saving} leftSection={<IconLockOpen size={15} />}>Unlock Vslot</Button>
+                            <Button type="submit" color="green" loading={saving} leftSection={<IconLockOpen size={16} />}>Unlock</Button>
                         </Group>
                     </Stack>
                 </form>
@@ -839,4 +961,3 @@ export const SignersPage = () => {
         </Container>
     );
 };
-

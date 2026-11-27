@@ -4,8 +4,9 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Full projection of an OCSP Signer aggregate root, including its ordered HSM Vslots,
- * cryptographic key & algorithm policy, generated CSR, and imported X.509 certificate.
+ * Full projection of an OCSP Signer aggregate root, including its linked {@link OcspKeyDto}
+ * ({@code ocsp_keys}), ordered HSM Tokens ({@code ocsp_signer_tokens}), generated CSR,
+ * and imported X.509 certificate.
  */
 public record SignerDto(
         Long id,
@@ -13,11 +14,13 @@ public record SignerDto(
         String name,
         String status,
         String subjectDn,
+        Long keyId,
+        OcspKeyDto key,
         String keyLabel,
         String keyAlgorithm,
         int keySize,
         String signatureAlgorithm,
-        List<SignerVslotDto> vslots,
+        List<SignerTokenDto> tokens,
         boolean hasCsr,
         String csrPem,
         Instant csrGeneratedAt,
@@ -28,7 +31,7 @@ public record SignerDto(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public record SignerVslotDto(
+    public record SignerTokenDto(
             Long deviceDbId,
             String deviceId,
             Long providerId,
@@ -44,7 +47,7 @@ public record SignerDto(
             String role,
             String activationState,
             boolean healthy,
-            boolean keyPresent
+            boolean keyRegistered
     ) {}
 
     public record SignerCertificateDto(
@@ -60,4 +63,3 @@ public record SignerDto(
             String certificatePem
     ) {}
 }
-

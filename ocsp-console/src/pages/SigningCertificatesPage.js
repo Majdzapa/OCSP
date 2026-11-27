@@ -190,7 +190,7 @@ export const SigningCertificatesPage = () => {
             const res = await generateSignerCsr(Number(csrSignerId), {});
             setCsrResult(res);
             setSelectedSignerId(String(csrSignerId));
-            setSuccess(`Key '${res.keyLabel}' & CSR generated for Signer '${res.signerCode}' on HSM Vslot '${res.vslotDeviceId}'.`);
+            setSuccess(`Key '${res.keyLabel}' & CSR generated for Signer '${res.signerCode}' on HSM Token '${res.tokenDeviceId}'.`);
             await fetchAll();
         }
         catch (err) {
@@ -672,7 +672,7 @@ export const SigningCertificatesPage = () => {
                             <Text size="xs">HSM Key Label (UUID): <Code>{s.keyLabel}</Code></Text>
                             <Text size="xs">Subject DN: <Code>{s.subjectDn}</Code></Text>
                             <Text size="xs">Algorithm: <Code>{s.keyAlgorithm} {s.keySize}</Code> · <Code>{s.signatureAlgorithm}</Code></Text>
-                            <Text size="xs">Bound HSM Vslots: {(s.vslots || []).map((v) => `${v.deviceId} (${v.role})`).join(', ')}</Text>
+                            <Text size="xs">Bound HSM Tokens: {(s.tokens || []).map((t) => `${t.deviceId} (${t.role})`).join(', ')}</Text>
                           </Stack>
                         </Paper>
                       );
@@ -697,7 +697,7 @@ export const SigningCertificatesPage = () => {
             </Stack>
           </form>) : (<Stack gap="md">
             <Alert color="teal" icon={<IconCheck size={18}/>} title="CSR Generated & Signed by HSM">
-              Key label <Code>{csrResult.keyLabel}</Code> is stored in HSM Vslot <Code>{csrResult.vslotDeviceId}</Code>. Submit this CSR to your CA
+              Key label <Code>{csrResult.keyLabel}</Code> is stored in HSM Token <Code>{csrResult.tokenDeviceId}</Code> and persisted in <Code>ocsp_keys</Code>. Submit this CSR to your CA
               (with <Code>OCSPSigning</Code> EKU), then import the signed certificate into Signer <Code>{csrResult.signerCode}</Code>.
             </Alert>
 
@@ -772,8 +772,8 @@ export const SigningCertificatesPage = () => {
                             <Badge size="xs" color="teal">{s.signatureAlgorithm}</Badge>
                           </Group>
                           <Text size="xs">Signer Code (UUID): <Code>{s.code}</Code></Text>
-                          <Text size="xs">HSM Private Key Label (UUID): <Code>{s.keyLabel}</Code> ({s.keyAlgorithm} {s.keySize})</Text>
-                          <Text size="xs">HSM Vslots: {(s.vslots || []).map((v) => `${v.deviceId} [${v.role} · ${v.activationState}]`).join(', ')}</Text>
+                          <Text size="xs">HSM Private Key Label (UUID): <Code>{s.keyLabel}</Code> ({s.keyAlgorithm} {s.keySize}{s.key ? ` · Key #${s.key.id}` : ''})</Text>
+                          <Text size="xs">HSM Tokens: {(s.tokens || []).map((t) => `${t.deviceId} [${t.role} · ${t.activationState}]`).join(', ')}</Text>
                         </Stack>
                       </Paper>
                     );

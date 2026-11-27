@@ -199,5 +199,16 @@ public class CryptoDeviceController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @Operation(summary = "Explicitly discover pre-existing keys on an unlocked PKCS#11 token and persist metadata to ocsp_keys")
+    @PostMapping("/crypto-devices/{deviceId}/sync-keys")
+    @PreAuthorize("hasPermission(null, 'CRYPTO_DEVICE_MANAGE')")
+    public ResponseEntity<?> syncKeysFromToken(@PathVariable String deviceId) {
+        try {
+            return ResponseEntity.ok(cryptoDeviceService.syncKeysFromToken(deviceId));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }
 

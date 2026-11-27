@@ -6,11 +6,11 @@ import java.time.Instant;
 
 @Schema(description = "Optional overrides when generating a keypair & PKCS#10 CSR for a Signer")
 public record SignerCsrRequest(
-        @Schema(description = "If true, reuse an existing private key in the HSM Vslot instead of generating a new keypair", defaultValue = "false")
+        @Schema(description = "If true, reuse an existing private key in the HSM Token instead of generating a new keypair", defaultValue = "false")
         Boolean reuseExistingKey,
 
-        @Schema(description = "Optional target Vslot deviceId from the signer's Vslot list (defaults to primary / first ACTIVE Vslot)")
-        String vslotDeviceId,
+        @Schema(description = "Optional target HSM Token deviceId from the signer's token list (defaults to primary / first ACTIVE token)")
+        String tokenDeviceId,
 
         @Schema(description = "Optional Subject DN override (defaults to signer's subjectDn)")
         String subjectDn,
@@ -27,14 +27,15 @@ public record SignerCsrRequest(
     public record SignerCsrResponse(
             Long signerId,
             String signerCode,
-            String vslotDeviceId,
+            String tokenDeviceId,
+            Long keyId,
             String keyLabel,
             String keyAlgorithm,
             int keySize,
+            String publicKeySha1,
             String signatureAlgorithm,
             String subjectDn,
             String csrPem,
             Instant generatedAt
     ) {}
 }
-

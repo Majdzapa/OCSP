@@ -9,8 +9,9 @@ import java.util.List;
 
 /**
  * First-class OCSP Signer aggregate root stored in {@code ocsp_signers}.
- * Encapsulates the signer's ordered HSM Vslots ({@link OcspSignerVslotEntity}), key metadata,
- * signature algorithm, generated PKCS#10 CSR, and imported X.509 signing certificate.
+ * Encapsulates the signer's relation to its cryptographic key ({@link OcspKeyEntity}),
+ * ordered HSM Tokens ({@link OcspSignerTokenEntity}), signature algorithm,
+ * generated PKCS#10 CSR, and imported X.509 signing certificate.
  */
 @Entity
 @Table(name = "ocsp_signers")
@@ -37,6 +38,10 @@ public class OcspSignerEntity {
 
     @Column(name = "subject_dn", nullable = false, length = 500)
     private String subjectDn;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "key_id")
+    private OcspKeyEntity key;
 
     @Column(name = "key_label", nullable = false, length = 150)
     private String keyLabel;
@@ -90,7 +95,7 @@ public class OcspSignerEntity {
     @OneToMany(mappedBy = "signer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("priorityOrder ASC, id ASC")
     @Builder.Default
-    private List<OcspSignerVslotEntity> vslots = new ArrayList<>();
+    private List<OcspSignerTokenEntity> tokens = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
@@ -105,4 +110,3 @@ public class OcspSignerEntity {
         this.updatedAt = Instant.now();
     }
 }
-

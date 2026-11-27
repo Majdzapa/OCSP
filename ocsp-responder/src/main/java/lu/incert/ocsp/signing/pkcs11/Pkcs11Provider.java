@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +43,7 @@ public final class Pkcs11Provider implements AutoCloseable {
     private final Pkcs11SessionPool sessionPool;
     private final Runnable onCloseCallback;
     private volatile Map<Long, MechanismInfo> cachedMechanisms;
+    private final ConcurrentHashMap<String, CachedPrivateKey> cachedKeyHandles = new ConcurrentHashMap<>();
 
     Pkcs11Provider(
             Pkcs11ProviderConfig config,
@@ -61,8 +63,14 @@ public final class Pkcs11Provider implements AutoCloseable {
         this.slotId = resolved.slotId();
         this.initialTokenInfo = resolved.tokenInfo();
         char[] pinCopy = config.pinCopy();
+        Runnable clearAndNotifyLogout = () -> {
+            cachedKeyHandles.clear();
+            if (onLoggedOut != null) {
+                onLoggedOut.run();
+            }
+        };
         try {
-            this.sessionPool = new Pkcs11SessionPool(library, slotId, pinCopy, config.poolSize(), onLoggedOut);
+            this.sessionPool = new Pkcs11SessionPool(library, slotId, pinCopy, config.poolSize(), clearAndNotifyLogout);
         } finally {
             Arrays.fill(pinCopy, '\0');
             config.wipePin();
@@ -170,8 +178,8 @@ public final class Pkcs11Provider implements AutoCloseable {
         String resolvedKeyAlg = null;
         Integer resolvedKeySize = keySize;
 
-        // 1. Resolve key type from an existing HSM key if keyLabel is provided and present
-        if (keyLabel != null && !keyLabel.isBlank()) {
+        // 1. Only query the HSM token for key metadata when keyAlgorithm is NOT already supplied from DB
+        if ((keyAlgorithm == null || keyAlgorithm.isBlank()) && keyLabel != null && !keyLabel.isBlank()) {
             String cleanLabel = keyLabel.trim();
             Optional<KeyMetadata> existingKey = listKeys().stream()
                     .filter(k -> cleanLabel.equals(k.keyLabel()))
@@ -290,6 +298,7 @@ public final class Pkcs11Provider implements AutoCloseable {
             }
             byte[] keyId = cleanLabel.getBytes(StandardCharsets.UTF_8);
             long[] pair = strategy.generate(library, session, cleanLabel, keyId, keySize);
+            cachedKeyHandles.put(cleanLabel, new CachedPrivateKey(pair[1], strategy.pkcs11KeyType()));
             log.info("Generated {} ({}-bit) keypair '{}' on provider '{}' (pubHandle={}, privHandle={})",
                     strategy.keyAlgorithmName(), keySize, cleanLabel, config.providerId(), pair[0], pair[1]);
             return objectStore.extractSubjectPublicKeyInfo(session, pair[0]);
@@ -386,18 +395,47 @@ public final class Pkcs11Provider implements AutoCloseable {
         assertSignatureMechanismSupported(strategy, resolvedAlg);
 
         return sessionPool.withSession(session -> {
-            long keyHandle = objectStore.findByClassAndLabel(session, Pkcs11Constants.CKO_PRIVATE_KEY, cleanLabel)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Private key '" + cleanLabel + "' not found on provider '" + config.providerId() + "'"));
-            long actualKeyType = library.cGetAttributeUlong(session, keyHandle, Pkcs11Constants.CKA_KEY_TYPE);
-            if (actualKeyType != strategy.pkcs11KeyType()) {
-                throw new IllegalArgumentException(
-                        "Cannot sign with algorithm '" + resolvedAlg + "' (requires " + strategy.keyType()
-                                + " key): HSM private key '" + cleanLabel + "' on provider '" + config.providerId()
-                                + "' has key type " + Pkcs11Constants.keyTypeName(actualKeyType));
+            CachedPrivateKey cached = cachedKeyHandles.get(cleanLabel);
+            if (cached != null) {
+                validateCachedKeyType(cached.pkcs11KeyType(), strategy, resolvedAlg, cleanLabel);
+                try {
+                    return strategy.sign(library, session, cached.handle(), resolvedAlg, data, config.prehashInJvm());
+                } catch (Pkcs11Exception e) {
+                    if (e.getErrorCode() == Pkcs11Constants.CKR_OBJECT_HANDLE_INVALID
+                            || e.getErrorCode() == Pkcs11Constants.CKR_KEY_HANDLE_INVALID) {
+                        cachedKeyHandles.remove(cleanLabel);
+                    } else {
+                        throw e;
+                    }
+                }
             }
-            return strategy.sign(library, session, keyHandle, resolvedAlg, data, config.prehashInJvm());
+            CachedPrivateKey resolved = resolveAndCachePrivateKey(session, cleanLabel);
+            validateCachedKeyType(resolved.pkcs11KeyType(), strategy, resolvedAlg, cleanLabel);
+            return strategy.sign(library, session, resolved.handle(), resolvedAlg, data, config.prehashInJvm());
         });
+    }
+
+    private CachedPrivateKey resolveAndCachePrivateKey(long session, String cleanLabel) {
+        long keyHandle = objectStore.findByClassAndLabel(session, Pkcs11Constants.CKO_PRIVATE_KEY, cleanLabel)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Private key '" + cleanLabel + "' not found on provider '" + config.providerId() + "'"));
+        long actualKeyType = library.cGetAttributeUlong(session, keyHandle, Pkcs11Constants.CKA_KEY_TYPE);
+        CachedPrivateKey entry = new CachedPrivateKey(keyHandle, actualKeyType);
+        cachedKeyHandles.put(cleanLabel, entry);
+        return entry;
+    }
+
+    private void validateCachedKeyType(
+            long actualKeyType,
+            SignatureStrategy strategy,
+            String resolvedAlg,
+            String cleanLabel) {
+        if (actualKeyType != strategy.pkcs11KeyType()) {
+            throw new IllegalArgumentException(
+                    "Cannot sign with algorithm '" + resolvedAlg + "' (requires " + strategy.keyType()
+                            + " key): HSM private key '" + cleanLabel + "' on provider '" + config.providerId()
+                            + "' has key type " + Pkcs11Constants.keyTypeName(actualKeyType));
+        }
     }
 
     public Pkcs11ContentSigner createContentSigner(String keyLabel, String signatureAlgorithm) {
@@ -407,6 +445,7 @@ public final class Pkcs11Provider implements AutoCloseable {
     @Override
     public void close() {
         cachedMechanisms = null;
+        cachedKeyHandles.clear();
         try {
             sessionPool.close();
         } finally {
@@ -544,5 +583,6 @@ public final class Pkcs11Provider implements AutoCloseable {
     }
 
     private record TokenResolution(long slotId, TokenInfo tokenInfo) {}
+    private record CachedPrivateKey(long handle, long pkcs11KeyType) {}
 }
 

@@ -6,10 +6,12 @@ import lu.incert.ocsp.signing.dto.GenerateCsrRequest;
 import lu.incert.ocsp.signing.dto.GenerateCsrResponse;
 import lu.incert.ocsp.signing.dto.HsmInfoDto;
 import lu.incert.ocsp.signing.dto.SigningCertificateDto;
+import lu.incert.ocsp.signing.entity.OcspKeyEntity;
 import lu.incert.ocsp.signing.entity.OcspSignerEntity;
 import lu.incert.ocsp.signing.entity.SigningCertificate;
 import lu.incert.ocsp.signing.port.ProviderCapabilities;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
+import lu.incert.ocsp.signing.repository.OcspKeyRepository;
 import lu.incert.ocsp.signing.repository.OcspSignerRepository;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
@@ -17,11 +19,14 @@ import lu.incert.ocsp.signing.hsm.SigningAlgorithm;
 import lu.incert.ocsp.signing.usecase.FindSigningCertificateUseCase;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
+import org.bouncycastle.util.io.pem.PemObject;
+import org.bouncycastle.util.io.pem.PemWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -33,8 +38,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,13 +55,23 @@ public class SigningCertificateService {
     private final ApplicationEventPublisher eventPublisher;
     private final FindSigningCertificateUseCase findSigningCertificate;
     private final OcspSignerRepository signerRepository;
+    private final OcspKeyRepository keyRepository;
 
     public SigningCertificateService(
             SigningCertificateRepository repository,
             OcspSigner ocspSigner,
             ApplicationEventPublisher eventPublisher,
             FindSigningCertificateUseCase findSigningCertificate) {
-        this(repository, ocspSigner, eventPublisher, findSigningCertificate, null);
+        this(repository, ocspSigner, eventPublisher, findSigningCertificate, null, null);
+    }
+
+    public SigningCertificateService(
+            SigningCertificateRepository repository,
+            OcspSigner ocspSigner,
+            ApplicationEventPublisher eventPublisher,
+            FindSigningCertificateUseCase findSigningCertificate,
+            OcspSignerRepository signerRepository) {
+        this(repository, ocspSigner, eventPublisher, findSigningCertificate, signerRepository, null);
     }
 
     @Autowired
@@ -62,12 +80,14 @@ public class SigningCertificateService {
             OcspSigner ocspSigner,
             ApplicationEventPublisher eventPublisher,
             FindSigningCertificateUseCase findSigningCertificate,
-            @Autowired(required = false) OcspSignerRepository signerRepository) {
+            @Autowired(required = false) OcspSignerRepository signerRepository,
+            @Autowired(required = false) OcspKeyRepository keyRepository) {
         this.repository = repository;
         this.ocspSigner = ocspSigner;
         this.eventPublisher = eventPublisher;
         this.findSigningCertificate = findSigningCertificate;
         this.signerRepository = signerRepository;
+        this.keyRepository = keyRepository;
     }
 
     /** Publishes a "no active signer / just resync with the HSM" event (repeated across flows). */
@@ -154,14 +174,16 @@ public class SigningCertificateService {
         }
 
         String providerId;
-        if (targetSigner != null && !targetSigner.getVslots().isEmpty()) {
-            providerId = resolveFirstActiveOrPrimaryVslot(targetSigner);
+        if (targetSigner != null && !targetSigner.getTokens().isEmpty()) {
+            providerId = resolveFirstActiveOrPrimaryToken(targetSigner);
         } else {
             providerId = resolveProviderId(request.providerId());
         }
 
         String keyLabel;
-        if (targetSigner != null && targetSigner.getKeyLabel() != null && !targetSigner.getKeyLabel().isBlank()) {
+        if (targetSigner != null && targetSigner.getKey() != null) {
+            keyLabel = targetSigner.getKey().getKeyLabel();
+        } else if (targetSigner != null && targetSigner.getKeyLabel() != null && !targetSigner.getKeyLabel().isBlank()) {
             keyLabel = targetSigner.getKeyLabel();
         } else if (request.keyLabel() != null && !request.keyLabel().isBlank()) {
             keyLabel = request.keyLabel().trim();
@@ -174,8 +196,24 @@ public class SigningCertificateService {
                 : (targetSigner != null ? targetSigner.getSignatureAlgorithm() : null);
         String signatureAlgorithm = resolveSignatureAlgorithm(requestedSigAlg, holder, providerId, keyLabel);
 
-        // Import and bind the signed certificate to its HSM private key on the target provider
-        ocspSigner.importCertificateToToken(providerId, keyLabel, holder);
+        // Zero-token-touch public-key verification when OcspKeyEntity (or Signer CSR) exists in DB!
+        Optional<OcspKeyEntity> persistedKey = (targetSigner != null && targetSigner.getKey() != null)
+                ? Optional.of(targetSigner.getKey())
+                : (keyRepository != null ? keyRepository.findByKeyLabel(keyLabel) : Optional.empty());
+
+        if (persistedKey.isPresent()) {
+            verifyCertificateMatchesSpki(holder, parsePublicKeyPem(persistedKey.get().getPublicKeyPem()), keyLabel);
+        } else if (targetSigner != null) {
+            if (targetSigner.getCsrPem() != null && !targetSigner.getCsrPem().isBlank()) {
+                SubjectPublicKeyInfo csrSpki = extractPublicKeyFromCsrPem(targetSigner.getCsrPem());
+                if (csrSpki != null) {
+                    verifyCertificateMatchesSpki(holder, csrSpki, keyLabel);
+                }
+            }
+        } else {
+            // Legacy fallback when no OcspKeyEntity / Signer aggregate exists
+            ocspSigner.importCertificateToToken(providerId, keyLabel, holder);
+        }
 
         SigningCertificate entity = SigningCertificate.builder()
                 .alias(resolvedAlias)
@@ -223,17 +261,17 @@ public class SigningCertificateService {
         return toDto(saved);
     }
 
-    private String resolveFirstActiveOrPrimaryVslot(OcspSignerEntity signer) {
+    private String resolveFirstActiveOrPrimaryToken(OcspSignerEntity signer) {
         java.util.Map<String, ProviderDeviceInfo> live = ocspSigner.listProviders().stream()
                 .collect(java.util.stream.Collectors.toMap(ProviderDeviceInfo::providerId, p -> p, (a, b) -> a));
-        for (var v : signer.getVslots()) {
-            String devId = v.getDevice().getDeviceId();
+        for (var t : signer.getTokens()) {
+            String devId = t.getTokenDevice().getDeviceId();
             ProviderDeviceInfo info = live.get(devId);
             if (info != null && "ACTIVE".equals(info.activationState())) {
                 return devId;
             }
         }
-        return signer.getVslots().get(0).getDevice().getDeviceId();
+        return signer.getTokens().get(0).getTokenDevice().getDeviceId();
     }
 
     @Transactional
@@ -244,18 +282,26 @@ public class SigningCertificateService {
             throw new IllegalStateException("Cannot activate an expired certificate (expired at: " + target.getNotAfter() + ")");
         }
 
-        List<String> hsmKeys = ocspSigner.listKeyLabels(target.getProviderId());
-        if (!hsmKeys.isEmpty() && !hsmKeys.contains(target.getKeyLabel())) {
-            throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
-                    + "': HSM key '" + target.getKeyLabel() + "' not found on provider '" + target.getProviderId() + "'");
+        Optional<OcspKeyEntity> persistedKey = keyRepository != null
+                ? keyRepository.findByKeyLabel(target.getKeyLabel())
+                : Optional.empty();
+
+        if (persistedKey.isEmpty()) {
+            List<String> hsmKeys = ocspSigner.listKeyLabels(target.getProviderId());
+            if (!hsmKeys.isEmpty() && !hsmKeys.contains(target.getKeyLabel())) {
+                throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
+                        + "': HSM key '" + target.getKeyLabel() + "' not found on provider '" + target.getProviderId() + "'");
+            }
         }
 
-        // Verify live HSM supports this certificate's signature algorithm and key type before activation
+        // Verify live HSM supports this certificate's signature algorithm and key type (0 token object queries when key is in DB)
         String targetProvider = resolveProviderId(target.getProviderId());
         ProviderCapabilities liveCaps = ocspSigner.getProviderCapabilities(targetProvider);
         if (liveCaps != null && liveCaps.liveIntrospected()) {
+            String knownKeyAlg = persistedKey.map(OcspKeyEntity::getKeyAlgorithm).orElse(null);
+            Integer knownKeySize = persistedKey.map(OcspKeyEntity::getKeySize).orElse(null);
             ProviderCapabilities.AlgorithmValidationResult check = ocspSigner.checkAlgorithmSupport(
-                    targetProvider, target.getKeyLabel(), null, null, target.getSignatureAlgorithm());
+                    targetProvider, target.getKeyLabel(), knownKeyAlg, knownKeySize, target.getSignatureAlgorithm());
             if (check != null && !check.supported()) {
                 throw new IllegalStateException("Cannot activate certificate '" + target.getAlias()
                         + "': " + check.message());
@@ -374,18 +420,18 @@ public class SigningCertificateService {
                 .filter(c -> c.getNotAfter() == null || !now.isAfter(c.getNotAfter()))
                 .map(c -> {
                     try {
-                        List<String> orderedVslots = List.of(c.getProviderId());
+                        List<String> orderedTokens = List.of(c.getProviderId());
                         if (signerRepository != null && c.getId() != null) {
                             Optional<OcspSignerEntity> linked = signerRepository.findBySigningCertificateId(c.getId());
-                            if (linked.isPresent() && linked.get().getVslots() != null && !linked.get().getVslots().isEmpty()) {
-                                orderedVslots = linked.get().getVslots().stream()
-                                        .map(v -> v.getDevice().getDeviceId())
+                            if (linked.isPresent() && linked.get().getTokens() != null && !linked.get().getTokens().isEmpty()) {
+                                orderedTokens = linked.get().getTokens().stream()
+                                        .map(t -> t.getTokenDevice().getDeviceId())
                                         .toList();
                             }
                         }
                         return new OcspSigner.RegisteredSigner(
                                 c.getProviderId(),
-                                orderedVslots,
+                                orderedTokens,
                                 c.getKeyLabel(),
                                 parsePem(c.getCertificatePem()),
                                 c.isActive(),
@@ -573,6 +619,74 @@ public class SigningCertificateService {
             return sw.toString();
         } catch (Exception e) {
             throw new RuntimeException("Failed to format certificate as PEM: " + e.getMessage(), e);
+        }
+    }
+
+    public static String toPublicKeyPem(SubjectPublicKeyInfo spki) {
+        try (StringWriter sw = new StringWriter(); PemWriter writer = new PemWriter(sw)) {
+            writer.writeObject(new PemObject("PUBLIC KEY", spki.getEncoded()));
+            writer.flush();
+            return sw.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to format SubjectPublicKeyInfo as PEM: " + e.getMessage(), e);
+        }
+    }
+
+    public static SubjectPublicKeyInfo parsePublicKeyPem(String pem) {
+        try (PEMParser parser = new PEMParser(new StringReader(pem))) {
+            Object obj = parser.readObject();
+            if (obj instanceof SubjectPublicKeyInfo spki) {
+                return spki;
+            }
+            throw new IllegalArgumentException("Provided content is not a valid PEM SubjectPublicKeyInfo");
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse public key PEM: " + e.getMessage(), e);
+        }
+    }
+
+    public static SubjectPublicKeyInfo extractPublicKeyFromCsrPem(String csrPem) {
+        if (csrPem == null || csrPem.isBlank()) {
+            return null;
+        }
+        try (PEMParser parser = new PEMParser(new StringReader(csrPem))) {
+            Object obj = parser.readObject();
+            if (obj instanceof PKCS10CertificationRequest csr) {
+                return csr.getSubjectPublicKeyInfo();
+            }
+        } catch (Exception ignored) {}
+        try (org.bouncycastle.util.io.pem.PemReader reader =
+                     new org.bouncycastle.util.io.pem.PemReader(new StringReader(csrPem))) {
+            PemObject pemObj = reader.readPemObject();
+            if (pemObj != null && pemObj.getContent() != null) {
+                return new PKCS10CertificationRequest(pemObj.getContent()).getSubjectPublicKeyInfo();
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    public static String computePublicKeySha1Hex(SubjectPublicKeyInfo spki) {
+        try {
+            byte[] rawBits = spki.getPublicKeyData().getBytes();
+            byte[] digest = MessageDigest.getInstance("SHA-1").digest(rawBits);
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to compute SHA-1 of SubjectPublicKeyInfo", e);
+        }
+    }
+
+    public static void verifyCertificateMatchesSpki(
+            X509CertificateHolder certHolder,
+            SubjectPublicKeyInfo expectedSpki,
+            String keyLabel) {
+        try {
+            if (!Arrays.equals(expectedSpki.getEncoded(), certHolder.getSubjectPublicKeyInfo().getEncoded())) {
+                throw new IllegalArgumentException(
+                        "Imported certificate public key does not match private key '" + keyLabel + "'");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed comparing certificate public key against persisted key", e);
         }
     }
 

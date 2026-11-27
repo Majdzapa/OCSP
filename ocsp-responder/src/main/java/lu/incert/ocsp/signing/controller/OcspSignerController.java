@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lu.incert.ocsp.shared.config.OpenApiConfig;
+import lu.incert.ocsp.signing.dto.OcspKeyDto;
 import lu.incert.ocsp.signing.dto.SignerCertImportRequest;
 import lu.incert.ocsp.signing.dto.SignerCsrRequest;
 import lu.incert.ocsp.signing.dto.SignerDto;
@@ -29,19 +30,26 @@ import java.util.Map;
 @RestController
 @RequestMapping({"/api/v1/admin/signers", "/api/v1/admin/signer"})
 @RequiredArgsConstructor
-@Tag(name = "OCSP Signers (HSM Vslots + Key + CSR + Cert)",
-     description = "First-class OCSP Signer aggregate managing ordered HSM Vslots, keygen/CSR, and certificate import")
+@Tag(name = "OCSP Signers (HSM Tokens + Key + CSR + Cert)",
+     description = "First-class OCSP Signer aggregate managing persisted Keys (ocsp_keys), ordered HSM Tokens (ocsp_signer_tokens), CSR generation, and zero-token-touch certificate import")
 @SecurityRequirement(name = OpenApiConfig.BASIC_AUTH_SCHEME)
 @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class OcspSignerController {
 
     private final OcspSignerManagementService signerService;
 
-    @Operation(summary = "List all OCSP Signers with their bound HSM Vslots, key info, CSR, and certificate")
+    @Operation(summary = "List all OCSP Signers with their linked Key, bound HSM Tokens, CSR, and certificate (zero HSM calls)")
     @GetMapping
     @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
     public ResponseEntity<List<SignerDto>> listAll() {
         return ResponseEntity.ok(signerService.listAll());
+    }
+
+    @Operation(summary = "List all persisted cryptographic keys (ocsp_keys) extracted from HSM tokens (zero HSM calls)")
+    @GetMapping("/keys")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_READ')")
+    public ResponseEntity<List<OcspKeyDto>> listKeys() {
+        return ResponseEntity.ok(signerService.listKeys());
     }
 
     @Operation(summary = "Get a single OCSP Signer by ID")

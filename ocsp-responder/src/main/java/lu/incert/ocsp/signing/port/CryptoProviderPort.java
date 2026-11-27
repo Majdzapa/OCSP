@@ -1,10 +1,12 @@
 package lu.incert.ocsp.signing.port;
 
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.operator.ContentSigner;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Hexagonal port abstracting a cryptographic signing device (in-process PKCS#11 via {@code ipkcs11wrapper},
@@ -21,6 +23,13 @@ public interface CryptoProviderPort extends AutoCloseable {
     List<String> listKeyLabels();
 
     Map<String, String> getKeyAlgorithms();
+
+    /**
+     * Explicit on-demand read of a token key's {@link SubjectPublicKeyInfo} (used only during manual key sync).
+     */
+    default Optional<SubjectPublicKeyInfo> readPublicKeyInfo(String keyLabel) {
+        return Optional.empty();
+    }
 
     String generateCsr(String keyLabel, String subjectDn, String keyAlgorithm, int keySize, boolean reuseExistingKey);
 

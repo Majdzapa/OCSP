@@ -121,6 +121,26 @@ class Pkcs11EngineTest {
     }
 
     @Test
+    void repeatedSigningCachesPrivateKeyHandleWithoutRequeryingTokenObjects() {
+        AtomicInteger initCalls = new AtomicInteger();
+        AtomicInteger finalizeCalls = new AtomicInteger();
+        AtomicInteger closeCalls = new AtomicInteger();
+        FakePkcs11Library fake = new FakePkcs11Library(
+                "/tmp/libcache.so", Pkcs11Constants.CKR_OK, initCalls, finalizeCalls, closeCalls);
+
+        try (Pkcs11Engine engine = new Pkcs11Engine(path -> fake)) {
+            Pkcs11Provider provider = engine.register(new Pkcs11ProviderConfig(
+                    "cache-dev", "/tmp/libcache.so", "token-a", null, 0, "1234".toCharArray(), 2, false));
+            for (int i = 0; i < 10; i++) {
+                byte[] sig = provider.sign("key-a", "SHA256withRSA", ("tbs-" + i).getBytes(StandardCharsets.UTF_8));
+                assertThat(sig).isEqualTo(new byte[]{1, 2, 3, 4});
+            }
+            assertThat(fake.signCalls.get()).isEqualTo(10);
+            assertThat(fake.findInitCalls.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void rawEcdsaToDerProducesValidAsn1Sequence() throws Exception {
         byte[] raw = new byte[64];
         raw[0] = (byte) 0x80;
@@ -249,6 +269,7 @@ class Pkcs11EngineTest {
         final AtomicInteger signCalls = new AtomicInteger();
         final AtomicInteger loginCalls = new AtomicInteger();
         final AtomicInteger logoutCalls = new AtomicInteger();
+        final AtomicInteger findInitCalls = new AtomicInteger();
         volatile boolean failNextSignWithInvalidSession;
         volatile boolean failNextSignWithNotLoggedIn;
 
@@ -290,7 +311,9 @@ class Pkcs11EngineTest {
             logoutCalls.incrementAndGet();
             return Pkcs11Constants.CKR_OK;
         }
-        @Override public void cFindObjectsInit(long sessionHandle, List<Pkcs11Attribute> template) {}
+        @Override public void cFindObjectsInit(long sessionHandle, List<Pkcs11Attribute> template) {
+            findInitCalls.incrementAndGet();
+        }
         @Override public long[] cFindObjects(long sessionHandle, int maxCount) { return new long[]{999L}; }
         @Override public void cFindObjectsFinal(long sessionHandle) {}
         @Override public byte[] cGetAttributeValue(long sessionHandle, long objectHandle, long attrType) {

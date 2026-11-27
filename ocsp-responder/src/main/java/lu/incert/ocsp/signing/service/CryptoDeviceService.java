@@ -8,8 +8,10 @@ import lu.incert.ocsp.signing.dto.CryptoProviderRequest;
 import lu.incert.ocsp.signing.dto.CryptoSlotDto;
 import lu.incert.ocsp.signing.dto.InitializeTokenRequest;
 import lu.incert.ocsp.signing.dto.InitializeTokenResponse;
+import lu.incert.ocsp.signing.dto.OcspKeyDto;
 import lu.incert.ocsp.signing.entity.CryptoDeviceEntity;
 import lu.incert.ocsp.signing.entity.CryptoProviderEntity;
+import lu.incert.ocsp.signing.entity.OcspKeyEntity;
 import lu.incert.ocsp.signing.port.CryptoDeviceSpec;
 import lu.incert.ocsp.signing.port.CryptoProviderPort;
 import lu.incert.ocsp.signing.port.DeviceActivationState;
@@ -20,13 +22,21 @@ import lu.incert.ocsp.signing.provider.LibraryPathAllowlist;
 import lu.incert.ocsp.signing.provider.PkcsProviders;
 import lu.incert.ocsp.signing.repository.CryptoDeviceRepository;
 import lu.incert.ocsp.signing.repository.CryptoProviderRepository;
+import lu.incert.ocsp.signing.repository.OcspKeyRepository;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,6 +56,18 @@ public class CryptoDeviceService {
     private final List<CryptoDeviceAdapterFactory> adapterFactories;
     private final LibraryPathAllowlist allowlist;
     private final PkcsProviders pkcsProviders;
+    private final OcspKeyRepository keyRepository;
+
+    public CryptoDeviceService(
+            CryptoProviderRepository providerRepository,
+            CryptoDeviceRepository deviceRepository,
+            SigningCertificateRepository signingCertificateRepository,
+            List<CryptoDeviceAdapterFactory> adapterFactories,
+            LibraryPathAllowlist allowlist,
+            PkcsProviders pkcsProviders) {
+        this(providerRepository, deviceRepository, signingCertificateRepository,
+                adapterFactories, allowlist, pkcsProviders, null);
+    }
 
     @Autowired
     public CryptoDeviceService(
@@ -54,13 +76,15 @@ public class CryptoDeviceService {
             SigningCertificateRepository signingCertificateRepository,
             List<CryptoDeviceAdapterFactory> adapterFactories,
             LibraryPathAllowlist allowlist,
-            @Autowired(required = false) PkcsProviders pkcsProviders) {
+            @Autowired(required = false) PkcsProviders pkcsProviders,
+            @Autowired(required = false) OcspKeyRepository keyRepository) {
         this.providerRepository = providerRepository;
         this.deviceRepository = deviceRepository;
         this.signingCertificateRepository = signingCertificateRepository;
         this.adapterFactories = adapterFactories != null ? adapterFactories : List.of();
         this.allowlist = allowlist;
         this.pkcsProviders = pkcsProviders;
+        this.keyRepository = keyRepository;
     }
 
     // ---- Provider CRUD ----
@@ -459,6 +483,88 @@ public class CryptoDeviceService {
         return toDeviceDto(entity);
     }
 
+    /**
+     * Explicit on-demand admin action to discover pre-existing keys from an unlocked PKCS#11 token
+     * and persist their metadata + public key SPKI into {@code ocsp_keys}.
+     * Normal status/UI/health polls never scan the token.
+     */
+    @Transactional
+    public List<OcspKeyDto> syncKeysFromToken(String deviceId) {
+        if (pkcsProviders == null || keyRepository == null) {
+            throw new IllegalStateException("HSM key synchronization is unavailable");
+        }
+        String cleanId = requireCleanDeviceId(deviceId);
+        CryptoDeviceEntity device = deviceRepository.findByDeviceId(cleanId)
+                .orElseThrow(() -> new IllegalArgumentException("Crypto device not found: " + cleanId));
+        CryptoProviderPort port = pkcsProviders.getProvider(cleanId);
+        List<String> labels = port.listKeyLabels();
+        Map<String, String> algs = port.getKeyAlgorithms();
+        List<OcspKeyDto> synced = new ArrayList<>();
+
+        for (String label : labels) {
+            if (label == null || label.isBlank()) {
+                continue;
+            }
+            OcspKeyEntity existing = keyRepository.findByKeyLabel(label).orElse(null);
+            if (existing != null) {
+                synced.add(toKeyDto(existing));
+                continue;
+            }
+            SubjectPublicKeyInfo spki = port.readPublicKeyInfo(label).orElse(null);
+            if (spki == null) {
+                continue;
+            }
+            String alg = algs.getOrDefault(label, "RSA");
+            int bits = inferKeyBitsFromSpki(spki, alg);
+            OcspKeyEntity saved = keyRepository.save(OcspKeyEntity.builder()
+                    .keyLabel(label)
+                    .ckaIdHex(HexFormat.of().formatHex(label.getBytes(StandardCharsets.UTF_8)))
+                    .tokenDevice(device)
+                    .keyAlgorithm(alg)
+                    .keySize(bits)
+                    .publicKeyPem(SigningCertificateService.toPublicKeyPem(spki))
+                    .publicKeySha1(SigningCertificateService.computePublicKeySha1Hex(spki))
+                    .generatedAt(Instant.now())
+                    .build());
+            synced.add(toKeyDto(saved));
+        }
+        log.info("Synchronized {} key(s) from unlocked HSM token '{}' into ocsp_keys", synced.size(), cleanId);
+        return synced;
+    }
+
+    private static int inferKeyBitsFromSpki(SubjectPublicKeyInfo spki, String alg) {
+        try {
+            if ("EC".equalsIgnoreCase(alg)) {
+                int len = spki.getPublicKeyData().getBytes().length;
+                if (len >= 133) return 521;
+                if (len >= 97) return 384;
+                return 256;
+            }
+            var rsa = org.bouncycastle.asn1.pkcs.RSAPublicKey.getInstance(spki.parsePublicKey());
+            return rsa.getModulus().bitLength();
+        } catch (Exception ignored) {
+            return "EC".equalsIgnoreCase(alg) ? 256 : 3072;
+        }
+    }
+
+    private static OcspKeyDto toKeyDto(OcspKeyEntity entity) {
+        CryptoDeviceEntity td = entity.getTokenDevice();
+        return new OcspKeyDto(
+                entity.getId(),
+                entity.getKeyLabel(),
+                entity.getCkaIdHex(),
+                td != null ? td.getId() : null,
+                td != null ? td.getDeviceId() : null,
+                td != null ? td.getTokenLabel() : null,
+                entity.getKeyAlgorithm(),
+                entity.getKeySize(),
+                entity.getPublicKeyPem(),
+                entity.getPublicKeySha1(),
+                entity.getGeneratedAt(),
+                entity.getCreatedAt()
+        );
+    }
+
     // ---- Helpers ----
 
     private void syncRuntimeDevice(CryptoDeviceEntity device, CryptoProviderEntity provider) {
@@ -534,6 +640,17 @@ public class CryptoDeviceService {
             }
             if ((resolvedTokenLabel == null || resolvedTokenLabel.isBlank()) && info.tokenLabel() != null && !info.tokenLabel().isBlank()) {
                 resolvedTokenLabel = info.tokenLabel();
+            }
+        }
+
+        // Populate persisted keys from `ocsp_keys` (zero PKCS#11 token calls)
+        if (keyRepository != null && entity.getId() != null && keyLabels.isEmpty()) {
+            List<OcspKeyEntity> dbKeys = keyRepository.findAllByTokenDevice_IdOrderByIdDesc(entity.getId());
+            if (!dbKeys.isEmpty()) {
+                keyLabels = dbKeys.stream().map(OcspKeyEntity::getKeyLabel).toList();
+                Map<String, String> dbAlgs = new LinkedHashMap<>();
+                dbKeys.forEach(k -> dbAlgs.putIfAbsent(k.getKeyLabel(), k.getKeyAlgorithm()));
+                keyAlgorithms = dbAlgs;
             }
         }
 
