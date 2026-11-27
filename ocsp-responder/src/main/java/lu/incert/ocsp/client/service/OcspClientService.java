@@ -4,6 +4,9 @@ import lu.incert.ocsp.client.config.OcspClientProperties;
 import lu.incert.ocsp.client.dto.OcspCheckRequest;
 import lu.incert.ocsp.client.dto.OcspCheckResult;
 import lu.incert.ocsp.client.dto.OcspCheckResult.Check;
+import lu.incert.ocsp.shared.usecase.CanonicalizeSerialHexUseCase;
+import lu.incert.ocsp.status.entity.RevocationStatus;
+import lu.incert.ocsp.status.service.CertificateStatusService;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.DEROctetString;
@@ -21,6 +24,7 @@ import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.DigestCalculatorProvider;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
@@ -32,6 +36,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.StringReader;
 import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
@@ -52,6 +57,7 @@ public class OcspClientService {
     private final RestClient restClient;
     private final String defaultResponderUrl;
     private final String pkiDir;
+    private final CertificateStatusService statusService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     private volatile X509Certificate trustAnchor;
@@ -59,9 +65,18 @@ public class OcspClientService {
     public OcspClientService(
             RestClient.Builder restClientBuilder,
             OcspClientProperties properties) {
+        this(restClientBuilder, properties, null);
+    }
+
+    @Autowired
+    public OcspClientService(
+            RestClient.Builder restClientBuilder,
+            OcspClientProperties properties,
+            @Autowired(required = false) CertificateStatusService statusService) {
         this.restClient = restClientBuilder.build();
         this.defaultResponderUrl = properties.getDefaultResponderUrl();
         this.pkiDir = properties.getPkiDir();
+        this.statusService = statusService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -172,6 +187,9 @@ public class OcspClientService {
                 return errorResult(displayUrl, method, httpStatus, latencyMs, derRequest.length, derResponse.length, getPath, checks, "ASN.1 parse error");
             }
 
+            String reqNameHashHex = HexFormat.of().formatHex(certId.getIssuerNameHash());
+            String reqKeyHashHex = HexFormat.of().formatHex(certId.getIssuerKeyHash());
+
             String respStatusName = mapResponseStatus(ocspResp.getStatus());
             if (ocspResp.getStatus() != OCSPRespBuilder.SUCCESSFUL) {
                 checks.add(Check.fail("Response Status", "Responder returned error status: " + respStatusName));
@@ -180,7 +198,8 @@ public class OcspClientService {
                         null, null, target.serialHex(), null, null, null, null, null,
                         request.includeNonce(), nonceSentHex, null, latencyMs,
                         derRequest.length, derResponse.length, getPath, checks,
-                        "OCSP responder returned status " + respStatusName, null
+                        "OCSP responder returned status " + respStatusName, null,
+                        null, reqNameHashHex, reqKeyHashHex
                 );
             }
             checks.add(Check.pass("Response Status", "Status is SUCCESSFUL (0)"));
@@ -242,10 +261,11 @@ public class OcspClientService {
             Date nextUp = single.getNextUpdate();
             boolean fresh = verifyFreshness(thisUp, nextUp, checks);
 
-            // 8. Extract status
+            // 8. Extract status & diagnose UNKNOWN if applicable
             String certStatus;
             String revTime = null;
             String revReason = null;
+            String unknownReason = null;
             org.bouncycastle.cert.ocsp.CertificateStatus st = single.getCertStatus();
             if (st == org.bouncycastle.cert.ocsp.CertificateStatus.GOOD) {
                 certStatus = "GOOD";
@@ -257,9 +277,11 @@ public class OcspClientService {
                         : "UNSPECIFIED";
             } else {
                 certStatus = "UNKNOWN";
+                unknownReason = diagnoseUnknownReason(request, target, issuerCert, certId);
             }
             checks.add(Check.pass("Certificate Status", "Parsed status: " + certStatus
-                    + (revReason != null ? " (" + revReason + ")" : "")));
+                    + (revReason != null ? " (" + revReason + ")" : "")
+                    + (unknownReason != null ? " — " + unknownReason : "")));
 
             boolean overallValid = sigOk && authOk && nonceOk && fresh;
 
@@ -289,7 +311,10 @@ public class OcspClientService {
                     getPath,
                     checks,
                     null,
-                    opensslCommand
+                    opensslCommand,
+                    unknownReason,
+                    reqNameHashHex,
+                    reqKeyHashHex
             );
 
         } catch (Exception e) {
@@ -496,8 +521,134 @@ public class OcspClientService {
         return new OcspCheckResult(
                 false, responderUrl, method, httpStatus, "ERROR", null,
                 null, null, null, null, null, null, null, null,
-                false, null, null, latencyMs, reqLen, respLen, path, checks, error, null
+                false, null, null, latencyMs, reqLen, respLen, path, checks, error, null,
+                null, null, null
         );
+    }
+
+    /**
+     * Explains precisely why an OCSP response returned {@code UNKNOWN} by inspecting the sent
+     * RFC 6960 {@code CertID} triple ({@code issuerNameHash}, {@code issuerKeyHash}, {@code serialNumber})
+     * against the local OCSP {@code revocation_status} table when available.
+     */
+    private String diagnoseUnknownReason(
+            OcspCheckRequest request,
+            TargetCert target,
+            X509Certificate issuerCert,
+            CertificateID certId) {
+        HexFormat hex = HexFormat.of();
+        byte[] reqNameHash = certId.getIssuerNameHash();
+        byte[] reqKeyHash = certId.getIssuerKeyHash();
+        byte[] reqSerialBytes = target.serial().toByteArray();
+        String reqNameHex = hex.formatHex(reqNameHash);
+        String reqKeyHex = hex.formatHex(reqKeyHash);
+        String reqSerialHex = hex.formatHex(reqSerialBytes);
+
+        if (statusService == null) {
+            return "Responder returned UNKNOWN: no entry matched CertID (serial=0x" + reqSerialHex
+                    + ", issuerNameHash=" + reqNameHex + ", issuerKeyHash=" + reqKeyHex + ").";
+        }
+
+        try {
+            // 1. Check whether the serial number exists in OCSP DB under different Issuer Name/Key hashes
+            List<RevocationStatus> bySerial = statusService.findAllBySerialBytes(reqSerialBytes);
+            if (!bySerial.isEmpty()) {
+                RevocationStatus row = bySerial.get(0);
+                String dbNameHex = hex.formatHex(row.getIssuerNameHash());
+                String dbKeyHex = hex.formatHex(row.getIssuerKeyHash());
+                boolean nameMatch = Arrays.equals(row.getIssuerNameHash(), reqNameHash);
+                boolean keyMatch = Arrays.equals(row.getIssuerKeyHash(), reqKeyHash);
+
+                if (nameMatch && keyMatch) {
+                    return "Certificate row exists in OCSP database with matching CertID, and its stored status is explicitly UNKNOWN.";
+                }
+
+                boolean isSpkiHashBug = false;
+                if (!keyMatch && issuerCert != null) {
+                    byte[] spkiSha1 = MessageDigest.getInstance("SHA-1").digest(issuerCert.getPublicKey().getEncoded());
+                    isSpkiHashBug = Arrays.equals(row.getIssuerKeyHash(), spkiSha1);
+                }
+
+                if (nameMatch && !keyMatch) {
+                    if (isSpkiHashBug) {
+                        return "Serial 0x" + reqSerialHex + " exists in OCSP DB (DB status: " + row.getStatus()
+                                + ") and Issuer Name Hash matches, BUT Issuer Key Hash mismatches: KMS hashed the full "
+                                + "SubjectPublicKeyInfo (PublicKey.getEncoded() = " + dbKeyHex
+                                + ") instead of the RFC 6960 §4.1.1 raw BIT STRING public key bytes (" + reqKeyHex + ").";
+                    }
+                    return "Serial 0x" + reqSerialHex + " exists in OCSP DB (DB status: " + row.getStatus()
+                            + ") and Issuer Name Hash matches, BUT Issuer Key Hash mismatches: OCSP request sent "
+                            + reqKeyHex + " while OCSP DB stored " + dbKeyHex
+                            + ". Check the Issuer CA Certificate PEM and how KMS computes issuerKeyHashHex.";
+                }
+
+                if (!nameMatch && keyMatch) {
+                    return "Serial 0x" + reqSerialHex + " exists in OCSP DB (DB status: " + row.getStatus()
+                            + ") and Issuer Key Hash matches, BUT Issuer Name Hash mismatches: OCSP request sent "
+                            + reqNameHex + " while OCSP DB stored " + dbNameHex
+                            + ". KMS likely hashed a re-encoded Subject DN string instead of the CA certificate's raw DER Subject Name.";
+                }
+
+                return "Serial 0x" + reqSerialHex + " exists in OCSP DB (DB status: " + row.getStatus()
+                        + "), BUT both Issuer Name Hash and Issuer Key Hash mismatch (request sent nameHash="
+                        + reqNameHex + ", keyHash=" + reqKeyHex + "; DB stored nameHash=" + dbNameHex
+                        + ", keyHash=" + dbKeyHex + "). Either a different Issuer CA Certificate (PEM) was supplied in the checker, "
+                        + "or KMS published hashes for a different CA.";
+            }
+
+            // 2. Check if the user entered a decimal serial number into the hex field
+            if (request.serialHex() != null) {
+                String rawTrimmed = request.serialHex().trim();
+                if (rawTrimmed.matches("^[0-9]+$")) {
+                    BigInteger asDecimal = new BigInteger(rawTrimmed, 10);
+                    byte[] decBytes = asDecimal.toByteArray();
+                    if (!Arrays.equals(decBytes, reqSerialBytes)) {
+                        List<RevocationStatus> byDec = statusService.findAllBySerialBytes(decBytes);
+                        if (!byDec.isEmpty()) {
+                            String correctHex = hex.formatHex(decBytes);
+                            return "Input '" + rawTrimmed + "' was parsed as hexadecimal (0x" + reqSerialHex
+                                    + "), which is not in OCSP DB — however, decimal " + rawTrimmed
+                                    + " (hex: " + correctHex + ") WAS found in OCSP DB (DB status: "
+                                    + byDec.get(0).getStatus() + "). Enter the hexadecimal serial '" + correctHex + "' instead of decimal.";
+                        }
+                    }
+                }
+            }
+
+            // 3. Check if KMS accidentally published serialNumber.toString() (base-10 decimal) instead of hex
+            String targetDecimalDigits = target.serial().toString(10);
+            byte[] kmsDecimalBugBytes = CanonicalizeSerialHexUseCase.toCanonicalSerialBytes(targetDecimalDigits);
+            if (!Arrays.equals(kmsDecimalBugBytes, reqSerialBytes)) {
+                List<RevocationStatus> byKmsDecBug = statusService.findAllBySerialBytes(kmsDecimalBugBytes);
+                if (!byKmsDecBug.isEmpty()) {
+                    return "Serial 0x" + reqSerialHex + " was not found as hex in OCSP DB, BUT its base-10 decimal string '"
+                            + targetDecimalDigits + "' (stored as 0x" + hex.formatHex(kmsDecimalBugBytes)
+                            + ") WAS found in OCSP DB (DB status: " + byKmsDecBug.get(0).getStatus()
+                            + ")! KMS published serialNumber.toString() (decimal) instead of serialNumber.toString(16) (hex) to RabbitMQ.";
+                }
+            }
+
+            // 4. Serial is not in OCSP DB at all — check if DB is empty or if this CA has other synced certs
+            long totalInDb = statusService.countAll();
+            if (totalInDb == 0) {
+                return "OCSP database (revocation_status) is empty (0 synced certificates). Verify KMS published CertificateStatusChanged events to RabbitMQ.";
+            }
+
+            long caCertCount = statusService.countByIssuerHashes(reqNameHash, reqKeyHash);
+            if (caCertCount > 0) {
+                return "Serial 0x" + reqSerialHex + " is not present in OCSP database (revocation_status). "
+                        + "The Issuer CA IS recognized (" + caCertCount + " other certificate(s) from this CA are synced), "
+                        + "so KMS either has not published the CertificateStatusChanged event for this certificate yet or the event failed in RabbitMQ Inbox.";
+            }
+
+            return "Serial 0x" + reqSerialHex + " is not present in OCSP database, and 0 of the " + totalInDb
+                    + " synced certificate(s) match this Issuer CA (nameHash=" + reqNameHex + ", keyHash=" + reqKeyHex
+                    + "). Verify that the pasted Issuer CA Certificate (PEM) is the exact CA that issued this certificate and that KMS published events to RabbitMQ.";
+        } catch (Exception e) {
+            log.debug("Could not run extended UNKNOWN diagnosis: {}", e.getMessage());
+            return "Responder returned UNKNOWN for CertID (serial=0x" + reqSerialHex
+                    + ", issuerNameHash=" + reqNameHex + ", issuerKeyHash=" + reqKeyHex + ").";
+        }
     }
 
     /**

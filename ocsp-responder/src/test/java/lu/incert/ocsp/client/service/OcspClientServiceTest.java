@@ -143,5 +143,64 @@ class OcspClientServiceTest {
         assertThat(result.valid()).isFalse();
         assertThat(result.error()).isNotNull();
     }
+
+    @Test
+    void testUnknownStatusExplainsIssuerKeyHashMismatchWhenSerialExistsInDb() throws Exception {
+        lu.incert.ocsp.status.service.CertificateStatusService statusService =
+                org.mockito.Mockito.mock(lu.incert.ocsp.status.service.CertificateStatusService.class);
+        RestClient.Builder diagBuilder = RestClient.builder();
+        MockRestServiceServer diagServer = MockRestServiceServer.bindTo(diagBuilder).build();
+
+        OcspClientProperties props = new OcspClientProperties();
+        props.setDefaultResponderUrl("http://localhost:8080/ocsp");
+        props.setPkiDir("./target/test-pki");
+        OcspClientService diagClient = new OcspClientService(diagBuilder, props, statusService);
+
+        BigInteger serial = new BigInteger("01ab23cd", 16);
+        var digProv = new org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        var caHolder = new org.bouncycastle.cert.jcajce.JcaX509CertificateHolder(caCert);
+        var certId = new org.bouncycastle.cert.ocsp.CertificateID(
+                digProv.get(org.bouncycastle.cert.ocsp.CertificateID.HASH_SHA1), caHolder, serial);
+
+        // Build a valid signed OCSP response carrying UnknownStatus
+        var respBuilder = new org.bouncycastle.cert.ocsp.BasicOCSPRespBuilder(
+                new org.bouncycastle.cert.ocsp.RespID(caHolder.getSubject()));
+        Date now = new Date();
+        respBuilder.addResponse(certId, new org.bouncycastle.cert.ocsp.UnknownStatus(),
+                now, Date.from(now.toInstant().plus(1, ChronoUnit.HOURS)), null);
+        ContentSigner ocspSigner = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider("BC").build(caKeyPair.getPrivate());
+        var basicResp = respBuilder.build(ocspSigner, new X509CertificateHolder[]{caHolder}, now);
+        byte[] derResp = new org.bouncycastle.cert.ocsp.OCSPRespBuilder()
+                .build(org.bouncycastle.cert.ocsp.OCSPRespBuilder.SUCCESSFUL, basicResp)
+                .getEncoded();
+
+        // Simulate KMS bug: DB has serial=GOOD with matching issuerNameHash, but issuerKeyHash = SHA-1(PublicKey.getEncoded())
+        byte[] wrongSpkiKeyHash = java.security.MessageDigest.getInstance("SHA-1")
+                .digest(caCert.getPublicKey().getEncoded());
+        var dbRow = lu.incert.ocsp.status.entity.RevocationStatus.builder()
+                .serialNumber(serial.toByteArray())
+                .issuerNameHash(certId.getIssuerNameHash())
+                .issuerKeyHash(wrongSpkiKeyHash)
+                .status(lu.incert.ocsp.status.entity.CertificateStatus.GOOD)
+                .build();
+        org.mockito.Mockito.when(statusService.findAllBySerialBytes(serial.toByteArray()))
+                .thenReturn(java.util.List.of(dbRow));
+
+        diagServer.expect(requestTo("http://localhost:8080/ocsp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.OK)
+                        .contentType(MediaType.parseMediaType("application/ocsp-response"))
+                        .body(derResp));
+
+        OcspCheckResult result = diagClient.check(new OcspCheckRequest(
+                "01ab23cd", null, caCertPem, false, "POST", "http://localhost:8080/ocsp"));
+
+        assertThat(result.certStatus()).isEqualTo("UNKNOWN");
+        assertThat(result.unknownReason())
+                .contains("exists in OCSP DB (DB status: GOOD)")
+                .contains("Issuer Key Hash mismatches")
+                .contains("SubjectPublicKeyInfo");
+    }
 }
 

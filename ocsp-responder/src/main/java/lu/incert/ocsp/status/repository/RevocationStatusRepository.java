@@ -21,6 +21,12 @@ public interface RevocationStatusRepository extends JpaRepository<RevocationStat
         @Param("keyHash") byte[] issuerKeyHash,
         @Param("serial") byte[] serialNumber);
 
+    @Query("SELECT COUNT(r) FROM RevocationStatus r WHERE "
+         + "r.issuerNameHash = :nameHash AND r.issuerKeyHash = :keyHash")
+    long countByIssuerHashes(
+        @Param("nameHash") byte[] issuerNameHash,
+        @Param("keyHash") byte[] issuerKeyHash);
+
     List<RevocationStatus> findBySerialNumber(byte[] serialNumber);
 
     List<RevocationStatus> findBySerialNumberIn(Collection<byte[]> serialNumbers);

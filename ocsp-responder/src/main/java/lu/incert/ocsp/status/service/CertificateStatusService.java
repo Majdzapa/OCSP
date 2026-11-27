@@ -45,6 +45,22 @@ public class CertificateStatusService {
     }
 
     @Transactional(readOnly = true)
+    public List<RevocationStatus> findAllBySerialBytes(byte[] serial) {
+        if (serial == null || serial.length == 0) {
+            return List.of();
+        }
+        return repository.findBySerialNumber(serial);
+    }
+
+    @Transactional(readOnly = true)
+    public long countByIssuerHashes(byte[] issuerNameHash, byte[] issuerKeyHash) {
+        if (issuerNameHash == null || issuerKeyHash == null) {
+            return 0L;
+        }
+        return repository.countByIssuerHashes(issuerNameHash, issuerKeyHash);
+    }
+
+    @Transactional(readOnly = true)
     public Page<RevocationStatus> findRevoked(int page, int size) {
         return repository.findByStatus(CertificateStatus.REVOKED,
             PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 200), Sort.by("updatedAt").descending()));

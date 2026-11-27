@@ -351,6 +351,12 @@ export function CertCheckerPage({ publicMode = false }) {
                 </Badge>
               </Group>
 
+              {testResult.certStatus === 'UNKNOWN' && (
+                <Alert icon={<IconHelp size={18}/>} color="yellow" title="Why Status is UNKNOWN" mb="md">
+                  {testResult.unknownReason || 'No certificate in OCSP database matched the RFC 6960 CertID (issuerNameHash + issuerKeyHash + serialNumber).'}
+                </Alert>
+              )}
+
               {/* KPI Banner */}
               <Grid gutter="md" mb="md">
                 <Grid.Col span={{ base: 12, sm: 4 }}>
@@ -411,6 +417,9 @@ export function CertCheckerPage({ publicMode = false }) {
               <Stack gap={0} mb="md">
                 <DetailRow label="Target Serial" value={testResult.serialHex} mono/>
                 <DetailRow label="Certificate Status" value={testResult.certStatus}/>
+                {testResult.unknownReason && (<DetailRow label="Unknown Reason" value={testResult.unknownReason}/>)}
+                {testResult.issuerNameHashHex && (<DetailRow label="Issuer Name Hash (SHA-1)" value={testResult.issuerNameHashHex} mono/>)}
+                {testResult.issuerKeyHashHex && (<DetailRow label="Issuer Key Hash (SHA-1)" value={testResult.issuerKeyHashHex} mono/>)}
                 {testResult.revocationTime && (<DetailRow label="Revocation Time" value={testResult.revocationTime}/>)}
                 {testResult.revocationReason && (<DetailRow label="Revocation Reason" value={testResult.revocationReason}/>)}
                 <DetailRow label="This Update" value={testResult.thisUpdate}/>
@@ -555,6 +564,8 @@ export function CertCheckerPage({ publicMode = false }) {
                 <Stack gap={0} mb="md">
                   <DetailRow label="Serial Number" value={result.serialHex} mono/>
                   <DetailRow label="Status" value={result.status}/>
+                  {result.issuerNameHashHex && (<DetailRow label="Stored Issuer Name Hash" value={result.issuerNameHashHex} mono/>)}
+                  {result.issuerKeyHashHex && (<DetailRow label="Stored Issuer Key Hash" value={result.issuerKeyHashHex} mono/>)}
                   <DetailRow label="Revoked at" value={result.revocationTime
                 ? new Date(result.revocationTime).toLocaleString()
                 : null}/>
@@ -567,10 +578,14 @@ export function CertCheckerPage({ publicMode = false }) {
                     required.
                   </Alert>)}
 
-                {result.status === 'UNKNOWN' && (<Alert icon={<IconHelp size={18}/>} color="yellow" title="Unknown Certificate">
-                    This serial number is <strong>not found</strong> in the OCSP
-                    database. The certificate may have been issued by a different
-                    CA or may not yet be synchronised.
+                {result.status === 'UNKNOWN' && (<Alert icon={<IconHelp size={18}/>} color="yellow" title="Why Status is UNKNOWN">
+                    {result.unknownReason || (
+                      <>
+                        This serial number is <strong>not found</strong> in the OCSP
+                        database. The certificate may have been issued by a different
+                        CA or may not yet be synchronised.
+                      </>
+                    )}
                   </Alert>)}
 
                 {isRevoked && (<Alert icon={<IconShieldX size={18}/>} color="red" title="Certificate Revoked">

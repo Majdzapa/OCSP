@@ -30,7 +30,13 @@ public record OcspCheckResult(
     List<Check> checks,
     String error,
     /** Equivalent openssl command to reproduce this OCSP check from the command line. */
-    String opensslCommand
+    String opensslCommand,
+    /** Diagnostic explanation of why the certificate status is UNKNOWN (null when GOOD or REVOKED). */
+    String unknownReason,
+    /** RFC 6960 §4.1.1 SHA-1 Issuer Name Hash sent in the OCSP CertID (hex). */
+    String issuerNameHashHex,
+    /** RFC 6960 §4.1.1 SHA-1 Issuer Key Hash sent in the OCSP CertID (hex). */
+    String issuerKeyHashHex
 ) {
     public enum Outcome { PASS, FAIL, SKIPPED }
 
