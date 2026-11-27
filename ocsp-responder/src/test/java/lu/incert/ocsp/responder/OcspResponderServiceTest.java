@@ -9,6 +9,7 @@ import lu.incert.ocsp.status.entity.RevocationReason;
 import lu.incert.ocsp.status.entity.RevocationStatus;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SignerNotConfiguredException;
+import lu.incert.ocsp.signing.hsm.UnauthorizedIssuerException;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
 import lu.incert.ocsp.signing.hsm.SoftwareKeyOcspSigner;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -234,6 +235,26 @@ class OcspResponderServiceTest {
         OCSPResp response = new OCSPResp(lockedService.handle(reqBuilder.build().getEncoded()));
 
         assertThat(response.getStatus()).isEqualTo(OCSPRespBuilder.TRY_LATER);
+    }
+
+    @Test
+    void shouldAnswerUnauthorizedWithoutSigningWhenIssuerHasNoAuthorizedSigner() throws Exception {
+        OcspSigner unauthorized = org.mockito.Mockito.mock(OcspSigner.class);
+        when(unauthorized.selectSigner(any()))
+                .thenThrow(new UnauthorizedIssuerException("No active OCSP signing certificate is authorized for the requested Issuing CA"));
+        OcspResponderService strictService =
+                new OcspResponderService(statusService, unauthorized, meterRegistry, responderProperties());
+
+        DigestCalculatorProvider digCalcProv = new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        CertificateID certId = new CertificateID(digCalcProv.get(CertificateID.HASH_SHA1), caCertHolder, BigInteger.valueOf(6161));
+        OCSPReqBuilder reqBuilder = new OCSPReqBuilder();
+        reqBuilder.addRequest(certId);
+
+        OCSPResp response = new OCSPResp(strictService.handle(reqBuilder.build().getEncoded()));
+
+        assertThat(response.getStatus()).isEqualTo(OCSPRespBuilder.UNAUTHORIZED);
+        assertThat(response.getResponseObject()).isNull();
+        assertThat(meterRegistry.counter("ocsp.request.error", "reason", "unauthorized").count()).isEqualTo(1.0);
     }
 
 

@@ -32,6 +32,8 @@ public final class CaSignerMatcher {
             Instant notAfter,
             byte[] issuerEncoded,
             byte[] authorityKeyId,
+            byte[] subjectEncoded,
+            byte[] subjectPublicKeyBits,
             boolean preferred
     ) {
         public static <T> MatchedSigner<T> of(
@@ -42,6 +44,10 @@ public final class CaSignerMatcher {
             String alg = (requestedAlgorithm != null && !requestedAlgorithm.isBlank())
                     ? requestedAlgorithm.trim()
                     : detectSignatureAlgorithm(holder);
+            byte[] spkiBits = holder.getSubjectPublicKeyInfo() != null
+                    && holder.getSubjectPublicKeyInfo().getPublicKeyData() != null
+                    ? holder.getSubjectPublicKeyInfo().getPublicKeyData().getBytes()
+                    : null;
             return new MatchedSigner<>(
                     target,
                     new X509CertificateHolder[]{holder},
@@ -49,6 +55,8 @@ public final class CaSignerMatcher {
                     holder.getNotAfter().toInstant(),
                     holder.getIssuer().getEncoded(),
                     extractAuthorityKeyId(holder),
+                    holder.getSubject().getEncoded(),
+                    spkiBits,
                     preferred
             );
         }
@@ -76,16 +84,32 @@ public final class CaSignerMatcher {
             if (now.isAfter(entry.notAfter())) {
                 continue;
             }
-            if (!Arrays.equals(md.digest(entry.issuerEncoded()), reqIssuerNameHash)) {
-                continue;
+            int score = -1;
+
+            // RFC 6960 §4.2.2.2 Case 1: Issuing CA signs OCSP responses directly with its own key
+            if (entry.subjectEncoded() != null
+                    && entry.subjectPublicKeyBits() != null
+                    && reqIssuerKeyHash != null
+                    && Arrays.equals(md.digest(entry.subjectEncoded()), reqIssuerNameHash)
+                    && Arrays.equals(md.digest(entry.subjectPublicKeyBits()), reqIssuerKeyHash)) {
+                score = 4;
             }
-            int score = 1; // Issuer DN matched
-            if (entry.authorityKeyId() != null && OIWObjectIdentifiers.idSHA1.equals(hashAlgOid)) {
-                if (Arrays.equals(entry.authorityKeyId(), reqIssuerKeyHash)) {
-                    score = 3; // Issuer DN + AuthorityKeyIdentifier matched
+            // RFC 6960 §4.2.2.2 Case 2: Delegated OCSP Signer certificate issued by the Issuing CA
+            else if (entry.issuerEncoded() != null
+                    && Arrays.equals(md.digest(entry.issuerEncoded()), reqIssuerNameHash)) {
+                if (entry.authorityKeyId() != null && OIWObjectIdentifiers.idSHA1.equals(hashAlgOid)) {
+                    if (Arrays.equals(entry.authorityKeyId(), reqIssuerKeyHash)) {
+                        score = 3; // Issuer DN + AuthorityKeyIdentifier matched
+                    } else {
+                        continue; // Different CA key under same DN
+                    }
                 } else {
-                    continue; // Different CA key under same DN
+                    score = 1; // Issuer DN matched
                 }
+            }
+
+            if (score < 0) {
+                continue;
             }
             if (entry.preferred()) {
                 score += 1;

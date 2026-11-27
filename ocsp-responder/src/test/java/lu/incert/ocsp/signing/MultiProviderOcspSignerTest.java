@@ -6,6 +6,7 @@ import lu.incert.ocsp.signing.config.SigningConfig;
 import lu.incert.ocsp.signing.hsm.CaSignerMatcher;
 import lu.incert.ocsp.signing.hsm.MultiProviderOcspSigner;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
+import lu.incert.ocsp.signing.hsm.UnauthorizedIssuerException;
 import lu.incert.ocsp.signing.pkcs11.Pkcs11Attribute;
 import lu.incert.ocsp.signing.pkcs11.Pkcs11Constants;
 import lu.incert.ocsp.signing.pkcs11.Pkcs11Engine;
@@ -113,6 +114,16 @@ class MultiProviderOcspSignerTest {
             assertThat(sel2.chain()[0].getSubject().toString()).isEqualTo("CN=OCSP Signer 2");
             assertThat(verifySignature(signer2Kp, payload, sig2)).isTrue();
             assertThat(dev2.signCount.get()).isEqualTo(1);
+
+            // Unknown / unauthorized Issuing CA must throw UnauthorizedIssuerException without touching HSM
+            KeyPair ca3Kp = kpg.generateKeyPair();
+            X509CertificateHolder unknownCa = buildSelfSignedCa("CN=Unknown CA Three,O=Other,C=LU", ca3Kp);
+            CertificateID idForUnknownCa = new CertificateID(dcp.get(CertificateID.HASH_SHA1), unknownCa, BigInteger.valueOf(77));
+            assertThatThrownBy(() -> multiSigner.selectSigner(idForUnknownCa))
+                    .isInstanceOf(UnauthorizedIssuerException.class)
+                    .hasMessageContaining("RFC 6960");
+            assertThat(dev1.signCount.get()).isEqualTo(1);
+            assertThat(dev2.signCount.get()).isEqualTo(1);
         }
     }
 
@@ -215,6 +226,13 @@ class MultiProviderOcspSignerTest {
         var match = CaSignerMatcher.selectBest(candidates, reqId);
         assertThat(match).isPresent();
         assertThat(match.get().target()).isEqualTo("preferred");
+
+        // Also supports direct CA signing (RFC 6960 §4.2.2.2 case 1: CA signs OCSP with its own key)
+        var directCaMatch = CaSignerMatcher.selectBest(
+                List.of(CaSignerMatcher.MatchedSigner.of("direct-ca", targetCa, "SHA256withRSA", true)),
+                reqId);
+        assertThat(directCaMatch).isPresent();
+        assertThat(directCaMatch.get().target()).isEqualTo("direct-ca");
     }
 
     @Test

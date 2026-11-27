@@ -246,9 +246,11 @@ public class MultiProviderOcspSigner implements OcspSigner {
             throw new SignerNotConfiguredException(
                     "No active signing certificate is configured (activate one under Signers / Signing Certificates)");
         }
-        CaSignerMatcher.MatchedSigner<ProviderKeyRef> selected =
-                CaSignerMatcher.selectBest(registeredSigners, certId).orElse(null);
-        if (selected != null) {
+        if (certId != null) {
+            CaSignerMatcher.MatchedSigner<ProviderKeyRef> selected =
+                    CaSignerMatcher.selectBest(registeredSigners, certId)
+                            .orElseThrow(() -> new UnauthorizedIssuerException(
+                                    "No active OCSP signing certificate is authorized for the requested Issuing CA (RFC 6960 §4.2.2.2)"));
             ProviderKeyRef ref = selected.target();
             ContentSigner cs = resolveFailoverProvider(ref)
                     .createContentSigner(ref.keyLabel(), selected.algorithm());

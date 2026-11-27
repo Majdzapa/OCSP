@@ -192,13 +192,18 @@ public class OcspClientService {
 
             String respStatusName = mapResponseStatus(ocspResp.getStatus());
             if (ocspResp.getStatus() != OCSPRespBuilder.SUCCESSFUL) {
-                checks.add(Check.fail("Response Status", "Responder returned error status: " + respStatusName));
+                String detail = ocspResp.getStatus() == OCSPRespBuilder.UNAUTHORIZED
+                        ? "Responder returned UNAUTHORIZED (6): no active OCSP signing certificate is issued by this Issuing CA "
+                          + "(verify that the pasted Issuer CA Certificate PEM is the exact Issuing/Intermediate CA that signed both "
+                          + "the OCSP Signer certificate and the target certificate)."
+                        : "Responder returned error status: " + respStatusName;
+                checks.add(Check.fail("Response Status", detail));
                 return new OcspCheckResult(
                         false, displayUrl, method, httpStatus, respStatusName, null,
                         null, null, target.serialHex(), null, null, null, null, null,
                         request.includeNonce(), nonceSentHex, null, latencyMs,
                         derRequest.length, derResponse.length, getPath, checks,
-                        "OCSP responder returned status " + respStatusName, null,
+                        detail, null,
                         null, reqNameHashHex, reqKeyHashHex
                 );
             }

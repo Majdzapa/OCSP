@@ -8,6 +8,7 @@ import lu.incert.ocsp.status.entity.RevocationReason;
 import lu.incert.ocsp.status.entity.RevocationStatus;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SignerNotConfiguredException;
+import lu.incert.ocsp.signing.hsm.UnauthorizedIssuerException;
 import lu.incert.ocsp.signing.port.DeviceLockedException;
 import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -159,6 +160,12 @@ public class OcspResponderService {
             log.warn("Malformed OCSP request: {}", e.getMessage());
             meterRegistry.counter("ocsp.request.error", "reason", "malformed").increment();
             return buildErrorResponse(OCSPRespBuilder.MALFORMED_REQUEST);
+        } catch (UnauthorizedIssuerException e) {
+            // RFC 6960 §2.3 / §4.2.2.2: no active signing certificate is authorized for the requested Issuing CA.
+            // Return unsigned UNAUTHORIZED (6) without touching the HSM.
+            log.warn("OCSP request unauthorized: {}", e.getMessage());
+            meterRegistry.counter("ocsp.request.error", "reason", "unauthorized").increment();
+            return buildErrorResponse(OCSPRespBuilder.UNAUTHORIZED);
         } catch (SignerNotConfiguredException | DeviceLockedException e) {
             // RFC 6960 tryLater: responder is up but signing certificate is missing or HSM device is LOCKED.
             log.warn("OCSP request not answered: {}", e.getMessage());
@@ -191,8 +198,19 @@ public class OcspResponderService {
         Date thisUpdate = Date.from(now);
         Date nextUpdate = Date.from(now.plus(properties.getNextUpdateWindow()));
 
-        // Select the signing certificate matching the issuing CA of the request (multi-CA RFC 6960 §4.2.2.2)
-        OcspSigner.SigningSelection selection = signer.selectSigner(requests[0].getCertID());
+        // Select the signing certificate authorized for the issuing CA of the request (RFC 6960 §4.2.2.2).
+        // In multi-CertID requests, all CertIDs must belong to the same Issuing CA so one signer cannot
+        // inadvertently sign status responses for an unauthorized CA.
+        CertificateID primaryCertId = requests[0].getCertID();
+        for (int i = 1; i < requests.length; i++) {
+            CertificateID other = requests[i].getCertID();
+            if (!java.util.Arrays.equals(primaryCertId.getIssuerNameHash(), other.getIssuerNameHash())
+                    || !java.util.Arrays.equals(primaryCertId.getIssuerKeyHash(), other.getIssuerKeyHash())) {
+                throw new UnauthorizedIssuerException(
+                        "OCSP request mixes multiple Issuing CAs in a single BasicOCSPResponse");
+            }
+        }
+        OcspSigner.SigningSelection selection = signer.selectSigner(primaryCertId);
         X509CertificateHolder[] chain = selection.chain();
         BasicOCSPRespBuilder builder = new BasicOCSPRespBuilder(new RespID(chain[0].getSubject()));
 
