@@ -103,6 +103,11 @@ class OcspSignerManagementServiceTest {
                 new X500Name("CN=Incert OCSP Signer,O=Incert,C=LU"),
                 sampleKeyPair.getPublic()
         );
+        builder.addExtension(
+                org.bouncycastle.asn1.x509.Extension.extendedKeyUsage,
+                false,
+                new org.bouncycastle.asn1.x509.ExtendedKeyUsage(org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_OCSPSigning)
+        );
         var holder = builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(sampleKeyPair.getPrivate()));
         X509Certificate cert = new JcaX509CertificateConverter().getCertificate(holder);
         sampleCertPem = "-----BEGIN CERTIFICATE-----\n"

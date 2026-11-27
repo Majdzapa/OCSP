@@ -2,9 +2,13 @@ package lu.incert.ocsp.signing.hsm;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.ocsp.CertificateID;
 
@@ -34,6 +38,8 @@ public final class CaSignerMatcher {
             byte[] authorityKeyId,
             byte[] subjectEncoded,
             byte[] subjectPublicKeyBits,
+            boolean hasOcspSigningEku,
+            boolean isCa,
             boolean preferred
     ) {
         public static <T> MatchedSigner<T> of(
@@ -57,6 +63,8 @@ public final class CaSignerMatcher {
                     extractAuthorityKeyId(holder),
                     holder.getSubject().getEncoded(),
                     spkiBits,
+                    CaSignerMatcher.hasOcspSigningEku(holder),
+                    CaSignerMatcher.isCaCertificate(holder),
                     preferred
             );
         }
@@ -86,25 +94,24 @@ public final class CaSignerMatcher {
             }
             int score = -1;
 
-            // RFC 6960 §4.2.2.2 Case 1: Issuing CA signs OCSP responses directly with its own key
-            if (entry.subjectEncoded() != null
-                    && entry.subjectPublicKeyBits() != null
+            // RFC 6960 §4.2.2.2 Case 1: Direct Issuing CA Signer (compare CA public key hash FIRST, then Subject DN)
+            if (entry.subjectPublicKeyBits() != null
                     && reqIssuerKeyHash != null
-                    && Arrays.equals(md.digest(entry.subjectEncoded()), reqIssuerNameHash)
-                    && Arrays.equals(md.digest(entry.subjectPublicKeyBits()), reqIssuerKeyHash)) {
+                    && Arrays.equals(md.digest(entry.subjectPublicKeyBits()), reqIssuerKeyHash)
+                    && entry.subjectEncoded() != null
+                    && Arrays.equals(md.digest(entry.subjectEncoded()), reqIssuerNameHash)) {
                 score = 4;
             }
-            // RFC 6960 §4.2.2.2 Case 2: Delegated OCSP Signer certificate issued by the Issuing CA
-            else if (entry.issuerEncoded() != null
-                    && Arrays.equals(md.digest(entry.issuerEncoded()), reqIssuerNameHash)) {
-                if (entry.authorityKeyId() != null && OIWObjectIdentifiers.idSHA1.equals(hashAlgOid)) {
-                    if (Arrays.equals(entry.authorityKeyId(), reqIssuerKeyHash)) {
-                        score = 3; // Issuer DN + AuthorityKeyIdentifier matched
-                    } else {
-                        continue; // Different CA key under same DN
-                    }
-                } else {
-                    score = 1; // Issuer DN matched
+            // RFC 6960 §2.6 / §4.2.2.2 Case 2: Delegated OCSP Signer (requires id-kp-OCSPSigning EKU;
+            // compare CA key hash via AKI FIRST when available, then Issuer DN)
+            else if (entry.hasOcspSigningEku()) {
+                boolean hasSha1Aki = entry.authorityKeyId() != null && OIWObjectIdentifiers.idSHA1.equals(hashAlgOid);
+                if (hasSha1Aki && !Arrays.equals(entry.authorityKeyId(), reqIssuerKeyHash)) {
+                    continue; // Different CA key (checked before Issuer DN)
+                }
+                if (entry.issuerEncoded() != null
+                        && Arrays.equals(md.digest(entry.issuerEncoded()), reqIssuerNameHash)) {
+                    score = hasSha1Aki ? 3 : 1;
                 }
             }
 
@@ -120,6 +127,40 @@ public final class CaSignerMatcher {
             }
         }
         return Optional.ofNullable(bestMatch);
+    }
+
+    /** RFC 6960 §2.6: checks whether the certificate carries the {@code id-kp-OCSPSigning} EKU. */
+    public static boolean hasOcspSigningEku(X509CertificateHolder holder) {
+        if (holder == null) {
+            return false;
+        }
+        try {
+            ExtendedKeyUsage eku = ExtendedKeyUsage.fromExtensions(holder.getExtensions());
+            return eku != null && eku.hasKeyPurposeId(KeyPurposeId.id_kp_OCSPSigning);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Checks whether the certificate is a CA certificate ({@code BasicConstraints cA=true}). */
+    public static boolean isCaCertificate(X509CertificateHolder holder) {
+        if (holder == null) {
+            return false;
+        }
+        try {
+            BasicConstraints bc = BasicConstraints.fromExtensions(holder.getExtensions());
+            return bc != null && bc.isCA();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** RFC 6960 §4.2.2.2.1: checks whether the certificate includes {@code id-pkix-ocsp-nocheck}. */
+    public static boolean hasOcspNoCheckExtension(X509CertificateHolder holder) {
+        if (holder == null) {
+            return false;
+        }
+        return holder.getExtension(OCSPObjectIdentifiers.id_pkix_ocsp_nocheck) != null;
     }
 
     public static String detectSignatureAlgorithm(X509CertificateHolder holder) {

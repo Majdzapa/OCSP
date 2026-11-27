@@ -24,7 +24,10 @@ import lu.incert.ocsp.signing.provider.Pkcs11jCryptoProviderAdapter;
 import lu.incert.ocsp.signing.provider.PkcsProviders;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
@@ -227,6 +230,13 @@ class MultiProviderOcspSignerTest {
         assertThat(match).isPresent();
         assertThat(match.get().target()).isEqualTo("preferred");
 
+        // Delegated signer WITHOUT id-kp-OCSPSigning EKU must be rejected (RFC 6960 §2.6)
+        X509CertificateHolder nonOcspDelegated = buildDelegatedSigner(targetCa, caKp, "CN=TLS Cert", signerKp, 4L, false);
+        var noEkuMatch = CaSignerMatcher.selectBest(
+                List.of(CaSignerMatcher.MatchedSigner.of("no-eku", nonOcspDelegated, "SHA256withRSA", true)),
+                reqId);
+        assertThat(noEkuMatch).isEmpty();
+
         // Also supports direct CA signing (RFC 6960 §4.2.2.2 case 1: CA signs OCSP with its own key)
         var directCaMatch = CaSignerMatcher.selectBest(
                 List.of(CaSignerMatcher.MatchedSigner.of("direct-ca", targetCa, "SHA256withRSA", true)),
@@ -279,6 +289,7 @@ class MultiProviderOcspSignerTest {
         X509v3CertificateBuilder b = new X509v3CertificateBuilder(
                 name, BigInteger.ONE, Date.from(now.minus(1, ChronoUnit.DAYS)), Date.from(now.plus(365, ChronoUnit.DAYS)),
                 name, SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded()));
+        b.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
         return b.build(new JcaContentSignerBuilder("SHA256withRSA").setProvider("BC").build(kp.getPrivate()));
     }
 
@@ -288,6 +299,16 @@ class MultiProviderOcspSignerTest {
             String subjectDn,
             KeyPair signerKp,
             long serial) throws Exception {
+        return buildDelegatedSigner(issuer, issuerKp, subjectDn, signerKp, serial, true);
+    }
+
+    private static X509CertificateHolder buildDelegatedSigner(
+            X509CertificateHolder issuer,
+            KeyPair issuerKp,
+            String subjectDn,
+            KeyPair signerKp,
+            long serial,
+            boolean includeOcspSigningEku) throws Exception {
         Instant now = Instant.now();
         X509v3CertificateBuilder b = new X509v3CertificateBuilder(
                 issuer.getSubject(),
@@ -300,6 +321,9 @@ class MultiProviderOcspSignerTest {
         byte[] issuerPubSha1 = java.security.MessageDigest.getInstance("SHA-1")
                 .digest(issuer.getSubjectPublicKeyInfo().getPublicKeyData().getBytes());
         b.addExtension(Extension.authorityKeyIdentifier, false, new AuthorityKeyIdentifier(issuerPubSha1));
+        if (includeOcspSigningEku) {
+            b.addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(KeyPurposeId.id_kp_OCSPSigning));
+        }
         return b.build(new JcaContentSignerBuilder("SHA256withRSA").setProvider("BC").build(issuerKp.getPrivate()));
     }
 

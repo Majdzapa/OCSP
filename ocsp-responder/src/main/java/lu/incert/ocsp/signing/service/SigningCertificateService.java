@@ -14,6 +14,7 @@ import lu.incert.ocsp.signing.port.ProviderDeviceInfo;
 import lu.incert.ocsp.signing.repository.OcspKeyRepository;
 import lu.incert.ocsp.signing.repository.OcspSignerRepository;
 import lu.incert.ocsp.signing.repository.SigningCertificateRepository;
+import lu.incert.ocsp.signing.hsm.CaSignerMatcher;
 import lu.incert.ocsp.signing.hsm.OcspSigner;
 import lu.incert.ocsp.signing.hsm.SigningAlgorithm;
 import lu.incert.ocsp.signing.usecase.FindSigningCertificateUseCase;
@@ -171,6 +172,21 @@ public class SigningCertificateService {
 
         if (Instant.now().isAfter(notAfter)) {
             throw new IllegalArgumentException("Cannot add an expired signing certificate (expired at: " + notAfter + ")");
+        }
+
+        // RFC 6960 §2.6: delegated OCSP signer certificates must include id-kp-OCSPSigning EKU
+        // (unless the Issuing CA itself is signing directly with a CA certificate).
+        boolean isCaCert = CaSignerMatcher.isCaCertificate(holder);
+        boolean hasOcspEku = CaSignerMatcher.hasOcspSigningEku(holder);
+        if (!isCaCert && !hasOcspEku) {
+            throw new IllegalArgumentException(
+                    "Certificate is not authorized for OCSP signing (RFC 6960 §2.6): "
+                            + "a delegated OCSP Signer certificate must include Extended Key Usage "
+                            + "'id-kp-OCSPSigning' (1.3.6.1.5.5.7.3.9), or be a CA certificate (BasicConstraints cA=true)");
+        }
+        if (!isCaCert && !CaSignerMatcher.hasOcspNoCheckExtension(holder)) {
+            log.warn("Imported delegated OCSP signing certificate '{}' does not include the recommended "
+                    + "id-pkix-ocsp-nocheck extension (RFC 6960 §4.2.2.2.1)", resolvedAlias);
         }
 
         String providerId;

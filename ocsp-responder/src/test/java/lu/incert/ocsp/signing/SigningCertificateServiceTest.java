@@ -76,9 +76,37 @@ class SigningCertificateServiceTest {
                 name, serial, notBefore, notAfter, name,
                 SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded())
         );
+        builder.addExtension(
+                org.bouncycastle.asn1.x509.Extension.extendedKeyUsage,
+                false,
+                new org.bouncycastle.asn1.x509.ExtendedKeyUsage(org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_OCSPSigning)
+        );
 
         testHolder = builder.build(signer);
         testCertPem = SigningCertificateService.toPem(testHolder);
+    }
+
+    @Test
+    void addCertificate_missingOcspSigningEkuAndNotCa_throwsException() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair kp = kpg.generateKeyPair();
+        X500Name name = new X500Name("CN=Regular TLS Server,O=Incert,C=CH");
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                name, BigInteger.valueOf(999L),
+                Date.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+                Date.from(Instant.now().plus(30, ChronoUnit.DAYS)),
+                name, SubjectPublicKeyInfo.getInstance(kp.getPublic().getEncoded())
+        );
+        String nonOcspPem = SigningCertificateService.toPem(
+                builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(kp.getPrivate())));
+
+        when(repository.existsByAlias("tls-cert")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.addCertificate(
+                new AddSigningCertificateRequest("tls-cert", "key", nonOcspPem, false)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("id-kp-OCSPSigning");
     }
 
     @Test
