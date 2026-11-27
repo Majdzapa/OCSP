@@ -535,15 +535,40 @@ public class OcspSignerManagementService {
     }
 
     private static void bindTokens(OcspSignerEntity signer, List<CryptoDeviceEntity> orderedTokens) {
-        signer.getTokens().clear();
-        for (int i = 0; i < orderedTokens.size(); i++) {
-            signer.getTokens().add(OcspSignerTokenEntity.builder()
-                    .signer(signer)
-                    .tokenDevice(orderedTokens.get(i))
-                    .priorityOrder(i)
-                    .role(i == 0 ? "PRIMARY" : "FAILOVER")
-                    .build());
+        Map<String, OcspSignerTokenEntity> existingByDeviceId = new java.util.HashMap<>();
+        for (OcspSignerTokenEntity existing : signer.getTokens()) {
+            if (existing.getTokenDevice() != null && existing.getTokenDevice().getDeviceId() != null) {
+                existingByDeviceId.put(existing.getTokenDevice().getDeviceId(), existing);
+            }
         }
+
+        Set<String> wantedDeviceIds = orderedTokens.stream()
+                .map(CryptoDeviceEntity::getDeviceId)
+                .collect(Collectors.toSet());
+
+        // Remove only unselected token bindings so existing bindings are updated in-place
+        // (avoids Hibernate ActionQueue INSERT-before-DELETE unique constraint violation on uq_ocsp_signer_tokens)
+        signer.getTokens().removeIf(t -> t.getTokenDevice() == null
+                || !wantedDeviceIds.contains(t.getTokenDevice().getDeviceId()));
+
+        for (int i = 0; i < orderedTokens.size(); i++) {
+            CryptoDeviceEntity dev = orderedTokens.get(i);
+            String role = (i == 0) ? "PRIMARY" : "FAILOVER";
+            OcspSignerTokenEntity existing = existingByDeviceId.get(dev.getDeviceId());
+            if (existing != null) {
+                existing.setPriorityOrder(i);
+                existing.setRole(role);
+            } else {
+                signer.getTokens().add(OcspSignerTokenEntity.builder()
+                        .signer(signer)
+                        .tokenDevice(dev)
+                        .priorityOrder(i)
+                        .role(role)
+                        .build());
+            }
+        }
+
+        signer.getTokens().sort(java.util.Comparator.comparingInt(OcspSignerTokenEntity::getPriorityOrder));
     }
 
     private CryptoDeviceEntity resolveTargetTokenEntityForCsr(

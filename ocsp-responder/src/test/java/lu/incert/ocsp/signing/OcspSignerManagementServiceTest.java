@@ -312,4 +312,44 @@ class OcspSignerManagementServiceTest {
         assertThat(storedSigner.get().getKeyLabel()).isEqualTo(secondCsr.keyLabel());
         assertThat(storedSigner.get().getKey().getId()).isEqualTo(102L);
     }
+
+    @Test
+    void updateSignerUpdatesExistingTokenBindingsInPlaceWhenAddingOrReorderingTokens() {
+        when(deviceRepository.findByDeviceId("softhsm-primary")).thenReturn(Optional.of(tokenPrimary));
+        when(deviceRepository.findByDeviceId("softhsm-secondary")).thenReturn(Optional.of(tokenFailover));
+        when(ocspSigner.listProviders()).thenReturn(List.of());
+
+        AtomicReference<OcspSignerEntity> storedSigner = new AtomicReference<>();
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> {
+            OcspSignerEntity e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(1L);
+            for (int i = 0; i < e.getTokens().size(); i++) {
+                if (e.getTokens().get(i).getId() == null) {
+                    e.getTokens().get(i).setId(1000L + i);
+                }
+            }
+            storedSigner.set(e);
+            return e;
+        });
+        when(signerRepository.findById(1L)).thenAnswer(inv -> Optional.ofNullable(storedSigner.get()));
+
+        service.createSigner(new SignerRequest(
+                "signer-tokens-update", "Update Tokens Signer", "CN=Test,O=Incert,C=LU",
+                "key-update-1", "RSA", 2048, "SHA256withRSA", List.of("softhsm-primary")));
+        Long originalPrimaryRowId = storedSigner.get().getTokens().get(0).getId();
+        assertThat(originalPrimaryRowId).isEqualTo(1000L);
+
+        // Add second HSM token and swap order so softhsm-secondary becomes PRIMARY and softhsm-primary becomes FAILOVER
+        SignerDto updated = service.updateSigner(1L, new SignerRequest(
+                "signer-tokens-update", "Update Tokens Signer", "CN=Test,O=Incert,C=LU",
+                "key-update-1", "RSA", 2048, "SHA256withRSA", List.of("softhsm-secondary", "softhsm-primary")));
+
+        assertThat(updated.tokens()).hasSize(2);
+        assertThat(updated.tokens().get(0).deviceId()).isEqualTo("softhsm-secondary");
+        assertThat(updated.tokens().get(0).role()).isEqualTo("PRIMARY");
+        assertThat(updated.tokens().get(1).deviceId()).isEqualTo("softhsm-primary");
+        assertThat(updated.tokens().get(1).role()).isEqualTo("FAILOVER");
+        // Verify existing (signer_id=1, token_device_id=primary) row kept its DB id in-place (no duplicate re-insert)
+        assertThat(storedSigner.get().getTokens().get(1).getId()).isEqualTo(originalPrimaryRowId);
+    }
 }
