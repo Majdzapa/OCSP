@@ -243,19 +243,36 @@ public class OcspSignerManagementService {
                 ? targetTokenEntity.getDeviceId()
                 : ocspSigner.getDefaultProviderId();
 
+        boolean alreadyHasCsr = signer.getCsrPem() != null && !signer.getCsrPem().isBlank();
         OcspKeyEntity existingKey = signer.getKey() != null
                 ? signer.getKey()
                 : keyRepository.findByKeyLabel(signer.getKeyLabel()).orElse(null);
 
+        // Reuse ONLY when explicitly requested (reuseExistingKey=true) OR on the very first CSR generation
+        // of a DRAFT signer that was explicitly bound to an existing OcspKeyEntity (signer.getKey() != null).
+        // Re-generating CSR ALWAYS defaults to reuse=false and generates a brand-new UUID keypair on the token.
+        boolean reuse = (request != null && request.reuseExistingKey() != null)
+                ? request.reuseExistingKey()
+                : (!alreadyHasCsr && signer.getKey() != null);
+
+        String targetKeyLabel;
+        if (reuse) {
+            targetKeyLabel = existingKey != null ? existingKey.getKeyLabel() : signer.getKeyLabel();
+        } else if (alreadyHasCsr || existingKey != null) {
+            targetKeyLabel = UUID.randomUUID().toString();
+        } else {
+            targetKeyLabel = signer.getKeyLabel();
+        }
+
         String subjectDn = (request != null && request.subjectDn() != null && !request.subjectDn().isBlank())
                 ? request.subjectDn().trim()
                 : signer.getSubjectDn();
-        String keyAlg = existingKey != null
+        String keyAlg = (reuse && existingKey != null)
                 ? existingKey.getKeyAlgorithm()
                 : ((request != null && request.keyAlgorithm() != null && !request.keyAlgorithm().isBlank())
                         ? normalizeKeyAlg(request.keyAlgorithm())
                         : signer.getKeyAlgorithm());
-        int keySize = existingKey != null
+        int keySize = (reuse && existingKey != null)
                 ? existingKey.getKeySize()
                 : ((request != null && request.keySize() != null)
                         ? resolveKeySize(keyAlg, request.keySize())
@@ -264,12 +281,8 @@ public class OcspSignerManagementService {
                 ? validateSignatureAlgForKeyType(request.signatureAlgorithm(), keyAlg)
                 : signer.getSignatureAlgorithm();
 
-        boolean reuse = (request != null && request.reuseExistingKey() != null)
-                ? request.reuseExistingKey()
-                : (existingKey != null);
-
         GenerateCsrResponse csrRes = signingCertificateService.generateCsr(new GenerateCsrRequest(
-                signer.getKeyLabel(),
+                targetKeyLabel,
                 subjectDn,
                 keyAlg,
                 keySize,
@@ -279,13 +292,13 @@ public class OcspSignerManagementService {
         ));
 
         Instant now = Instant.now();
-        OcspKeyEntity persistedKey = existingKey;
+        OcspKeyEntity persistedKey = reuse ? existingKey : null;
         if (persistedKey == null) {
             SubjectPublicKeyInfo spki = SigningCertificateService.extractPublicKeyFromCsrPem(csrRes.csrPem());
             if (spki != null) {
                 persistedKey = keyRepository.save(OcspKeyEntity.builder()
-                        .keyLabel(signer.getKeyLabel())
-                        .ckaIdHex(HexFormat.of().formatHex(signer.getKeyLabel().getBytes(StandardCharsets.UTF_8)))
+                        .keyLabel(targetKeyLabel)
+                        .ckaIdHex(HexFormat.of().formatHex(targetKeyLabel.getBytes(StandardCharsets.UTF_8)))
                         .tokenDevice(targetTokenEntity)
                         .keyAlgorithm(keyAlg)
                         .keySize(keySize)
@@ -296,7 +309,26 @@ public class OcspSignerManagementService {
             }
         }
 
+        // If a brand-new key was generated on an inactive signer, clear any stale unactivated certificate
+        if (!reuse && !signer.isActive() && signer.getCertificatePem() != null) {
+            if (signer.getSigningCertificateId() != null) {
+                signingCertRepository.findById(signer.getSigningCertificateId()).ifPresent(sc -> {
+                    if (!sc.isActive()) {
+                        signingCertRepository.delete(sc);
+                    }
+                });
+            }
+            signer.setSigningCertificateId(null);
+            signer.setCertificatePem(null);
+            signer.setCertSubjectDn(null);
+            signer.setCertIssuerDn(null);
+            signer.setCertSerialNumber(null);
+            signer.setCertNotBefore(null);
+            signer.setCertNotAfter(null);
+        }
+
         signer.setKey(persistedKey);
+        signer.setKeyLabel(targetKeyLabel);
         signer.setSubjectDn(subjectDn);
         signer.setKeyAlgorithm(keyAlg);
         signer.setKeySize(keySize);

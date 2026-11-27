@@ -248,9 +248,10 @@ export const SignersPage = () => {
         try {
             setCsrLoading(true);
             if (generateNow || !s.hasCsr) {
-                const generated = await generateSignerCsr(s.id, {});
+                const reqBody = s.hasCsr ? { reuseExistingKey: false } : {};
+                const generated = await generateSignerCsr(s.id, reqBody);
                 setCsrData(generated);
-                setSuccess(`Generated key '${generated.keyLabel}' (persisted to ocsp_keys) & signed CSR on Token '${generated.tokenDeviceId}'.`);
+                setSuccess(`Generated key '${generated.keyLabel}' (Key #${generated.keyId ?? 'new'} in ocsp_keys) & signed CSR on Token '${generated.tokenDeviceId}'.`);
                 await fetchAll();
             } else {
                 const existing = await getSignerCsr(s.id, false);
@@ -479,7 +480,7 @@ export const SignersPage = () => {
                                                 leftSection={<IconFileCertificate size={14} />}
                                                 onClick={() => openCsrModal(s, !s.hasCsr)}
                                             >
-                                                {s.hasCsr ? 'View / Re-gen CSR' : '1. Generate Key & CSR'}
+                                                {s.hasCsr ? 'View / Re-gen Key & CSR' : '1. Generate Key & CSR'}
                                             </Button>
                                             <Button
                                                 size="compact-xs"
@@ -815,7 +816,7 @@ export const SignersPage = () => {
                                 </Button>
                                 {canOperate && (
                                     <Button size="xs" variant="subtle" color="orange" leftSection={<IconRefresh size={14} />} onClick={() => openCsrModal(csrModalSigner, true)}>
-                                        Re-generate CSR
+                                        Re-generate New Key &amp; CSR
                                     </Button>
                                 )}
                             </Group>

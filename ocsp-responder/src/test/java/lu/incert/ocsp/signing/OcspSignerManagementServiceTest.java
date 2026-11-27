@@ -264,4 +264,52 @@ class OcspSignerManagementServiceTest {
         assertThat(bound.keyAlgorithm()).isEqualTo("EC");
         assertThat(bound.keySize()).isEqualTo(256);
     }
+
+    @Test
+    void regenerateCsrGeneratesBrandNewKeyWithFreshUuidLabel() {
+        when(deviceRepository.findByDeviceId("softhsm-primary")).thenReturn(Optional.of(tokenPrimary));
+        when(ocspSigner.listProviders()).thenReturn(List.of(
+                new ProviderDeviceInfo("softhsm-primary", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", null,
+                        "ocsp-signing", 101L, "ACTIVE", true, "ACTIVE", List.of(), Map.of())
+        ));
+
+        AtomicReference<OcspSignerEntity> storedSigner = new AtomicReference<>();
+        java.util.concurrent.atomic.AtomicLong keyIdSeq = new java.util.concurrent.atomic.AtomicLong(100L);
+
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> {
+            OcspSignerEntity e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(9L);
+            storedSigner.set(e);
+            return e;
+        });
+        when(signerRepository.findById(9L)).thenAnswer(inv -> Optional.ofNullable(storedSigner.get()));
+        when(keyRepository.save(any(OcspKeyEntity.class))).thenAnswer(inv -> {
+            OcspKeyEntity k = inv.getArgument(0);
+            if (k.getId() == null) k.setId(keyIdSeq.incrementAndGet());
+            return k;
+        });
+        when(signingCertificateService.generateCsr(any(GenerateCsrRequest.class))).thenAnswer(inv -> {
+            GenerateCsrRequest req = inv.getArgument(0);
+            assertThat(req.reuseExistingKey()).isFalse();
+            return new GenerateCsrResponse("softhsm-primary", req.keyLabel(), req.subjectDn(), "RSA", sampleCsrPem);
+        });
+
+        SignerDto created = service.createSigner(new SignerRequest(
+                null, "Regen Test Signer", "CN=Incert Regen,O=Incert,C=LU",
+                null, "RSA", 2048, "SHA256withRSA", List.of("softhsm-primary")));
+
+        // 1st CSR generation
+        var firstCsr = service.generateCsr(9L, null);
+        assertThat(firstCsr.keyId()).isEqualTo(101L);
+        assertThat(firstCsr.keyLabel()).isEqualTo(created.keyLabel());
+
+        // 2nd CSR generation (re-generate): MUST generate a brand-new UUID keyLabel & new OcspKeyEntity
+        var secondCsr = service.generateCsr(9L, null);
+        assertThat(secondCsr.keyId()).isEqualTo(102L);
+        assertThat(secondCsr.keyLabel()).isNotEqualTo(firstCsr.keyLabel());
+        assertThat(secondCsr.keyLabel())
+                .matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        assertThat(storedSigner.get().getKeyLabel()).isEqualTo(secondCsr.keyLabel());
+        assertThat(storedSigner.get().getKey().getId()).isEqualTo(102L);
+    }
 }
