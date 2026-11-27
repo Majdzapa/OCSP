@@ -15,3 +15,4 @@ public class UnauthorizedIssuerException extends IllegalStateException {
         super(message);
     }
 }
+
