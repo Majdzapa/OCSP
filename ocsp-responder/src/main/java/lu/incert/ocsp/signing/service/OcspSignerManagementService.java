@@ -716,6 +716,108 @@ public class OcspSignerManagementService {
     }
 
     /**
+     * Attaches an existing persisted key ({@code ocsp_keys}) to this Signer.
+     * Automatically links the key's HSM Token to the Signer if not already bound.
+     */
+    @Transactional
+    public SignerDto attachKeyToSigner(Long signerId, Long keyId) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        OcspKeyEntity key = keyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalArgumentException("Key not found: " + keyId));
+        if (key.getSigner() != null && !key.getSigner().getId().equals(signerId) && key.isActive()) {
+            throw new IllegalStateException("Key #" + keyId + " ('" + key.getKeyLabel()
+                    + "') is currently ACTIVE on signer '" + key.getSigner().getCode()
+                    + "'. Deactivate it there first.");
+        }
+        key.setSigner(signer);
+        key.setActive(false);
+        keyRepository.save(key);
+
+        if (key.getTokenDevice() != null) {
+            boolean alreadyBound = signer.getTokens().stream()
+                    .anyMatch(t -> t.getTokenDevice() != null
+                            && t.getTokenDevice().getId().equals(key.getTokenDevice().getId()));
+            if (!alreadyBound) {
+                int nextOrder = signer.getTokens().size();
+                signer.getTokens().add(OcspSignerTokenEntity.builder()
+                        .signer(signer)
+                        .tokenDevice(key.getTokenDevice())
+                        .priorityOrder(nextOrder)
+                        .role(nextOrder == 0 ? "PRIMARY" : "FAILOVER")
+                        .build());
+            }
+        }
+        if (signer.getKey() == null) {
+            signer.setKey(key);
+            signer.setKeyLabel(key.getKeyLabel());
+            signer.setKeyAlgorithm(key.getKeyAlgorithm());
+            signer.setKeySize(key.getKeySize());
+        }
+        OcspSignerEntity saved = signerRepository.save(signer);
+        log.info("Attached existing Key #{} ('{}') to Signer '{}' (id={})",
+                key.getId(), key.getKeyLabel(), saved.getCode(), saved.getId());
+        return toDto(saved, mapLiveDevices());
+    }
+
+    /**
+     * Links an existing HSM Crypto Token ({@code crypto_devices}) to this Signer (idempotent).
+     */
+    @Transactional
+    public SignerDto linkTokenToSigner(Long signerId, String deviceId) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        String cleanDeviceId = requireClean(deviceId, "deviceId");
+        CryptoDeviceEntity device = deviceRepository.findByDeviceId(cleanDeviceId)
+                .orElseThrow(() -> new IllegalArgumentException("HSM Token / device not found: '" + cleanDeviceId + "'"));
+
+        boolean alreadyLinked = signer.getTokens().stream()
+                .anyMatch(t -> t.getTokenDevice() != null
+                        && cleanDeviceId.equals(t.getTokenDevice().getDeviceId()));
+        if (!alreadyLinked) {
+            int nextOrder = signer.getTokens().size();
+            signer.getTokens().add(OcspSignerTokenEntity.builder()
+                    .signer(signer)
+                    .tokenDevice(device)
+                    .priorityOrder(nextOrder)
+                    .role(nextOrder == 0 ? "PRIMARY" : "FAILOVER")
+                    .build());
+            signer = signerRepository.save(signer);
+            log.info("Linked HSM Token '{}' to Signer '{}' (id={}, role={})",
+                    cleanDeviceId, signer.getCode(), signer.getId(), nextOrder == 0 ? "PRIMARY" : "FAILOVER");
+        }
+        return toDto(signer, mapLiveDevices());
+    }
+
+    /**
+     * Unlinks an HSM Crypto Token from this Signer (at least one token must remain bound).
+     */
+    @Transactional
+    public SignerDto unlinkTokenFromSigner(Long signerId, String deviceId) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        String cleanDeviceId = requireClean(deviceId, "deviceId");
+        if (signer.getTokens().size() <= 1) {
+            throw new IllegalStateException("Cannot unlink the last remaining HSM Token from signer '" + signer.getCode() + "'");
+        }
+        if (signer.isActive() && signer.getKey() != null && signer.getKey().getTokenDevice() != null
+                && cleanDeviceId.equals(signer.getKey().getTokenDevice().getDeviceId())) {
+            throw new IllegalStateException("Cannot unlink HSM Token '" + cleanDeviceId
+                    + "': it holds the currently ACTIVE key of this signer. Deactivate or rotate the key first.");
+        }
+        boolean removed = signer.getTokens().removeIf(t -> t.getTokenDevice() != null
+                && cleanDeviceId.equals(t.getTokenDevice().getDeviceId()));
+        if (!removed) {
+            throw new IllegalArgumentException("HSM Token '" + cleanDeviceId + "' is not linked to signer " + signerId);
+        }
+        signer.getTokens().sort(java.util.Comparator.comparingInt(OcspSignerTokenEntity::getPriorityOrder));
+        for (int i = 0; i < signer.getTokens().size(); i++) {
+            signer.getTokens().get(i).setPriorityOrder(i);
+            signer.getTokens().get(i).setRole(i == 0 ? "PRIMARY" : "FAILOVER");
+        }
+        OcspSignerEntity saved = signerRepository.save(signer);
+        log.info("Unlinked HSM Token '{}' from Signer '{}' (id={})", cleanDeviceId, saved.getCode(), saved.getId());
+        return toDto(saved, mapLiveDevices());
+    }
+
+    /**
      * Deletes a non-active (retired or pending) key under a Signer. Active keys cannot be deleted.
      */
     @Transactional

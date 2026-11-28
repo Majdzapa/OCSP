@@ -182,6 +182,9 @@ export const generateSignerCsr = (id, req) => api.post(`/signers/${id}/csr`, req
 export const getSignerCsr = (id, generateIfMissing = false) => api.get(`/signers/${id}/csr`, { params: { generateIfMissing } }).then((r) => r.data);
 export const getSignerCertificate = (id) => api.get(`/signers/${id}/cert`).then((r) => r.data);
 export const importSignerCertificate = (id, req) => api.post(`/signers/${id}/cert`, req).then((r) => r.data);
+export const attachKeyToSigner = (signerId, keyId) => api.post(`/signers/${signerId}/keys/${keyId}`).then((r) => r.data);
+export const linkTokenToSigner = (signerId, deviceId) => api.post(`/signers/${signerId}/tokens/${encodeURIComponent(deviceId)}`).then((r) => r.data);
+export const unlinkTokenFromSigner = (signerId, deviceId) => api.delete(`/signers/${signerId}/tokens/${encodeURIComponent(deviceId)}`).then((r) => r.data);
 export const importSignerKeyCertificate = (signerId, keyId, req) => api.post(`/signers/${signerId}/keys/${keyId}/cert`, req).then((r) => r.data);
 export const activateSignerKey = (signerId, keyId) => api.put(`/signers/${signerId}/keys/${keyId}/activate`).then((r) => r.data);
 export const deleteSignerKey = (signerId, keyId) => api.delete(`/signers/${signerId}/keys/${keyId}`).then((r) => r.data);

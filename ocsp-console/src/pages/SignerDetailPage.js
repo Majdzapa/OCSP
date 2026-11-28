@@ -12,6 +12,7 @@ import {
     Table,
     ActionIcon,
     Modal,
+    Select,
     Textarea,
     PasswordInput,
     Switch,
@@ -48,10 +49,17 @@ import {
     IconPlayerPause,
     IconDatabaseImport,
     IconHierarchy2,
+    IconLink,
+    IconUnlink,
 } from '@tabler/icons-react';
 import {
     getSignerById,
+    getOcspKeys,
+    getCryptoDevices,
     generateSignerCsr,
+    attachKeyToSigner,
+    linkTokenToSigner,
+    unlinkTokenFromSigner,
     importSignerKeyCertificate,
     activateSignerKey,
     deleteSignerKey,
@@ -448,6 +456,8 @@ export const SignerDetailPage = () => {
     const canOperate = isAdmin || roleNames.includes('ROLE_AGENT');
 
     const [signer, setSigner] = useState(null);
+    const [allKeys, setAllKeys] = useState([]);
+    const [allDevices, setAllDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [syncingDeviceId, setSyncingDeviceId] = useState(null);
@@ -457,6 +467,10 @@ export const SignerDetailPage = () => {
     const [selectedKeyId, setSelectedKeyId] = useState(null);
 
     // Modals
+    const [attachKeyModalOpen, setAttachKeyModalOpen] = useState(false);
+    const [attachKeyId, setAttachKeyId] = useState('');
+    const [linkTokenModalOpen, setLinkTokenModalOpen] = useState(false);
+    const [linkTokenDeviceId, setLinkTokenDeviceId] = useState('');
     const [viewKeyModal, setViewKeyModal] = useState(null);
     const [csrModalData, setCsrModalData] = useState(null);
     const [certModalKey, setCertModalKey] = useState(null);
@@ -470,8 +484,14 @@ export const SignerDetailPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const data = await getSignerById(id);
+            const [data, keysList, devicesList] = await Promise.all([
+                getSignerById(id),
+                getOcspKeys().catch(() => []),
+                getCryptoDevices().catch(() => []),
+            ]);
             setSigner(data);
+            setAllKeys(keysList || []);
+            setAllDevices(devicesList || []);
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to load OCSP Signer');
         } finally {
@@ -630,6 +650,79 @@ export const SignerDetailPage = () => {
             setError(err?.response?.data?.error || err?.message || 'Failed to sync keys');
         } finally {
             setSyncingDeviceId(null);
+        }
+    };
+
+    const availableKeysToAttach = useMemo(() => {
+        if (!signer) return [];
+        const ownedIds = new Set(signerKeys.map((k) => k.id));
+        return allKeys
+            .filter((k) => !ownedIds.has(k.id) && !(k.boundSignerId && k.boundSignerId !== signer.id && k.active))
+            .map((k) => ({
+                value: String(k.id),
+                label: `#${k.id} · ${k.keyLabel} (${k.keyAlgorithm} ${k.keySize} · Token: ${k.tokenDeviceCode || 'HSM'} · ${k.status}${k.boundSignerName ? ' · currently on ' + k.boundSignerName : ''})`,
+            }));
+    }, [allKeys, signer, signerKeys]);
+
+    const availableTokensToLink = useMemo(() => {
+        if (!signer) return [];
+        const boundIds = new Set((signer.tokens || []).map((t) => t.deviceId));
+        return allDevices
+            .filter((d) => !boundIds.has(d.deviceId))
+            .map((d) => ({
+                value: d.deviceId,
+                label: `${d.deviceId} (${d.providerCode} · ${d.tokenLabel || 'slot ' + d.slotId} · ${d.activationState})`,
+            }));
+    }, [allDevices, signer]);
+
+    const handleAttachExistingKey = async (e) => {
+        e.preventDefault();
+        if (!signer || !attachKeyId) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await attachKeyToSigner(signer.id, Number(attachKeyId));
+            setAttachKeyModalOpen(false);
+            setAttachKeyId('');
+            setSuccess(`Attached Key #${attachKeyId} to signer '${signer.name}'.`);
+            await fetchSigner();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to attach existing key');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLinkToken = async (e) => {
+        e.preventDefault();
+        if (!signer || !linkTokenDeviceId) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await linkTokenToSigner(signer.id, linkTokenDeviceId);
+            setLinkTokenModalOpen(false);
+            setLinkTokenDeviceId('');
+            setSuccess(`Linked HSM Token '${linkTokenDeviceId}' to signer '${signer.name}'.`);
+            await fetchSigner();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to link HSM Token');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUnlinkToken = async (deviceId) => {
+        if (!window.confirm(`Unlink HSM Token '${deviceId}' from signer '${signer.name}'?`)) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await unlinkTokenFromSigner(signer.id, deviceId);
+            setSuccess(`Unlinked HSM Token '${deviceId}' from signer '${signer.name}'.`);
+            await fetchSigner();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to unlink HSM Token');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -834,7 +927,24 @@ export const SignerDetailPage = () => {
                             <IconCpu size={18} color="#38bdf8" />
                             <Title order={4} c="white">Bound HSM Crypto Tokens ({(signer.tokens || []).length})</Title>
                         </Group>
-                        <Text size="xs" c="dimmed">Deactivating a token immediately disables all keys stored inside it</Text>
+                        <Group gap="xs">
+                            <Text size="xs" c="dimmed">Deactivating a token disables all keys inside it</Text>
+                            {canOperate && (
+                                <Button
+                                    size="compact-xs"
+                                    variant="light"
+                                    color="blue"
+                                    leftSection={<IconLink size={13} />}
+                                    disabled={availableTokensToLink.length === 0}
+                                    onClick={() => {
+                                        setLinkTokenDeviceId(availableTokensToLink[0]?.value || '');
+                                        setLinkTokenModalOpen(true);
+                                    }}
+                                >
+                                    Link Token
+                                </Button>
+                            )}
+                        </Group>
                     </Group>
 
                     <Table.ScrollContainer minWidth={720}>
@@ -907,6 +1017,19 @@ export const SignerDetailPage = () => {
                                                             Activate (PIN)
                                                         </Button>
                                                     )}
+                                                    {canOperate && (signer.tokens || []).length > 1 && (
+                                                        <Tooltip label="Unlink token from this signer">
+                                                            <ActionIcon
+                                                                size="sm"
+                                                                variant="subtle"
+                                                                color="red"
+                                                                loading={saving}
+                                                                onClick={() => handleUnlinkToken(t.deviceId)}
+                                                            >
+                                                                <IconUnlink size={14} />
+                                                            </ActionIcon>
+                                                        </Tooltip>
+                                                    )}
                                                 </Group>
                                             </Table.Td>
                                         </Table.Tr>
@@ -928,17 +1051,32 @@ export const SignerDetailPage = () => {
                             <Badge size="xs" color="teal" variant="light">MAX 1 ACTIVE KEY</Badge>
                         </Group>
                         {canOperate && (
-                            <Button
-                                size="compact-xs"
-                                variant="light"
-                                color="cyan"
-                                leftSection={<IconPlus size={13} />}
-                                disabled={!anyTokenActive}
-                                loading={saving}
-                                onClick={handleGenerateNextKeyCsr}
-                            >
-                                Generate Next Key &amp; CSR
-                            </Button>
+                            <Group gap="xs">
+                                <Button
+                                    size="compact-xs"
+                                    variant="light"
+                                    color="indigo"
+                                    leftSection={<IconLink size={13} />}
+                                    disabled={availableKeysToAttach.length === 0}
+                                    onClick={() => {
+                                        setAttachKeyId(availableKeysToAttach[0]?.value || '');
+                                        setAttachKeyModalOpen(true);
+                                    }}
+                                >
+                                    Attach Existing Key
+                                </Button>
+                                <Button
+                                    size="compact-xs"
+                                    variant="light"
+                                    color="cyan"
+                                    leftSection={<IconPlus size={13} />}
+                                    disabled={!anyTokenActive}
+                                    loading={saving}
+                                    onClick={handleGenerateNextKeyCsr}
+                                >
+                                    Generate Next Key &amp; CSR
+                                </Button>
+                            </Group>
                         )}
                     </Group>
 
@@ -1218,6 +1356,68 @@ export const SignerDetailPage = () => {
                         )}
                     </Stack>
                 )}
+            </Modal>
+
+            {/* Modal: Attach Existing Key to Signer */}
+            <Modal
+                opened={attachKeyModalOpen}
+                onClose={() => setAttachKeyModalOpen(false)}
+                title={<Group gap="xs"><IconKey size={20} color="#818cf8" /><Text fw={700}>Attach Existing Key to {signer.name}</Text></Group>}
+                size="lg"
+            >
+                <form onSubmit={handleAttachExistingKey}>
+                    <Stack gap="md">
+                        <Alert color="indigo" variant="light">
+                            Select an existing cryptographic key from <Code>ocsp_keys</Code> to add to this Signer. Its HSM Token will also be linked automatically if not already bound.
+                        </Alert>
+                        <Select
+                            label="Available Keys (ocsp_keys)"
+                            placeholder="Choose a key..."
+                            data={availableKeysToAttach}
+                            value={attachKeyId}
+                            onChange={(val) => setAttachKeyId(val || '')}
+                            searchable
+                            required
+                        />
+                        <Group justify="flex-end">
+                            <Button variant="default" onClick={() => setAttachKeyModalOpen(false)}>Cancel</Button>
+                            <Button type="submit" color="indigo" loading={saving} leftSection={<IconLink size={15} />}>
+                                Add Key to Signer
+                            </Button>
+                        </Group>
+                    </Stack>
+                </form>
+            </Modal>
+
+            {/* Modal: Link HSM Token to Signer */}
+            <Modal
+                opened={linkTokenModalOpen}
+                onClose={() => setLinkTokenModalOpen(false)}
+                title={<Group gap="xs"><IconCpu size={20} color="#38bdf8" /><Text fw={700}>Link HSM Token to {signer.name}</Text></Group>}
+                size="md"
+            >
+                <form onSubmit={handleLinkToken}>
+                    <Stack gap="md">
+                        <Alert color="cyan" variant="light">
+                            Link another HSM Crypto Token to this Signer (added as <Code>FAILOVER</Code>, or <Code>PRIMARY</Code> if none bound yet).
+                        </Alert>
+                        <Select
+                            label="Available HSM Crypto Tokens"
+                            placeholder="Choose a token..."
+                            data={availableTokensToLink}
+                            value={linkTokenDeviceId}
+                            onChange={(val) => setLinkTokenDeviceId(val || '')}
+                            searchable
+                            required
+                        />
+                        <Group justify="flex-end">
+                            <Button variant="default" onClick={() => setLinkTokenModalOpen(false)}>Cancel</Button>
+                            <Button type="submit" color="blue" loading={saving} leftSection={<IconLink size={15} />}>
+                                Link Token
+                            </Button>
+                        </Group>
+                    </Stack>
+                </form>
             </Modal>
 
             {/* Modal: Quick Unlock Token */}

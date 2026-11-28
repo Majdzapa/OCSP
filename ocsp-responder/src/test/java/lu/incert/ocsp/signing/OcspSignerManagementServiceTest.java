@@ -473,4 +473,43 @@ class OcspSignerManagementServiceTest {
         assertThat(switched.keys().stream().filter(k -> "ACTIVE".equals(k.status())).count()).isEqualTo(1);
         assertThat(switched.keys().stream().filter(k -> "READY".equals(k.status())).count()).isEqualTo(1);
     }
+
+    @Test
+    void attachExistingKeyAndLinkUnlinkTokenWorkOnSigner() {
+        OcspSignerEntity signer = OcspSignerEntity.builder()
+                .id(12L).code("link-signer").name("Link Signer").status("DRAFT").subjectDn("CN=Link")
+                .keyLabel("initial").keyAlgorithm("RSA").keySize(2048)
+                .signatureAlgorithm("SHA256withRSA").active(false).build();
+        signer.getTokens().add(lu.incert.ocsp.signing.entity.OcspSignerTokenEntity.builder()
+                .id(120L).signer(signer).tokenDevice(tokenPrimary).priorityOrder(0).role("PRIMARY").build());
+
+        OcspKeyEntity existingKey = OcspKeyEntity.builder()
+                .id(401L).keyLabel("preexisting-key").tokenDevice(tokenFailover)
+                .keyAlgorithm("RSA").keySize(2048).publicKeyPem("PEM").publicKeySha1("abc").active(false).build();
+
+        when(signerRepository.findById(12L)).thenReturn(Optional.of(signer));
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(keyRepository.findById(401L)).thenReturn(Optional.of(existingKey));
+        when(keyRepository.save(any(OcspKeyEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(keyRepository.findAllBySigner_IdOrderByIdDesc(12L)).thenReturn(List.of(existingKey));
+        when(deviceRepository.findByDeviceId("softhsm-secondary")).thenReturn(Optional.of(tokenFailover));
+        when(ocspSigner.listProviders()).thenReturn(List.of());
+
+        // Attach existing key on tokenFailover -> automatically links tokenFailover too!
+        SignerDto afterAttach = service.attachKeyToSigner(12L, 401L);
+        assertThat(existingKey.getSigner()).isSameAs(signer);
+        assertThat(afterAttach.tokens()).hasSize(2);
+        assertThat(afterAttach.keys()).hasSize(1);
+        assertThat(afterAttach.keys().get(0).keyLabel()).isEqualTo("preexisting-key");
+
+        // Unlink tokenFailover
+        SignerDto afterUnlink = service.unlinkTokenFromSigner(12L, "softhsm-secondary");
+        assertThat(afterUnlink.tokens()).hasSize(1);
+        assertThat(afterUnlink.tokens().get(0).deviceId()).isEqualTo("softhsm-primary");
+
+        // Re-link tokenFailover explicitly
+        SignerDto afterRelink = service.linkTokenToSigner(12L, "softhsm-secondary");
+        assertThat(afterRelink.tokens()).hasSize(2);
+        assertThat(afterRelink.tokens().get(1).role()).isEqualTo("FAILOVER");
+    }
 }

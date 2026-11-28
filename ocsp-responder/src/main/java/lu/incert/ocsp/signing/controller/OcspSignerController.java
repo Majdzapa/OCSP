@@ -178,6 +178,49 @@ public class OcspSignerController {
         }
     }
 
+    @Operation(summary = "Attach an existing persisted key (ocsp_keys) to an OCSP Signer")
+    @PostMapping("/{id}/keys/{keyId}")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_CREATE_CSR')")
+    public ResponseEntity<?> attachKeyToSigner(@PathVariable Long id, @PathVariable Long keyId) {
+        try {
+            return ResponseEntity.ok(signerService.attachKeyToSigner(id, keyId));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = e.getMessage() != null && (e.getMessage().startsWith("Signer not found") || e.getMessage().startsWith("Key not found"))
+                    ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Link an existing HSM Crypto Token to an OCSP Signer")
+    @PostMapping("/{id}/tokens/{deviceId}")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_CREATE_CSR')")
+    public ResponseEntity<?> linkTokenToSigner(@PathVariable Long id, @PathVariable String deviceId) {
+        try {
+            return ResponseEntity.ok(signerService.linkTokenToSigner(id, deviceId));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = e.getMessage() != null && (e.getMessage().startsWith("Signer not found") || e.getMessage().startsWith("HSM Token"))
+                    ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Unlink an HSM Crypto Token from an OCSP Signer")
+    @DeleteMapping("/{id}/tokens/{deviceId}")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_CREATE_CSR')")
+    public ResponseEntity<?> unlinkTokenFromSigner(@PathVariable Long id, @PathVariable String deviceId) {
+        try {
+            return ResponseEntity.ok(signerService.unlinkTokenFromSigner(id, deviceId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @Operation(summary = "Import a CA-signed X.509 certificate for a specific key under an OCSP Signer (zero-downtime rollover, 0 HSM calls)")
     @PostMapping("/{id}/keys/{keyId}/cert")
     @PreAuthorize("hasPermission(null, 'SIGNING_CERT_IMPORT')")
