@@ -74,8 +74,26 @@ public class OcspSignerManagementService {
 
     @Transactional(readOnly = true)
     public List<OcspKeyDto> listKeys() {
+        Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
+        List<OcspSignerEntity> allSigners = signerRepository.findAllByOrderByIdAsc();
+        Map<Long, OcspSignerEntity> signerByKeyId = new java.util.HashMap<>();
+        Map<String, OcspSignerEntity> signerByKeyLabel = new java.util.HashMap<>();
+        for (OcspSignerEntity s : allSigners) {
+            if (s.getKey() != null && s.getKey().getId() != null) {
+                signerByKeyId.merge(s.getKey().getId(), s, (a, b) -> b.isActive() ? b : a);
+            }
+            if (s.getKeyLabel() != null && !s.getKeyLabel().isBlank()) {
+                signerByKeyLabel.merge(s.getKeyLabel(), s, (a, b) -> b.isActive() ? b : a);
+            }
+        }
         return keyRepository.findAllByOrderByIdDesc().stream()
-                .map(OcspSignerManagementService::toKeyDto)
+                .map(k -> {
+                    OcspSignerEntity bound = signerByKeyId.get(k.getId());
+                    if (bound == null && k.getKeyLabel() != null) {
+                        bound = signerByKeyLabel.get(k.getKeyLabel());
+                    }
+                    return toKeyDto(k, liveDevices, bound);
+                })
                 .toList();
     }
 
@@ -468,17 +486,49 @@ public class OcspSignerManagementService {
             throw new IllegalStateException("Cannot activate signer '" + signer.getCode()
                     + "': import a CA-signed certificate first (POST /signers/" + id + "/cert)");
         }
+
+        // EJBCA rule: if HSM tokens are registered and ALL bound tokens are deactivated/LOCKED, refuse activation
+        Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
+        if (!liveDevices.isEmpty() && signer.getTokens() != null && !signer.getTokens().isEmpty()) {
+            boolean anyTokenActive = signer.getTokens().stream().anyMatch(t -> {
+                ProviderDeviceInfo info = liveDevices.get(t.getTokenDevice().getDeviceId());
+                return info != null && DeviceActivationState.ACTIVE.name().equals(info.activationState());
+            });
+            if (!anyTokenActive) {
+                throw new IllegalStateException("Cannot activate signer '" + signer.getCode()
+                        + "': all bound HSM token(s) are deactivated/LOCKED. Unlock a token first.");
+            }
+        }
+
         SigningCertificateDto activated = signingCertificateService.activate(signer.getSigningCertificateId());
 
+        Set<Long> myTokenIds = signer.getTokens() == null ? Set.of() : signer.getTokens().stream()
+                .filter(t -> t.getTokenDevice() != null && t.getTokenDevice().getId() != null)
+                .map(t -> t.getTokenDevice().getId())
+                .collect(Collectors.toSet());
+
+        // EJBCA rule: at most ONE active key/signer per HSM token — deactivate any other active signer
+        // sharing a token (or whose SigningCertificate was auto-deactivated).
         for (OcspSignerEntity other : signerRepository.findAll()) {
-            if (!other.getId().equals(signer.getId()) && other.getSigningCertificateId() != null) {
-                boolean stillActive = signingCertRepository.findById(other.getSigningCertificateId())
-                        .map(SigningCertificate::isActive)
-                        .orElse(false);
-                if (other.isActive() && !stillActive) {
+            if (!other.getId().equals(signer.getId()) && other.isActive()) {
+                boolean sharesToken = other.getTokens() != null && other.getTokens().stream()
+                        .anyMatch(t -> t.getTokenDevice() != null && myTokenIds.contains(t.getTokenDevice().getId()));
+                boolean certStillActive = other.getSigningCertificateId() != null
+                        && signingCertRepository.findById(other.getSigningCertificateId())
+                                .map(SigningCertificate::isActive)
+                                .orElse(false);
+                if (sharesToken || !certStillActive) {
+                    if (sharesToken && certStillActive && other.getSigningCertificateId() != null) {
+                        signingCertRepository.findById(other.getSigningCertificateId()).ifPresent(sc -> {
+                            sc.setActive(false);
+                            signingCertRepository.save(sc);
+                        });
+                    }
                     other.setActive(false);
                     other.setStatus("INACTIVE");
                     signerRepository.save(other);
+                    log.info("Auto-deactivated OCSP Signer '{}' (id={}) — only one key/signer may be active per token",
+                            other.getCode(), other.getId());
                 }
             }
         }
@@ -487,7 +537,7 @@ public class OcspSignerManagementService {
         signer.setActivatedAt(activated.activatedAt() != null ? activated.activatedAt() : Instant.now());
         signer.setStatus("ACTIVE");
         OcspSignerEntity saved = signerRepository.save(signer);
-        return toDto(saved, mapLiveDevices());
+        return toDto(saved, liveDevices);
     }
 
     @Transactional
@@ -604,9 +654,10 @@ public class OcspSignerManagementService {
 
     private SignerDto toDto(OcspSignerEntity entity, Map<String, ProviderDeviceInfo> liveDevices) {
         OcspKeyEntity keyEntity = entity.getKey();
-        OcspKeyDto keyDto = keyEntity != null ? toKeyDto(keyEntity) : null;
+        OcspKeyDto keyDto = keyEntity != null ? toKeyDto(keyEntity, liveDevices, entity) : null;
 
         List<SignerDto.SignerTokenDto> tokenDtos = new ArrayList<>();
+        boolean anyTokenActive = false;
         if (entity.getTokens() != null) {
             for (OcspSignerTokenEntity t : entity.getTokens()) {
                 CryptoDeviceEntity dev = t.getTokenDevice();
@@ -614,6 +665,9 @@ public class OcspSignerManagementService {
                 ProviderDeviceInfo live = liveDevices.get(dev.getDeviceId());
                 String state = live != null ? live.activationState() : DeviceActivationState.LOCKED.name();
                 boolean healthy = live != null && live.healthy();
+                if (DeviceActivationState.ACTIVE.name().equals(state)) {
+                    anyTokenActive = true;
+                }
                 boolean keyRegistered = keyEntity != null
                         && (keyEntity.getTokenDevice() == null
                                 || keyEntity.getTokenDevice().getId() == null
@@ -653,7 +707,9 @@ public class OcspSignerManagementService {
         if (certDto != null && certDto.expired()) {
             effectiveStatus = "EXPIRED";
         } else if (entity.isActive()) {
-            effectiveStatus = "ACTIVE";
+            effectiveStatus = (!tokenDtos.isEmpty() && !liveDevices.isEmpty() && !anyTokenActive)
+                    ? "TOKEN_LOCKED"
+                    : "ACTIVE";
         }
 
         return new SignerDto(
@@ -681,8 +737,49 @@ public class OcspSignerManagementService {
         );
     }
 
-    private static OcspKeyDto toKeyDto(OcspKeyEntity entity) {
+    private static OcspKeyDto toKeyDto(
+            OcspKeyEntity entity,
+            Map<String, ProviderDeviceInfo> liveDevices,
+            OcspSignerEntity boundSigner) {
         CryptoDeviceEntity td = entity.getTokenDevice();
+        ProviderDeviceInfo live = td != null && liveDevices != null ? liveDevices.get(td.getDeviceId()) : null;
+        String tokenState;
+        if (td != null && !td.isEnabled()) {
+            tokenState = "DISABLED";
+        } else if (live != null && live.activationState() != null) {
+            tokenState = live.activationState();
+        } else {
+            tokenState = DeviceActivationState.LOCKED.name();
+        }
+        boolean tokenActive = DeviceActivationState.ACTIVE.name().equals(tokenState);
+
+        boolean hasCert = boundSigner != null
+                && boundSigner.getCertificatePem() != null
+                && !boundSigner.getCertificatePem().isBlank();
+        Long daysLeft = null;
+        boolean certExpired = false;
+        if (hasCert && boundSigner.getCertNotAfter() != null) {
+            Instant now = Instant.now();
+            daysLeft = ChronoUnit.DAYS.between(now, boundSigner.getCertNotAfter());
+            certExpired = now.isAfter(boundSigner.getCertNotAfter());
+        }
+
+        // EJBCA key status:
+        // - UNAVAILABLE when its HSM token is deactivated / LOCKED / DISABLED
+        // - EXPIRED when its bound certificate is expired
+        // - ACTIVE when token is ACTIVE and its bound signer is active (at most 1 per token)
+        // - INACTIVE when token is ACTIVE and key is standby / ready
+        String keyStatus;
+        if (!tokenActive) {
+            keyStatus = "UNAVAILABLE";
+        } else if (certExpired) {
+            keyStatus = "EXPIRED";
+        } else if (boundSigner != null && boundSigner.isActive()) {
+            keyStatus = "ACTIVE";
+        } else {
+            keyStatus = "INACTIVE";
+        }
+
         return new OcspKeyDto(
                 entity.getId(),
                 entity.getKeyLabel(),
@@ -695,7 +792,15 @@ public class OcspSignerManagementService {
                 entity.getPublicKeyPem(),
                 entity.getPublicKeySha1(),
                 entity.getGeneratedAt(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                tokenState,
+                tokenActive,
+                keyStatus,
+                boundSigner != null ? boundSigner.getId() : null,
+                boundSigner != null ? boundSigner.getCode() : null,
+                boundSigner != null ? boundSigner.getName() : null,
+                hasCert,
+                daysLeft
         );
     }
 

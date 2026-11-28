@@ -324,17 +324,19 @@ public class SigningCertificateService {
             }
         }
 
-        // Deactivate any previously active signing certificate for the same Issuer CA or same HSM key
+        // EJBCA rule: at most ONE active signing key/certificate per HSM token (and per Issuing CA)
         for (SigningCertificate existing : repository.findAllByActiveTrueOrderByActivatedAtDesc()) {
             if (!existing.getId().equals(target.getId())) {
                 boolean sameIssuer = existing.getIssuerDn() != null && existing.getIssuerDn().equals(target.getIssuerDn());
+                boolean sameToken = java.util.Objects.equals(
+                        resolveProviderId(existing.getProviderId()), resolveProviderId(target.getProviderId()));
                 boolean sameKey = existing.getKeyLabel() != null && existing.getKeyLabel().equals(target.getKeyLabel())
-                        && java.util.Objects.equals(resolveProviderId(existing.getProviderId()), resolveProviderId(target.getProviderId()));
-                if (sameIssuer || sameKey) {
+                        && sameToken;
+                if (sameIssuer || sameToken || sameKey) {
                     existing.setActive(false);
                     repository.save(existing);
-                    log.info("Auto-deactivated superseded signing certificate id={}, alias='{}' (issuerDn='{}', keyLabel='{}')",
-                            existing.getId(), existing.getAlias(), existing.getIssuerDn(), existing.getKeyLabel());
+                    log.info("Auto-deactivated superseded signing certificate id={}, alias='{}' (sameIssuer={}, sameToken={}, sameKey={})",
+                            existing.getId(), existing.getAlias(), sameIssuer, sameToken, sameKey);
                 }
             }
         }

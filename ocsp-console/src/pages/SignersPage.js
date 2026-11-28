@@ -1,19 +1,76 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Container, Paper, Title, Text, Group, Stack, Button, Badge, ActionIcon,
-    Modal, TextInput, Textarea, PasswordInput, Select, MultiSelect, Switch,
-    Alert, Loader, Tooltip, Code, Box, SimpleGrid, CopyButton, FileButton, Divider,
+    Container,
+    Paper,
+    Title,
+    Text,
+    Group,
+    Stack,
+    Button,
+    Badge,
+    Table,
+    ActionIcon,
+    Modal,
+    TextInput,
+    Textarea,
+    PasswordInput,
+    Select,
+    MultiSelect,
+    Switch,
+    Alert,
+    Loader,
+    Tooltip,
+    Code,
+    Box,
+    SimpleGrid,
+    CopyButton,
+    FileButton,
+    Divider,
+    Tabs,
+    Card,
+    ThemeIcon,
 } from '@mantine/core';
 import {
-    IconKey, IconPlus, IconRefresh, IconCheck, IconTrash, IconEdit, IconEye,
-    IconAlertCircle, IconLockOpen, IconFileCertificate, IconCertificate,
-    IconCopy, IconDownload, IconUpload, IconX,
+    IconKey,
+    IconPlus,
+    IconRefresh,
+    IconCheck,
+    IconTrash,
+    IconEdit,
+    IconAlertCircle,
+    IconCopy,
+    IconDownload,
+    IconUpload,
+    IconFileCertificate,
+    IconCertificate,
+    IconLock,
+    IconLockOpen,
+    IconCpu,
+    IconX,
+    IconEye,
+    IconShieldCheck,
+    IconPlayerPlay,
+    IconPlayerPause,
+    IconDatabaseImport,
 } from '@tabler/icons-react';
 import {
-    getSigners, getOcspKeys, createSigner, updateSigner, deleteSigner,
-    generateSignerCsr, getSignerCsr, getSignerCertificate, importSignerCertificate,
-    activateSigner, deactivateSigner, getCryptoDevices, activateCryptoDevice,
-    getProviderCapabilities, checkSigningAlgorithm,
+    getSigners,
+    getOcspKeys,
+    createSigner,
+    updateSigner,
+    deleteSigner,
+    generateSignerCsr,
+    getSignerCsr,
+    getSignerCertificate,
+    importSignerCertificate,
+    activateSigner,
+    deactivateSigner,
+    getCryptoDevices,
+    activateCryptoDevice,
+    deactivateCryptoDevice,
+    syncCryptoDeviceKeys,
+    getProviderCapabilities,
+    checkSigningAlgorithm,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -40,26 +97,50 @@ function generateUuid() {
     });
 }
 
+function KeyStatusBadge({ status }) {
+    if (status === 'ACTIVE') {
+        return <Badge color="green" variant="filled" size="sm">ACTIVE</Badge>;
+    }
+    if (status === 'INACTIVE') {
+        return <Badge color="cyan" variant="light" size="sm">STANDBY</Badge>;
+    }
+    if (status === 'EXPIRED') {
+        return <Badge color="red" variant="filled" size="sm">EXPIRED</Badge>;
+    }
+    return <Badge color="orange" variant="outline" size="sm">UNAVAILABLE</Badge>;
+}
+
+function SignerStatusBadge({ status }) {
+    if (status === 'ACTIVE') return <Badge color="green" variant="filled" size="sm">ACTIVE</Badge>;
+    if (status === 'TOKEN_LOCKED') return <Badge color="orange" variant="filled" size="sm">TOKEN DEACTIVATED</Badge>;
+    if (status === 'CERT_IMPORTED') return <Badge color="teal" variant="light" size="sm">CERT IMPORTED</Badge>;
+    if (status === 'CSR_GENERATED') return <Badge color="cyan" variant="light" size="sm">CSR READY</Badge>;
+    if (status === 'EXPIRED') return <Badge color="red" variant="filled" size="sm">EXPIRED</Badge>;
+    return <Badge color="gray" variant="light" size="sm">{status || 'DRAFT'}</Badge>;
+}
+
 export const SignersPage = () => {
     const { user } = useAuth();
-    const roleNames = (user?.roles ?? []).map((r) => typeof r === 'string' ? r : (r?.authority ?? ''));
+    const roleNames = (user?.roles ?? []).map((r) => (typeof r === 'string' ? r : r?.authority ?? ''));
     const isAdmin = roleNames.includes('ROLE_ADMIN');
     const canOperate = isAdmin || roleNames.includes('ROLE_AGENT');
 
+    const [activeTab, setActiveTab] = useState('signers');
     const [signers, setSigners] = useState([]);
     const [keys, setKeys] = useState([]);
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [syncingDeviceId, setSyncingDeviceId] = useState(null);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
-    // Create / Edit Signer modal
+    // Create / Edit Signer Modal
     const [formOpen, setFormOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [code, setCode] = useState('');
     const [name, setName] = useState('');
-    const [subjectDn, setSubjectDn] = useState('CN=Incert Delegated OCSP Signer,O=Incert,C=LU');
+    const [subjectDn, setSubjectDn] = useState('CN=Incert OCSP Signer,O=Incert,C=LU');
     const [useExistingKey, setUseExistingKey] = useState(false);
     const [selectedKeyId, setSelectedKeyId] = useState('');
     const [keyLabel, setKeyLabel] = useState('');
@@ -70,22 +151,22 @@ export const SignersPage = () => {
     const [capabilities, setCapabilities] = useState(null);
     const [algCheck, setAlgCheck] = useState(null);
 
-    // Public Key viewer modal (from ocsp_keys — 0 HSM calls)
+    // View Persisted Key Modal
     const [viewKeyModal, setViewKeyModal] = useState(null);
 
-    // CSR modal (GET / POST /signer/{id}/csr)
+    // CSR Modal
     const [csrModalSigner, setCsrModalSigner] = useState(null);
     const [csrData, setCsrData] = useState(null);
     const [csrLoading, setCsrLoading] = useState(false);
 
-    // Certificate modal (GET / POST /signer/{id}/cert)
+    // Certificate Modal
     const [certModalSigner, setCertModalSigner] = useState(null);
     const [certData, setCertData] = useState(null);
     const [certPemInput, setCertPemInput] = useState('');
     const [certActivateNow, setCertActivateNow] = useState(true);
     const [certLoading, setCertLoading] = useState(false);
 
-    // Quick Unlock modal for LOCKED HSM Tokens
+    // Quick Unlock Modal
     const [unlockDeviceId, setUnlockDeviceId] = useState(null);
     const [unlockPin, setUnlockPin] = useState('');
 
@@ -93,16 +174,16 @@ export const SignersPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const [sList, kList, dList] = await Promise.all([
+            const [signerList, keyList, devList] = await Promise.all([
                 getSigners(),
                 getOcspKeys().catch(() => []),
                 getCryptoDevices().catch(() => []),
             ]);
-            setSigners(sList);
-            setKeys(kList);
-            setDevices(dList);
+            setSigners(signerList || []);
+            setKeys(keyList || []);
+            setDevices(devList || []);
         } catch (err) {
-            setError(err?.response?.data?.error || err?.message || 'Failed to load OCSP Signers');
+            setError(err?.response?.data?.error || err?.message || 'Failed to load OCSP Signers, Tokens & Keys');
         } finally {
             setLoading(false);
         }
@@ -112,54 +193,99 @@ export const SignersPage = () => {
         fetchAll();
     }, [fetchAll]);
 
-    const primaryTokenId = tokenIds[0] || '';
-
-    // Load cached HSM capabilities for the primary selected Token
+    // Live capability check for primary token in Create/Edit modal
     useEffect(() => {
-        if (!formOpen || !primaryTokenId) {
+        if (!formOpen || tokenIds.length === 0) {
             setCapabilities(null);
+            setAlgCheck(null);
             return;
         }
+        const primary = tokenIds[0];
         let cancelled = false;
-        getProviderCapabilities(primaryTokenId)
+        getProviderCapabilities(primary)
             .then((caps) => { if (!cancelled) setCapabilities(caps); })
             .catch(() => { if (!cancelled) setCapabilities(null); });
         return () => { cancelled = true; };
-    }, [formOpen, primaryTokenId]);
+    }, [formOpen, tokenIds]);
 
-    // Pre-verify key + signature algorithm against the primary Token's cached mechanism list (0 token object scans)
     useEffect(() => {
-        if (!formOpen || !primaryTokenId || !signatureAlgorithm) {
+        if (!formOpen || tokenIds.length === 0 || !capabilities?.liveIntrospected) {
             setAlgCheck(null);
             return;
         }
         let cancelled = false;
         checkSigningAlgorithm({
-            providerId: primaryTokenId,
-            keyLabel: null,
+            providerId: tokenIds[0],
             keyAlgorithm,
-            keySize: keySize ? Number(keySize) : null,
+            keySize: Number(keySize),
             signatureAlgorithm,
         })
             .then((res) => { if (!cancelled) setAlgCheck(res); })
             .catch(() => { if (!cancelled) setAlgCheck(null); });
         return () => { cancelled = true; };
-    }, [formOpen, primaryTokenId, keyAlgorithm, keySize, signatureAlgorithm]);
+    }, [formOpen, tokenIds, capabilities, keyAlgorithm, keySize, signatureAlgorithm]);
 
-    const openCreate = () => {
+    // Computed EJBCA metrics
+    const stats = useMemo(() => {
+        const activeTokens = devices.filter((d) => d.activationState === 'ACTIVE').length;
+        const activeKeys = keys.filter((k) => k.status === 'ACTIVE').length;
+        const standbyKeys = keys.filter((k) => k.status === 'INACTIVE').length;
+        const unavailableKeys = keys.filter((k) => k.status === 'UNAVAILABLE' || k.status === 'EXPIRED').length;
+        const activeSigners = signers.filter((s) => s.status === 'ACTIVE').length;
+        const lockedSigners = signers.filter((s) => s.status === 'TOKEN_LOCKED').length;
+        return {
+            totalTokens: devices.length,
+            activeTokens,
+            totalKeys: keys.length,
+            activeKeys,
+            standbyKeys,
+            unavailableKeys,
+            totalSigners: signers.length,
+            activeSigners,
+            lockedSigners,
+        };
+    }, [devices, keys, signers]);
+
+    // Group keys by token deviceId for EJBCA Crypto Token view
+    const keysByTokenDeviceId = useMemo(() => {
+        const map = new Map();
+        for (const d of devices) {
+            map.set(d.deviceId, []);
+        }
+        for (const k of keys) {
+            const devCode = k.tokenDeviceCode || '__unassigned__';
+            if (!map.has(devCode)) map.set(devCode, []);
+            map.get(devCode).push(k);
+        }
+        return map;
+    }, [devices, keys]);
+
+    const openCreate = (presetTokenDeviceId = null, presetKey = null) => {
         setEditingId(null);
-        const nextIdx = signers.length + 1;
         setCode(generateUuid());
-        setName(`OCSP Delegated Signer ${nextIdx}`);
-        setSubjectDn('CN=Incert Delegated OCSP Signer,O=Incert,C=LU');
-        setUseExistingKey(false);
-        setSelectedKeyId('');
-        setKeyLabel(generateUuid());
-        setKeyAlgorithm('RSA');
-        setKeySize('3072');
-        setSignatureAlgorithm('SHA256withRSA');
-        const defaultDev = devices.find((d) => d.isDefault) || devices[0];
-        setTokenIds(defaultDev ? [defaultDev.deviceId] : []);
+        setName('');
+        setSubjectDn('CN=Incert OCSP Signer,O=Incert,C=LU');
+        if (presetKey) {
+            setUseExistingKey(true);
+            setSelectedKeyId(String(presetKey.id));
+            setKeyLabel(presetKey.keyLabel);
+            setKeyAlgorithm(presetKey.keyAlgorithm || 'RSA');
+            setKeySize(String(presetKey.keySize || 3072));
+            setSignatureAlgorithm(presetKey.keyAlgorithm === 'EC' ? 'SHA256withECDSA' : 'SHA256withRSA');
+        } else {
+            setUseExistingKey(false);
+            setSelectedKeyId('');
+            setKeyLabel(generateUuid());
+            setKeyAlgorithm('RSA');
+            setKeySize('3072');
+            setSignatureAlgorithm('SHA256withRSA');
+        }
+        if (presetTokenDeviceId) {
+            setTokenIds([presetTokenDeviceId]);
+        } else {
+            const defaultDev = devices.find((d) => d.activationState === 'ACTIVE') || devices[0];
+            setTokenIds(defaultDev ? [defaultDev.deviceId] : []);
+        }
         setError(null);
         setFormOpen(true);
     };
@@ -169,13 +295,8 @@ export const SignersPage = () => {
         setCode(s.code);
         setName(s.name);
         setSubjectDn(s.subjectDn);
-        if (s.keyId != null) {
-            setUseExistingKey(true);
-            setSelectedKeyId(String(s.keyId));
-        } else {
-            setUseExistingKey(false);
-            setSelectedKeyId('');
-        }
+        setUseExistingKey(Boolean(s.keyId));
+        setSelectedKeyId(s.keyId ? String(s.keyId) : '');
         setKeyLabel(s.keyLabel);
         setKeyAlgorithm(s.keyAlgorithm || 'RSA');
         setKeySize(String(s.keySize || 3072));
@@ -211,10 +332,10 @@ export const SignersPage = () => {
             };
             if (editingId != null) {
                 await updateSigner(editingId, payload);
-                setSuccess(`Signer '${payload.code}' updated.`);
+                setSuccess(`Signer '${payload.name}' updated.`);
             } else {
                 await createSigner(payload);
-                setSuccess(`Signer '${payload.code}' created with ${tokenIds.length} HSM Token(s).`);
+                setSuccess(`Signer '${payload.name}' created with ${tokenIds.length} HSM Token(s).`);
             }
             setFormOpen(false);
             await fetchAll();
@@ -226,12 +347,12 @@ export const SignersPage = () => {
     };
 
     const handleDeleteSigner = async (s) => {
-        if (!window.confirm(`Delete OCSP Signer '${s.code}'?`)) return;
+        if (!window.confirm(`Delete OCSP Signer '${s.name}' (${s.code})?`)) return;
         try {
             setSaving(true);
             setError(null);
             await deleteSigner(s.id);
-            setSuccess(`Signer '${s.code}' deleted.`);
+            setSuccess(`Signer '${s.name}' deleted.`);
             await fetchAll();
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to delete signer');
@@ -240,7 +361,6 @@ export const SignersPage = () => {
         }
     };
 
-    // ---- CSR Workflow (GET /signer/{id}/csr & POST /signer/{id}/csr) ----
     const openCsrModal = async (s, generateNow = false) => {
         setCsrModalSigner(s);
         setCsrData(null);
@@ -251,7 +371,7 @@ export const SignersPage = () => {
                 const reqBody = s.hasCsr ? { reuseExistingKey: false } : {};
                 const generated = await generateSignerCsr(s.id, reqBody);
                 setCsrData(generated);
-                setSuccess(`Generated key '${generated.keyLabel}' (Key #${generated.keyId ?? 'new'} in ocsp_keys) & signed CSR on Token '${generated.tokenDeviceId}'.`);
+                setSuccess(`Generated key '${generated.keyLabel}' & signed CSR on Token '${generated.tokenDeviceId}'.`);
                 await fetchAll();
             } else {
                 const existing = await getSignerCsr(s.id, false);
@@ -264,12 +384,12 @@ export const SignersPage = () => {
         }
     };
 
-    // ---- Certificate Workflow (GET /signer/{id}/cert & POST /signer/{id}/cert — 0 HSM Token Calls) ----
     const openCertModal = async (s) => {
         setCertModalSigner(s);
         setCertData(null);
         setCertPemInput('');
-        setCertActivateNow(isAdmin);
+        const hasActiveToken = (s.tokens || []).some((t) => t.activationState === 'ACTIVE');
+        setCertActivateNow(isAdmin && hasActiveToken);
         setError(null);
         if (s.hasCertificate) {
             try {
@@ -296,8 +416,9 @@ export const SignersPage = () => {
                 activateImmediately: isAdmin ? certActivateNow : false,
             });
             setCertData(updated.certificate);
+            setCertModalSigner(updated);
             setCertPemInput('');
-            setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.code}' (verified against ocsp_keys with zero HSM token calls).`);
+            setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.name}'.`);
             await fetchAll();
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to import certificate into signer');
@@ -315,16 +436,16 @@ export const SignersPage = () => {
         reader.readAsText(file);
     };
 
-    const handleToggleActive = async (s) => {
+    const handleToggleSignerActive = async (signerId, currentlyActive, label) => {
         try {
             setSaving(true);
             setError(null);
-            if (s.active) {
-                await deactivateSigner(s.id);
-                setSuccess(`Signer '${s.code}' deactivated.`);
+            if (currentlyActive) {
+                await deactivateSigner(signerId);
+                setSuccess(`Signer '${label}' deactivated.`);
             } else {
-                await activateSigner(s.id);
-                setSuccess(`Signer '${s.code}' activated for live RFC 6960 OCSP signing.`);
+                await activateSigner(signerId);
+                setSuccess(`Signer '${label}' activated (any other active key in the same token was automatically deactivated).`);
             }
             await fetchAll();
         } catch (err) {
@@ -344,23 +465,54 @@ export const SignersPage = () => {
             setError(null);
             await activateCryptoDevice(unlockDeviceId, pin);
             setUnlockDeviceId(null);
-            setSuccess(`HSM Token '${unlockDeviceId}' unlocked via C_Login.`);
+            setSuccess(`Crypto Token '${unlockDeviceId}' activated (unlocked via C_Login). Keys in this token are now available.`);
             await fetchAll();
         } catch (err) {
-            setError(err?.response?.data?.error || err?.message || 'Failed to unlock HSM Token');
+            setError(err?.response?.data?.error || err?.message || 'Failed to unlock Crypto Token');
         } finally {
             setSaving(false);
         }
     };
 
+    const handleDeactivateToken = async (deviceId) => {
+        if (!window.confirm(`Deactivate (lock) Crypto Token '${deviceId}'? All keys in this token will become UNAVAILABLE until unlocked with PIN.`)) {
+            return;
+        }
+        try {
+            setSaving(true);
+            setError(null);
+            await deactivateCryptoDevice(deviceId);
+            setSuccess(`Crypto Token '${deviceId}' deactivated (LOCKED). All keys in this token are now UNAVAILABLE.`);
+            await fetchAll();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to deactivate Crypto Token');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSyncTokenKeys = async (deviceId) => {
+        try {
+            setSyncingDeviceId(deviceId);
+            setError(null);
+            const synced = await syncCryptoDeviceKeys(deviceId);
+            setSuccess(`Synchronized ${synced.length} key(s) from unlocked HSM Token '${deviceId}' into ocsp_keys.`);
+            await fetchAll();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to sync keys from HSM Token');
+        } finally {
+            setSyncingDeviceId(null);
+        }
+    };
+
     const tokenOptions = devices.map((d) => ({
         value: d.deviceId,
-        label: `${d.deviceId} (${d.providerCode} · token: ${d.tokenLabel || 'slot ' + d.slotId} · ${d.activationState})`,
+        label: `${d.deviceId} (${d.providerCode} · ${d.tokenLabel || 'slot ' + d.slotId} · ${d.activationState})`,
     }));
 
     const existingKeyOptions = keys.map((k) => ({
         value: String(k.id),
-        label: `Key #${k.id} · ${k.keyLabel} (${k.keyAlgorithm} ${k.keySize}${k.tokenDeviceCode ? ' · ' + k.tokenDeviceCode : ''})`,
+        label: `${k.keyLabel} (${k.keyAlgorithm} ${k.keySize} · ${k.tokenDeviceCode || 'HSM'} · ${k.status})`,
     }));
 
     const keyCapList = capabilities?.keyAlgorithms || [];
@@ -391,35 +543,39 @@ export const SignersPage = () => {
             : ['SHA256withRSA', 'SHA384withRSA', 'SHA512withRSA', 'SHA256withRSAandMGF1', 'SHA384withRSAandMGF1', 'SHA512withRSAandMGF1']
         ).map((a) => ({ value: a, label: a }));
 
-    const statusBadgeColor = (status) => {
-        if (status === 'ACTIVE') return 'green';
-        if (status === 'CERT_IMPORTED') return 'teal';
-        if (status === 'CSR_GENERATED') return 'cyan';
-        if (status === 'EXPIRED') return 'red';
-        return 'gray';
-    };
-
     return (
         <Container size="xl" py="md">
             <Stack gap="md">
+                {/* Header */}
                 <Group justify="space-between" align="flex-start" wrap="wrap">
                     <Box>
                         <Group gap="xs">
-                            <IconKey size={26} color="#818cf8" />
-                            <Title order={2} c="white">OCSP Signers</Title>
-                            <Badge color="indigo" variant="light">KEY ENTITY · TOKENS · CSR · CERT</Badge>
+                            <ThemeIcon size={34} radius="md" variant="gradient" gradient={{ from: 'indigo', to: 'cyan' }}>
+                                <IconKey size={20} />
+                            </ThemeIcon>
+                            <Box>
+                                <Group gap="xs">
+                                    <Title order={2} c="white" lh={1.1}>OCSP Signers &amp; Crypto Tokens</Title>
+                                    <Badge color="indigo" variant="light" size="sm">EJBCA KEY BINDING MODEL</Badge>
+                                </Group>
+                                <Text c="dimmed" size="xs" mt={3}>
+                                    Manage HSM Crypto Tokens, inspect every key&apos;s live status (max 1 active key per token), and bind OCSP Signers with zero idle HSM scans.
+                                </Text>
+                            </Box>
                         </Group>
-                        <Text c="dimmed" size="sm" mt={2}>
-                            Unified Signer aggregate linking persisted Keys (<Code>ocsp_keys</Code>) and ordered HSM Tokens (<Code>ocsp_signer_tokens</Code>).
-                            Hardware tokens are touched <b>only</b> during keygen/CSR (<Code>POST /signer/&#123;id&#125;/csr</Code>) and live OCSP signing (<Code>POST /ocsp</Code>).
-                        </Text>
                     </Box>
                     <Group gap="xs">
                         <Button variant="default" size="sm" leftSection={<IconRefresh size={15} />} onClick={fetchAll} loading={loading}>
                             Refresh
                         </Button>
                         {canOperate && (
-                            <Button variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} size="sm" leftSection={<IconPlus size={15} />} onClick={openCreate}>
+                            <Button
+                                variant="gradient"
+                                gradient={{ from: 'indigo.6', to: 'violet.6' }}
+                                size="sm"
+                                leftSection={<IconPlus size={15} />}
+                                onClick={() => openCreate()}
+                            >
                                 New OCSP Signer
                             </Button>
                         )}
@@ -437,183 +593,546 @@ export const SignersPage = () => {
                     </Alert>
                 )}
 
-                {loading ? (
-                    <Group justify="center" p="xl"><Loader size="md" /></Group>
-                ) : signers.length === 0 ? (
-                    <Paper withBorder p="xl" radius="md" ta="center">
-                        <Text c="dimmed" mb="md">No OCSP Signers configured yet.</Text>
-                        {canOperate && (
-                            <Button variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} leftSection={<IconPlus size={15} />} onClick={openCreate}>
-                                Create First OCSP Signer
+                {/* KPI Summary Row */}
+                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+                    <Card withBorder p="sm" radius="md" style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}>
+                        <Group justify="space-between">
+                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Crypto Tokens</Text>
+                            <IconCpu size={16} color="#38bdf8" />
+                        </Group>
+                        <Group gap="xs" align="baseline" mt={4}>
+                            <Text fz={24} fw={700} c={stats.activeTokens > 0 ? 'teal.4' : 'orange.4'}>
+                                {stats.activeTokens} / {stats.totalTokens}
+                            </Text>
+                            <Text size="xs" c="dimmed">active (unlocked)</Text>
+                        </Group>
+                    </Card>
+
+                    <Card withBorder p="sm" radius="md" style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}>
+                        <Group justify="space-between">
+                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Token Keys (ocsp_keys)</Text>
+                            <IconKey size={16} color="#818cf8" />
+                        </Group>
+                        <Group gap={6} mt={6} wrap="wrap">
+                            <Badge color="green" variant="filled" size="sm">{stats.activeKeys} Active</Badge>
+                            <Badge color="cyan" variant="light" size="sm">{stats.standbyKeys} Standby</Badge>
+                            <Badge color="orange" variant="outline" size="sm">{stats.unavailableKeys} Unavailable</Badge>
+                        </Group>
+                    </Card>
+
+                    <Card withBorder p="sm" radius="md" style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}>
+                        <Group justify="space-between">
+                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>OCSP Signers (Key Bindings)</Text>
+                            <IconShieldCheck size={16} color="#22c55e" />
+                        </Group>
+                        <Group gap="xs" align="baseline" mt={4}>
+                            <Text fz={24} fw={700} c="white">
+                                {stats.activeSigners} / {stats.totalSigners}
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                                active{stats.lockedSigners > 0 ? ` · ${stats.lockedSigners} token locked` : ''}
+                            </Text>
+                        </Group>
+                    </Card>
+                </SimpleGrid>
+
+                {/* Live Crypto Tokens Quick Bar (always visible) */}
+                {devices.length > 0 && (
+                    <Paper withBorder p="sm" radius="md" style={{ backgroundColor: 'rgba(15, 23, 42, 0.45)' }}>
+                        <Group justify="space-between" mb="xs">
+                            <Group gap="xs">
+                                <IconCpu size={16} color="#38bdf8" />
+                                <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                                    HSM Crypto Tokens ({devices.length}) — Deactivating a token disables all keys inside it
+                                </Text>
+                            </Group>
+                            <Button size="compact-xs" variant="subtle" color="cyan" onClick={() => setActiveTab('tokens')}>
+                                Inspect All Tokens &amp; Keys →
                             </Button>
-                        )}
-                    </Paper>
-                ) : (
-                    <Stack gap="md">
-                        {signers.map((s) => (
-                            <Paper
-                                key={s.id}
-                                withBorder
-                                p="md"
-                                radius="md"
-                                style={{
-                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                                    borderColor: s.active ? 'rgba(34, 197, 94, 0.45)' : undefined,
-                                }}
-                            >
-                                <Stack gap="sm">
-                                    {/* Top Row: Identity + Lifecycle Badges + Actions */}
-                                    <Group justify="space-between" wrap="wrap" gap="xs">
-                                        <Group gap="xs">
-                                            <Badge size="md" color={statusBadgeColor(s.status)} variant="filled">
-                                                {s.status}
+                        </Group>
+                        <Group gap="xs" wrap="wrap">
+                            {devices.map((d) => {
+                                const isActive = d.activationState === 'ACTIVE';
+                                const tokenKeys = keysByTokenDeviceId.get(d.deviceId) || [];
+                                const activeCount = tokenKeys.filter((k) => k.status === 'ACTIVE').length;
+                                return (
+                                    <Paper
+                                        key={d.deviceId}
+                                        withBorder
+                                        px="sm"
+                                        py={6}
+                                        radius="sm"
+                                        style={{
+                                            backgroundColor: isActive ? 'rgba(34, 197, 94, 0.08)' : 'rgba(249, 115, 22, 0.08)',
+                                            borderColor: isActive ? 'rgba(34, 197, 94, 0.35)' : 'rgba(249, 115, 22, 0.35)',
+                                        }}
+                                    >
+                                        <Group gap="xs" wrap="nowrap">
+                                            <Badge size="xs" color={isActive ? 'green' : 'orange'} variant="dot">
+                                                {isActive ? 'ACTIVE' : 'DEACTIVATED'}
                                             </Badge>
-                                            <Text fw={700} fz="md" c="white">{s.name}</Text>
-                                            <Code>{s.code}</Code>
-                                            <Badge size="xs" color="gray" variant="outline">ID #{s.id}</Badge>
-                                        </Group>
-                                        <Group gap="xs" wrap="wrap">
-                                            <Button
-                                                size="compact-xs"
-                                                variant={s.hasCsr ? 'light' : 'filled'}
-                                                color="cyan"
-                                                leftSection={<IconFileCertificate size={14} />}
-                                                onClick={() => openCsrModal(s, !s.hasCsr)}
-                                            >
-                                                {s.hasCsr ? 'View / Re-gen Key & CSR' : '1. Generate Key & CSR'}
-                                            </Button>
-                                            <Button
-                                                size="compact-xs"
-                                                variant={s.hasCertificate ? 'light' : 'filled'}
-                                                color="indigo"
-                                                leftSection={<IconCertificate size={14} />}
-                                                onClick={() => openCertModal(s)}
-                                            >
-                                                {s.hasCertificate ? 'View / Replace Cert' : '2. Import Certificate'}
-                                            </Button>
-                                            {isAdmin && s.hasCertificate && (
-                                                <Button
-                                                    size="compact-xs"
-                                                    variant={s.active ? 'light' : 'filled'}
-                                                    color={s.active ? 'orange' : 'green'}
-                                                    leftSection={<IconCheck size={14} />}
-                                                    loading={saving}
-                                                    onClick={() => handleToggleActive(s)}
-                                                >
-                                                    {s.active ? 'Deactivate' : '3. Activate Signer'}
-                                                </Button>
-                                            )}
-                                            {canOperate && (
-                                                <Tooltip label="Edit signer, Key & Tokens">
-                                                    <ActionIcon variant="light" color="blue" onClick={() => openEdit(s)}>
-                                                        <IconEdit size={15} />
-                                                    </ActionIcon>
-                                                </Tooltip>
-                                            )}
-                                            {isAdmin && !s.active && (
-                                                <Tooltip label="Delete signer">
-                                                    <ActionIcon variant="light" color="red" onClick={() => handleDeleteSigner(s)}>
-                                                        <IconTrash size={15} />
-                                                    </ActionIcon>
-                                                </Tooltip>
-                                            )}
-                                        </Group>
-                                    </Group>
-
-                                    {/* Middle Row: Key Entity (ocsp_keys) + Bound HSM Tokens (ocsp_signer_tokens) + Certificate */}
-                                    <SimpleGrid cols={{ base: 1, md: 3 }} spacing="sm">
-                                        <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                                            <Group justify="space-between">
-                                                <Text size="10px" c="dimmed" tt="uppercase" fw={700}>Key Entity (ocsp_keys)</Text>
-                                                {s.key ? (
-                                                    <Group gap={4}>
-                                                        <Badge size="xs" color="teal" variant="light">KEY #{s.key.id}</Badge>
-                                                        <Tooltip label="View persisted Public Key SPKI (0 HSM calls)">
-                                                            <ActionIcon size="xs" variant="subtle" color="cyan" onClick={() => setViewKeyModal(s.key)}>
-                                                                <IconEye size={13} />
-                                                            </ActionIcon>
-                                                        </Tooltip>
-                                                    </Group>
+                                            <Text size="xs" fw={700} c="white">{d.deviceId}</Text>
+                                            <Text size="xs" c="dimmed">
+                                                ({tokenKeys.length} key{tokenKeys.length === 1 ? '' : 's'}{isActive ? `, ${activeCount} active` : ' · disabled'})
+                                            </Text>
+                                            {isAdmin && (
+                                                isActive ? (
+                                                    <Tooltip label="Deactivate (Lock) token — disables all keys in this token">
+                                                        <ActionIcon
+                                                            size="xs"
+                                                            variant="subtle"
+                                                            color="orange"
+                                                            onClick={() => handleDeactivateToken(d.deviceId)}
+                                                        >
+                                                            <IconLock size={13} />
+                                                        </ActionIcon>
+                                                    </Tooltip>
                                                 ) : (
-                                                    <Badge size="xs" color="gray" variant="outline">PENDING KEYGEN</Badge>
-                                                )}
-                                            </Group>
-                                            <Group gap={6} mt={4} wrap="wrap">
-                                                <Badge size="xs" color="indigo" variant="outline">{s.keyLabel}</Badge>
-                                                <Badge size="xs" color="cyan" variant="light">{s.keyAlgorithm} {s.keySize}</Badge>
-                                                <Badge size="xs" color="teal" variant="light">{s.signatureAlgorithm}</Badge>
-                                            </Group>
-                                            {s.key?.publicKeySha1 && (
-                                                <Text size="11px" c="dimmed" mt={4} lineClamp={1}>
-                                                    Key SHA-1: <Code>{s.key.publicKeySha1}</Code>
-                                                </Text>
+                                                    <Button
+                                                        size="compact-xs"
+                                                        variant="light"
+                                                        color="green"
+                                                        leftSection={<IconLockOpen size={12} />}
+                                                        onClick={() => { setUnlockPin(''); setUnlockDeviceId(d.deviceId); }}
+                                                    >
+                                                        Activate
+                                                    </Button>
+                                                )
                                             )}
-                                            <Text size="xs" c="dimmed" mt={2} lineClamp={1}>DN: {s.subjectDn}</Text>
-                                        </Paper>
+                                        </Group>
+                                    </Paper>
+                                );
+                            })}
+                        </Group>
+                    </Paper>
+                )}
 
-                                        <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                                            <Text size="10px" c="dimmed" tt="uppercase" fw={700}>HSM Tokens ({(s.tokens || []).length})</Text>
-                                            <Stack gap={4} mt={4}>
-                                                {(s.tokens || []).map((t) => (
-                                                    <Group key={t.deviceId} justify="space-between" gap={4} wrap="nowrap">
-                                                        <Group gap={4} wrap="nowrap">
-                                                            <Badge size="xs" color={t.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
-                                                                {t.role}
-                                                            </Badge>
-                                                            <Code>{t.deviceId}</Code>
-                                                            <Text size="11px" c="dimmed">({t.tokenLabel || `slot ${t.slotId}`})</Text>
-                                                        </Group>
-                                                        <Group gap={4} wrap="nowrap">
-                                                            {t.keyRegistered && <Badge size="xs" color="teal" variant="outline">KEY BOUND</Badge>}
-                                                            <Badge size="xs" color={t.activationState === 'ACTIVE' ? 'green' : 'orange'} variant="dot">
-                                                                {t.activationState}
-                                                            </Badge>
-                                                            {isAdmin && t.activationState !== 'ACTIVE' && (
-                                                                <Button size="compact-xs" variant="subtle" color="green" onClick={() => { setUnlockPin(''); setUnlockDeviceId(t.deviceId); }}>
-                                                                    Unlock
+                {/* Main EJBCA-Style Tabs */}
+                <Tabs value={activeTab} onChange={setActiveTab} color="indigo" variant="outline">
+                    <Tabs.List>
+                        <Tabs.Tab value="signers" leftSection={<IconShieldCheck size={16} />}>
+                            OCSP Signers (Key Bindings) ({signers.length})
+                        </Tabs.Tab>
+                        <Tabs.Tab value="tokens" leftSection={<IconCpu size={16} />}>
+                            Crypto Tokens &amp; Available Keys ({devices.length} tokens · {keys.length} keys)
+                        </Tabs.Tab>
+                    </Tabs.List>
+
+                    {/* ============================================================= */}
+                    {/* TAB 1: OCSP SIGNERS (EJBCA INTERNAL KEY BINDINGS TABLE)       */}
+                    {/* ============================================================= */}
+                    <Tabs.Panel value="signers" pt="md">
+                        {loading ? (
+                            <Group justify="center" p="xl"><Loader size="md" /></Group>
+                        ) : signers.length === 0 ? (
+                            <Paper withBorder p="xl" radius="md" ta="center">
+                                <Text c="dimmed" mb="md">No OCSP Signers configured yet.</Text>
+                                {canOperate && (
+                                    <Button variant="gradient" gradient={{ from: 'indigo.6', to: 'violet.6' }} leftSection={<IconPlus size={15} />} onClick={() => openCreate()}>
+                                        Create First OCSP Signer
+                                    </Button>
+                                )}
+                            </Paper>
+                        ) : (
+                            <Paper withBorder radius="md" p="xs" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)' }}>
+                                <Table.ScrollContainer minWidth={960}>
+                                    <Table verticalSpacing="sm" highlightOnHover>
+                                        <Table.Thead>
+                                            <Table.Tr>
+                                                <Table.Th>Status</Table.Th>
+                                                <Table.Th>Signer (Key Binding)</Table.Th>
+                                                <Table.Th>Crypto Token(s)</Table.Th>
+                                                <Table.Th>Key &amp; Key Status</Table.Th>
+                                                <Table.Th>X.509 Certificate</Table.Th>
+                                                <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+                                            </Table.Tr>
+                                        </Table.Thead>
+                                        <Table.Tbody>
+                                            {signers.map((s) => {
+                                                const anyTokenActive = (s.tokens || []).some((t) => t.activationState === 'ACTIVE');
+                                                const keyStatus = s.key?.status || (anyTokenActive ? 'INACTIVE' : 'UNAVAILABLE');
+                                                return (
+                                                    <Table.Tr
+                                                        key={s.id}
+                                                        style={s.status === 'ACTIVE'
+                                                            ? { backgroundColor: 'rgba(34, 197, 94, 0.06)' }
+                                                            : s.status === 'TOKEN_LOCKED'
+                                                                ? { backgroundColor: 'rgba(249, 115, 22, 0.06)' }
+                                                                : undefined}
+                                                    >
+                                                        <Table.Td>
+                                                            <Stack gap={4}>
+                                                                <SignerStatusBadge status={s.status} />
+                                                                <Text size="10px" c="dimmed">ID #{s.id}</Text>
+                                                            </Stack>
+                                                        </Table.Td>
+
+                                                        <Table.Td>
+                                                            <Text fw={700} size="sm" c="white">{s.name}</Text>
+                                                            <Text size="xs" c="dimmed" lineClamp={1}>{s.subjectDn}</Text>
+                                                            <Code fz={10}>{s.code}</Code>
+                                                        </Table.Td>
+
+                                                        <Table.Td>
+                                                            <Stack gap={4}>
+                                                                {(s.tokens || []).map((t) => {
+                                                                    const isUp = t.activationState === 'ACTIVE';
+                                                                    return (
+                                                                        <Group key={t.deviceId} gap={5} wrap="nowrap">
+                                                                            <Badge size="xs" color={t.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
+                                                                                {t.role === 'PRIMARY' ? '1°' : 'HA'}
+                                                                            </Badge>
+                                                                            <Code fz={11}>{t.deviceId}</Code>
+                                                                            <Badge size="xs" color={isUp ? 'green' : 'orange'} variant="dot">
+                                                                                {isUp ? 'ACTIVE' : 'LOCKED'}
+                                                                            </Badge>
+                                                                        </Group>
+                                                                    );
+                                                                })}
+                                                            </Stack>
+                                                        </Table.Td>
+
+                                                        <Table.Td>
+                                                            <Stack gap={4}>
+                                                                <Group gap={5} wrap="nowrap">
+                                                                    <KeyStatusBadge status={s.key ? keyStatus : 'UNAVAILABLE'} />
+                                                                    <Badge size="xs" color="cyan" variant="light">
+                                                                        {s.keyAlgorithm} {s.keySize}
+                                                                    </Badge>
+                                                                    {s.key && (
+                                                                        <Tooltip label="Inspect persisted Public Key (0 HSM calls)">
+                                                                            <ActionIcon size="xs" variant="subtle" color="cyan" onClick={() => setViewKeyModal(s.key)}>
+                                                                                <IconEye size={13} />
+                                                                            </ActionIcon>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                </Group>
+                                                                <Text size="11px" c="dimmed" ff="monospace" lineClamp={1} title={s.keyLabel}>
+                                                                    {s.keyLabel}
+                                                                </Text>
+                                                                <Text size="10px" c="dimmed">{s.signatureAlgorithm}</Text>
+                                                            </Stack>
+                                                        </Table.Td>
+
+                                                        <Table.Td>
+                                                            {s.certificate ? (
+                                                                <Stack gap={2}>
+                                                                    <Group gap={5}>
+                                                                        <Badge size="xs" color={s.certificate.expired ? 'red' : 'teal'} variant="light">
+                                                                            {s.certificate.expired ? 'EXPIRED' : `${s.certificate.daysUntilExpiry}d left`}
+                                                                        </Badge>
+                                                                        <Code fz={10}>{s.certificate.serialNumber}</Code>
+                                                                    </Group>
+                                                                    <Text size="11px" c="dimmed" lineClamp={1} title={s.certificate.issuerDn}>
+                                                                        Issuer: {s.certificate.issuerDn}
+                                                                    </Text>
+                                                                </Stack>
+                                                            ) : s.hasCsr ? (
+                                                                <Badge color="cyan" variant="outline" size="xs">Awaiting CA-Signed Cert</Badge>
+                                                            ) : (
+                                                                <Text size="xs" c="dimmed">No CSR / Cert yet</Text>
+                                                            )}
+                                                        </Table.Td>
+
+                                                        <Table.Td style={{ textAlign: 'right' }}>
+                                                            <Group justify="flex-end" gap={6} wrap="nowrap">
+                                                                <Tooltip label={s.hasCsr ? 'View or Re-generate Key & CSR' : 'Step 1: Generate Key & CSR'}>
+                                                                    <Button
+                                                                        size="compact-xs"
+                                                                        variant={s.hasCsr ? 'light' : 'filled'}
+                                                                        color="cyan"
+                                                                        leftSection={<IconFileCertificate size={13} />}
+                                                                        disabled={!anyTokenActive && !s.hasCsr}
+                                                                        onClick={() => openCsrModal(s, !s.hasCsr)}
+                                                                    >
+                                                                        CSR
+                                                                    </Button>
+                                                                </Tooltip>
+                                                                <Tooltip label={s.hasCertificate ? 'View or Replace Certificate' : 'Step 2: Import CA-Signed Certificate'}>
+                                                                    <Button
+                                                                        size="compact-xs"
+                                                                        variant={s.hasCertificate ? 'light' : 'filled'}
+                                                                        color="indigo"
+                                                                        leftSection={<IconCertificate size={13} />}
+                                                                        onClick={() => openCertModal(s)}
+                                                                    >
+                                                                        Cert
+                                                                    </Button>
+                                                                </Tooltip>
+                                                                {isAdmin && s.hasCertificate && (
+                                                                    <Tooltip
+                                                                        label={!s.active && !anyTokenActive
+                                                                            ? 'Unlock a bound Crypto Token first to activate this signer'
+                                                                            : s.active
+                                                                                ? 'Deactivate signer'
+                                                                                : 'Activate signer (deactivates any other active key in the same token)'}
+                                                                    >
+                                                                        <Button
+                                                                            size="compact-xs"
+                                                                            variant={s.active ? 'light' : 'filled'}
+                                                                            color={s.active ? 'orange' : 'green'}
+                                                                            leftSection={s.active ? <IconPlayerPause size={13} /> : <IconPlayerPlay size={13} />}
+                                                                            loading={saving}
+                                                                            disabled={!s.active && !anyTokenActive}
+                                                                            onClick={() => handleToggleSignerActive(s.id, s.active, s.name)}
+                                                                        >
+                                                                            {s.active ? 'Deactivate' : 'Activate'}
+                                                                        </Button>
+                                                                    </Tooltip>
+                                                                )}
+                                                                {canOperate && (
+                                                                    <Tooltip label="Edit Signer, Key & Tokens">
+                                                                        <ActionIcon variant="light" color="blue" size="sm" onClick={() => openEdit(s)}>
+                                                                            <IconEdit size={14} />
+                                                                        </ActionIcon>
+                                                                    </Tooltip>
+                                                                )}
+                                                                {isAdmin && !s.active && (
+                                                                    <Tooltip label="Delete Signer">
+                                                                        <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDeleteSigner(s)}>
+                                                                            <IconTrash size={14} />
+                                                                        </ActionIcon>
+                                                                    </Tooltip>
+                                                                )}
+                                                            </Group>
+                                                        </Table.Td>
+                                                    </Table.Tr>
+                                                );
+                                            })}
+                                        </Table.Tbody>
+                                    </Table>
+                                </Table.ScrollContainer>
+                            </Paper>
+                        )}
+                    </Tabs.Panel>
+
+                    {/* ============================================================= */}
+                    {/* TAB 2: EJBCA CRYPTO TOKENS & AVAILABLE KEYS VIEW              */}
+                    {/* ============================================================= */}
+                    <Tabs.Panel value="tokens" pt="md">
+                        {loading ? (
+                            <Group justify="center" p="xl"><Loader size="md" /></Group>
+                        ) : devices.length === 0 ? (
+                            <Paper withBorder p="xl" radius="md" ta="center">
+                                <Text c="dimmed">No HSM Crypto Tokens configured yet. Configure them under HSM Devices &amp; Slots.</Text>
+                            </Paper>
+                        ) : (
+                            <Stack gap="md">
+                                {devices.map((d) => {
+                                    const tokenActive = d.activationState === 'ACTIVE';
+                                    const tokenKeys = keysByTokenDeviceId.get(d.deviceId) || [];
+                                    const activeKey = tokenKeys.find((k) => k.status === 'ACTIVE');
+
+                                    return (
+                                        <Paper
+                                            key={d.deviceId}
+                                            withBorder
+                                            p="md"
+                                            radius="md"
+                                            style={{
+                                                backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                                                borderColor: tokenActive ? 'rgba(34, 197, 94, 0.4)' : 'rgba(249, 115, 22, 0.35)',
+                                            }}
+                                        >
+                                            <Stack gap="sm">
+                                                {/* Token Header */}
+                                                <Group justify="space-between" wrap="wrap" gap="xs">
+                                                    <Group gap="xs">
+                                                        <Badge size="md" color={tokenActive ? 'green' : 'orange'} variant="filled">
+                                                            {tokenActive ? 'TOKEN ACTIVE' : 'TOKEN DEACTIVATED'}
+                                                        </Badge>
+                                                        <Text fw={700} fz="md" c="white">{d.deviceId}</Text>
+                                                        <Badge size="xs" color="blue" variant="light">{d.providerCode}</Badge>
+                                                        <Text size="xs" c="dimmed">
+                                                            Token: <Code>{d.tokenLabel || 'n/a'}</Code>
+                                                            {d.slotId != null ? <> · Slot <Code>{d.slotId}</Code></> : null}
+                                                        </Text>
+                                                        <Badge size="xs" color="indigo" variant="outline">
+                                                            {tokenKeys.length} key{tokenKeys.length === 1 ? '' : 's'}
+                                                            {activeKey ? ' · 1 active (max 1)' : ' · 0 active'}
+                                                        </Badge>
+                                                    </Group>
+
+                                                    <Group gap="xs">
+                                                        {isAdmin && tokenActive && (
+                                                            <>
+                                                                <Tooltip label="Explicitly scan this unlocked HSM token for pre-existing keys and save them into ocsp_keys">
+                                                                    <Button
+                                                                        size="compact-xs"
+                                                                        variant="light"
+                                                                        color="cyan"
+                                                                        leftSection={<IconDatabaseImport size={13} />}
+                                                                        loading={syncingDeviceId === d.deviceId}
+                                                                        onClick={() => handleSyncTokenKeys(d.deviceId)}
+                                                                    >
+                                                                        Sync Keys from HSM
+                                                                    </Button>
+                                                                </Tooltip>
+                                                                <Button
+                                                                    size="compact-xs"
+                                                                    variant="light"
+                                                                    color="orange"
+                                                                    leftSection={<IconLock size={13} />}
+                                                                    loading={saving}
+                                                                    onClick={() => handleDeactivateToken(d.deviceId)}
+                                                                >
+                                                                    Deactivate Token
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                        {isAdmin && !tokenActive && (
+                                                            <Button
+                                                                size="compact-xs"
+                                                                variant="filled"
+                                                                color="green"
+                                                                leftSection={<IconLockOpen size={13} />}
+                                                                onClick={() => { setUnlockPin(''); setUnlockDeviceId(d.deviceId); }}
+                                                            >
+                                                                Activate Token (PIN)
+                                                            </Button>
+                                                        )}
+                                                    </Group>
+                                                </Group>
+
+                                                {!tokenActive && (
+                                                    <Alert color="orange" variant="light" py={6} icon={<IconLock size={16} />}>
+                                                        Crypto Token <Code>{d.deviceId}</Code> is deactivated (LOCKED) — all {tokenKeys.length} key(s) in this token are <b>UNAVAILABLE (disabled)</b> until activated with the HSM PIN.
+                                                    </Alert>
+                                                )}
+
+                                                {/* Keys Table inside this Token */}
+                                                {tokenKeys.length === 0 ? (
+                                                    <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                                                        <Group justify="space-between">
+                                                            <Text size="xs" c="dimmed">
+                                                                No keys registered in <Code>ocsp_keys</Code> for this token yet. Generate a CSR on a Signer or click <b>Sync Keys from HSM</b> when unlocked.
+                                                            </Text>
+                                                            {canOperate && (
+                                                                <Button size="compact-xs" variant="subtle" color="indigo" onClick={() => openCreate(d.deviceId, null)}>
+                                                                    + New Signer on Token
                                                                 </Button>
                                                             )}
                                                         </Group>
-                                                    </Group>
-                                                ))}
+                                                    </Paper>
+                                                ) : (
+                                                    <Table.ScrollContainer minWidth={780}>
+                                                        <Table verticalSpacing="xs" highlightOnHover>
+                                                            <Table.Thead>
+                                                                <Table.Tr>
+                                                                    <Table.Th>Key Status</Table.Th>
+                                                                    <Table.Th>Key Alias / Label</Table.Th>
+                                                                    <Table.Th>Algorithm</Table.Th>
+                                                                    <Table.Th>Public Key SHA-1 (SKI)</Table.Th>
+                                                                    <Table.Th>Bound OCSP Signer</Table.Th>
+                                                                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+                                                                </Table.Tr>
+                                                            </Table.Thead>
+                                                            <Table.Tbody>
+                                                                {tokenKeys.map((k) => {
+                                                                    const isKeyActive = k.status === 'ACTIVE';
+                                                                    const isDisabled = !k.tokenActive;
+                                                                    return (
+                                                                        <Table.Tr
+                                                                            key={k.id}
+                                                                            style={{
+                                                                                opacity: isDisabled ? 0.6 : 1,
+                                                                                backgroundColor: isKeyActive ? 'rgba(34, 197, 94, 0.08)' : undefined,
+                                                                            }}
+                                                                        >
+                                                                            <Table.Td>
+                                                                                <KeyStatusBadge status={k.status} />
+                                                                            </Table.Td>
+                                                                            <Table.Td>
+                                                                                <Group gap={6} wrap="nowrap">
+                                                                                    <Code fz={11}>{k.keyLabel}</Code>
+                                                                                    <Text size="10px" c="dimmed">#{k.id}</Text>
+                                                                                </Group>
+                                                                            </Table.Td>
+                                                                            <Table.Td>
+                                                                                <Badge size="xs" color="cyan" variant="light">
+                                                                                    {k.keyAlgorithm} {k.keySize}
+                                                                                </Badge>
+                                                                            </Table.Td>
+                                                                            <Table.Td>
+                                                                                <Code fz={10}>{k.publicKeySha1}</Code>
+                                                                            </Table.Td>
+                                                                            <Table.Td>
+                                                                                {k.boundSignerId ? (
+                                                                                    <Group gap={6}>
+                                                                                        <Text size="xs" fw={600} c="white">{k.boundSignerName}</Text>
+                                                                                        {k.hasCertificate ? (
+                                                                                            <Badge size="xs" color={k.certDaysUntilExpiry != null && k.certDaysUntilExpiry < 0 ? 'red' : 'teal'} variant="light">
+                                                                                                {k.certDaysUntilExpiry != null && k.certDaysUntilExpiry < 0 ? 'Expired' : `${k.certDaysUntilExpiry}d left`}
+                                                                                            </Badge>
+                                                                                        ) : (
+                                                                                            <Badge size="xs" color="gray" variant="outline">No cert</Badge>
+                                                                                        )}
+                                                                                    </Group>
+                                                                                ) : (
+                                                                                    <Text size="xs" c="dimmed">Unbound</Text>
+                                                                                )}
+                                                                            </Table.Td>
+                                                                            <Table.Td style={{ textAlign: 'right' }}>
+                                                                                <Group justify="flex-end" gap={6} wrap="nowrap">
+                                                                                    <Tooltip label="View persisted Public Key SPKI (0 HSM calls)">
+                                                                                        <ActionIcon size="sm" variant="light" color="cyan" onClick={() => setViewKeyModal(k)}>
+                                                                                            <IconEye size={14} />
+                                                                                        </ActionIcon>
+                                                                                    </Tooltip>
+                                                                                    {isAdmin && k.boundSignerId && k.hasCertificate && (
+                                                                                        <Tooltip
+                                                                                            label={isDisabled
+                                                                                                ? 'Token is deactivated — unlock token first'
+                                                                                                : isKeyActive
+                                                                                                    ? 'Deactivate this key / signer'
+                                                                                                    : 'Set as the single active key in this token'}
+                                                                                        >
+                                                                                            <Button
+                                                                                                size="compact-xs"
+                                                                                                variant={isKeyActive ? 'light' : 'filled'}
+                                                                                                color={isKeyActive ? 'orange' : 'green'}
+                                                                                                disabled={isDisabled}
+                                                                                                loading={saving}
+                                                                                                onClick={() => handleToggleSignerActive(k.boundSignerId, isKeyActive, k.boundSignerName)}
+                                                                                            >
+                                                                                                {isKeyActive ? 'Deactivate' : 'Set Active'}
+                                                                                            </Button>
+                                                                                        </Tooltip>
+                                                                                    )}
+                                                                                    {canOperate && !k.boundSignerId && (
+                                                                                        <Button
+                                                                                            size="compact-xs"
+                                                                                            variant="light"
+                                                                                            color="indigo"
+                                                                                            onClick={() => openCreate(d.deviceId, k)}
+                                                                                        >
+                                                                                            Bind to Signer
+                                                                                        </Button>
+                                                                                    )}
+                                                                                </Group>
+                                                                            </Table.Td>
+                                                                        </Table.Tr>
+                                                                    );
+                                                                })}
+                                                            </Table.Tbody>
+                                                        </Table>
+                                                    </Table.ScrollContainer>
+                                                )}
                                             </Stack>
                                         </Paper>
-
-                                        <Paper withBorder p="xs" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                                            <Text size="10px" c="dimmed" tt="uppercase" fw={700}>CSR &amp; X.509 Certificate</Text>
-                                            {s.certificate ? (
-                                                <Stack gap={2} mt={4}>
-                                                    <Group gap={6}>
-                                                        <Badge size="xs" color={s.certificate.expired ? 'red' : 'teal'} variant="light">
-                                                            {s.certificate.expired ? 'EXPIRED' : `${s.certificate.daysUntilExpiry}d remaining`}
-                                                        </Badge>
-                                                        <Code>{s.certificate.serialNumber}</Code>
-                                                    </Group>
-                                                    <Text size="xs" c="dimmed" lineClamp={1}>Issuer: {s.certificate.issuerDn}</Text>
-                                                </Stack>
-                                            ) : s.hasCsr ? (
-                                                <Text size="xs" c="cyan.3" mt={6}>
-                                                    CSR generated — sign with your CA and click <b>Import Certificate</b> (0 HSM calls).
-                                                </Text>
-                                            ) : (
-                                                <Text size="xs" c="dimmed" mt={6}>
-                                                    No CSR or certificate yet — click <b>Generate Key &amp; CSR</b>.
-                                                </Text>
-                                            )}
-                                        </Paper>
-                                    </SimpleGrid>
-                                </Stack>
-                            </Paper>
-                        ))}
-                    </Stack>
-                )}
+                                    );
+                                })}
+                            </Stack>
+                        )}
+                    </Tabs.Panel>
+                </Tabs>
             </Stack>
 
             {/* Modal: Create / Edit Signer */}
             <Modal
                 opened={formOpen}
                 onClose={() => setFormOpen(false)}
-                title={<Group gap="xs"><IconKey size={20} color="#818cf8" /><Text fw={700}>{editingId != null ? 'Edit OCSP Signer' : 'New OCSP Signer'}</Text></Group>}
+                title={<Group gap="xs"><IconKey size={20} color="#818cf8" /><Text fw={700}>{editingId != null ? 'Edit OCSP Signer' : 'New OCSP Signer (Key Binding)'}</Text></Group>}
                 size="lg"
             >
                 <form onSubmit={handleSaveSigner}>
@@ -621,7 +1140,7 @@ export const SignersPage = () => {
                         <SimpleGrid cols={2}>
                             <TextInput
                                 label="Signer Code (UUID)"
-                                description="Auto-generated UUID identifier"
+                                description="Auto-generated unique identifier"
                                 value={code}
                                 onChange={(e) => setCode(e.currentTarget.value)}
                                 rightSection={editingId == null && (
@@ -633,13 +1152,13 @@ export const SignersPage = () => {
                                 )}
                                 required
                             />
-                            <TextInput label="Display Name" placeholder="Luxembourg Root CA Signer" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
+                            <TextInput label="Display Name" placeholder="Incert Intermediate CA OCSP Signer" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
                         </SimpleGrid>
 
                         <MultiSelect
-                            label="Bound HSM Tokens (ocsp_signer_tokens: 1st = PRIMARY, others = FAILOVER)"
-                            description="Attach one or more PKCS#11 HSM Tokens. Live OCSP signing fails over across unlocked tokens."
-                            placeholder="Select HSM Token(s)"
+                            label="Bound Crypto Token(s) (1st = PRIMARY, others = FAILOVER)"
+                            description="Attach one or more HSM Tokens. Only one key/signer can be active per token."
+                            placeholder="Select Crypto Token(s)"
                             data={tokenOptions}
                             value={tokenIds}
                             onChange={setTokenIds}
@@ -649,7 +1168,7 @@ export const SignersPage = () => {
 
                         {keys.length > 0 && (
                             <Switch
-                                label="Bind an existing cryptographic key from ocsp_keys (e.g. for certificate renewal)"
+                                label="Bind an existing key from ocsp_keys"
                                 checked={useExistingKey}
                                 onChange={(e) => {
                                     const checked = e.currentTarget.checked;
@@ -669,7 +1188,7 @@ export const SignersPage = () => {
                             <SimpleGrid cols={2}>
                                 <Select
                                     label="Persisted Key (ocsp_keys)"
-                                    description="Metadata loaded from DB (zero HSM calls)"
+                                    description="Loaded from MariaDB (zero HSM calls)"
                                     data={existingKeyOptions}
                                     value={selectedKeyId}
                                     onChange={(val) => {
@@ -690,7 +1209,7 @@ export const SignersPage = () => {
                             <SimpleGrid cols={2}>
                                 <TextInput
                                     label="HSM Private Key Label (UUID)"
-                                    description="Created on token & persisted to ocsp_keys when CSR is generated"
+                                    description="Generated on token & persisted to ocsp_keys on CSR creation"
                                     value={keyLabel}
                                     onChange={(e) => setKeyLabel(e.currentTarget.value)}
                                     rightSection={editingId == null && (
@@ -757,21 +1276,25 @@ export const SignersPage = () => {
                 </form>
             </Modal>
 
-            {/* Modal: View Persisted Public Key (ocsp_keys — 0 HSM calls) */}
+            {/* Modal: View Persisted Public Key */}
             <Modal
                 opened={Boolean(viewKeyModal)}
                 onClose={() => setViewKeyModal(null)}
-                title={<Group gap="xs"><IconKey size={20} color="#2dd4bf" /><Text fw={700}>Key Entity #{viewKeyModal?.id}: {viewKeyModal?.keyLabel}</Text></Group>}
+                title={<Group gap="xs"><IconKey size={20} color="#2dd4bf" /><Text fw={700}>Key #{viewKeyModal?.id}: {viewKeyModal?.keyLabel}</Text></Group>}
                 size="lg"
             >
                 {viewKeyModal && (
                     <Stack gap="sm">
-                        <Alert color="teal" variant="light">
-                            Loaded from <Code>ocsp_keys</Code> in MariaDB (zero PKCS#11 token calls). Private key remains non-extractable inside HSM Token <Code>{viewKeyModal.tokenDeviceCode || 'HSM'}</Code>.
-                        </Alert>
-                        <Text size="xs">Algorithm: <Code>{viewKeyModal.keyAlgorithm} {viewKeyModal.keySize}</Code> · Public Key SHA-1 (SKI): <Code>{viewKeyModal.publicKeySha1}</Code></Text>
+                        <Group gap="xs">
+                            <KeyStatusBadge status={viewKeyModal.status} />
+                            <Badge size="sm" color={viewKeyModal.tokenActive ? 'green' : 'orange'} variant="dot">
+                                Token {viewKeyModal.tokenDeviceCode || 'HSM'}: {viewKeyModal.tokenState}
+                            </Badge>
+                            <Badge size="sm" color="cyan" variant="light">{viewKeyModal.keyAlgorithm} {viewKeyModal.keySize}</Badge>
+                        </Group>
+                        <Text size="xs">Public Key SHA-1 (SKI): <Code>{viewKeyModal.publicKeySha1}</Code></Text>
                         <Group justify="space-between">
-                            <Text size="xs" c="dimmed" fw={700}>SubjectPublicKeyInfo (PEM)</Text>
+                            <Text size="xs" c="dimmed" fw={700}>SubjectPublicKeyInfo (PEM) — Loaded from MariaDB (0 HSM calls)</Text>
                             <CopyButton value={viewKeyModal.publicKeyPem}>
                                 {({ copied, copy }) => (
                                     <Button size="compact-xs" variant="light" color={copied ? 'teal' : 'indigo'} leftSection={<IconCopy size={13} />} onClick={copy}>
@@ -787,11 +1310,11 @@ export const SignersPage = () => {
                 )}
             </Modal>
 
-            {/* Modal: View / Generate CSR (GET & POST /signer/{id}/csr) */}
+            {/* Modal: View / Generate CSR */}
             <Modal
                 opened={Boolean(csrModalSigner)}
                 onClose={() => { setCsrModalSigner(null); setCsrData(null); }}
-                title={<Group gap="xs"><IconFileCertificate size={20} color="#38bdf8" /><Text fw={700}>Signer CSR: {csrModalSigner?.code}</Text></Group>}
+                title={<Group gap="xs"><IconFileCertificate size={20} color="#38bdf8" /><Text fw={700}>Signer CSR: {csrModalSigner?.name}</Text></Group>}
                 size="lg"
             >
                 {csrLoading ? (
@@ -799,7 +1322,7 @@ export const SignersPage = () => {
                 ) : csrData ? (
                     <Stack gap="md">
                         <Alert color="teal" variant="light">
-                            Generated on HSM Token <Code>{csrData.tokenDeviceId}</Code> · Key <Code>{csrData.keyLabel}</Code> ({csrData.keyAlgorithm} {csrData.keySize}) · Algorithm <Code>{csrData.signatureAlgorithm}</Code>
+                            Generated on Token <Code>{csrData.tokenDeviceId}</Code> · Key <Code>{csrData.keyLabel}</Code> ({csrData.keyAlgorithm} {csrData.keySize}) · <Code>{csrData.signatureAlgorithm}</Code>
                         </Alert>
                         <Group justify="space-between">
                             <Text size="xs" c="dimmed" fw={700}>GET /api/v1/admin/signer/{csrModalSigner?.id}/csr</Text>
@@ -855,11 +1378,11 @@ export const SignersPage = () => {
                 )}
             </Modal>
 
-            {/* Modal: View / Import Certificate (GET & POST /signer/{id}/cert — 0 HSM calls) */}
+            {/* Modal: View / Import Certificate */}
             <Modal
                 opened={Boolean(certModalSigner)}
                 onClose={() => { setCertModalSigner(null); setCertData(null); setCertPemInput(''); }}
-                title={<Group gap="xs"><IconCertificate size={20} color="#6366f1" /><Text fw={700}>Signer Certificate: {certModalSigner?.code}</Text></Group>}
+                title={<Group gap="xs"><IconCertificate size={20} color="#6366f1" /><Text fw={700}>Signer Certificate: {certModalSigner?.name}</Text></Group>}
                 size="lg"
             >
                 <Stack gap="md">
@@ -896,13 +1419,13 @@ export const SignersPage = () => {
                         </Paper>
                     ) : (
                         <Alert color="gray" variant="light">
-                            No certificate imported yet (<Code>GET /api/v1/admin/signer/{certModalSigner?.id}/cert</Code> → 404). Import the CA-signed PEM below (verified against <Code>ocsp_keys</Code> in MariaDB with zero HSM token calls).
+                            No certificate imported yet. Paste or upload the CA-signed PEM certificate (must include <Code>id-kp-OCSPSigning</Code> EKU per RFC 6960 §2.6; verified against <Code>ocsp_keys</Code> with zero HSM token calls).
                         </Alert>
                     )}
 
                     {canOperate && (
                         <>
-                            <Divider label={certData ? 'Import Replacement Certificate (POST /signer/{id}/cert)' : 'Import Certificate (POST /signer/{id}/cert)'} labelPosition="center" />
+                            <Divider label={certData ? 'Import Replacement Certificate' : 'Import Certificate (POST /signer/{id}/cert)'} labelPosition="center" />
                             <form onSubmit={handleImportCert}>
                                 <Stack gap="sm">
                                     <Group justify="space-between" align="flex-end">
@@ -925,7 +1448,7 @@ export const SignersPage = () => {
                                     />
                                     {isAdmin && (
                                         <Switch
-                                            label="Activate signer immediately after import"
+                                            label="Activate signer immediately after import (auto-deactivates any other active key on the same token)"
                                             checked={certActivateNow}
                                             onChange={(e) => setCertActivateNow(e.currentTarget.checked)}
                                             color="green"
@@ -934,7 +1457,7 @@ export const SignersPage = () => {
                                     <Group justify="flex-end">
                                         <Button variant="default" onClick={() => setCertModalSigner(null)}>Close</Button>
                                         <Button type="submit" color="indigo" loading={certLoading} leftSection={<IconCertificate size={15} />}>
-                                            Import Certificate into Signer
+                                            Import Certificate
                                         </Button>
                                     </Group>
                                 </Stack>
@@ -944,8 +1467,12 @@ export const SignersPage = () => {
                 </Stack>
             </Modal>
 
-            {/* Modal: Quick Unlock HSM Token */}
-            <Modal opened={Boolean(unlockDeviceId)} onClose={() => { setUnlockPin(''); setUnlockDeviceId(null); }} title={<Group gap="xs"><IconLockOpen size={20} color="#22c55e" /><Text fw={700}>Unlock HSM Token: {unlockDeviceId}</Text></Group>}>
+            {/* Modal: Quick Activate (Unlock) Crypto Token */}
+            <Modal
+                opened={Boolean(unlockDeviceId)}
+                onClose={() => { setUnlockPin(''); setUnlockDeviceId(null); }}
+                title={<Group gap="xs"><IconLockOpen size={20} color="#22c55e" /><Text fw={700}>Activate Crypto Token: {unlockDeviceId}</Text></Group>}
+            >
                 <form onSubmit={handleQuickUnlock}>
                     <Stack gap="md">
                         <Alert color="cyan" variant="light">
@@ -954,7 +1481,7 @@ export const SignersPage = () => {
                         <PasswordInput label="PKCS#11 User PIN" placeholder="Enter PIN" value={unlockPin} onChange={(e) => setUnlockPin(e.currentTarget.value)} autoFocus required />
                         <Group justify="flex-end">
                             <Button variant="default" onClick={() => { setUnlockPin(''); setUnlockDeviceId(null); }}>Cancel</Button>
-                            <Button type="submit" color="green" loading={saving} leftSection={<IconLockOpen size={16} />}>Unlock</Button>
+                            <Button type="submit" color="green" loading={saving} leftSection={<IconLockOpen size={16} />}>Activate Token</Button>
                         </Group>
                     </Stack>
                 </form>

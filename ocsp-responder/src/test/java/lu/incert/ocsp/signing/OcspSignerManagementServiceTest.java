@@ -47,6 +47,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -356,5 +357,72 @@ class OcspSignerManagementServiceTest {
         assertThat(updated.tokens().get(1).role()).isEqualTo("FAILOVER");
         // Verify existing (signer_id=1, token_device_id=primary) row kept its DB id in-place (no duplicate re-insert)
         assertThat(storedSigner.get().getTokens().get(1).getId()).isEqualTo(originalPrimaryRowId);
+    }
+
+    @Test
+    void ejbcaRulesEnforceSingleActiveKeyPerTokenAndMarkKeysUnavailableWhenTokenDeactivated() {
+        OcspKeyEntity key1 = OcspKeyEntity.builder()
+                .id(201L).keyLabel("key-1").tokenDevice(tokenPrimary)
+                .keyAlgorithm("RSA").keySize(2048).publicKeyPem("PEM1").publicKeySha1("aaa").build();
+        OcspKeyEntity key2 = OcspKeyEntity.builder()
+                .id(202L).keyLabel("key-2").tokenDevice(tokenPrimary)
+                .keyAlgorithm("RSA").keySize(2048).publicKeyPem("PEM2").publicKeySha1("bbb").build();
+
+        OcspSignerEntity signer1 = OcspSignerEntity.builder()
+                .id(1L).code("s1").name("Signer 1").status("ACTIVE").subjectDn("CN=S1")
+                .key(key1).keyLabel("key-1").keyAlgorithm("RSA").keySize(2048)
+                .signatureAlgorithm("SHA256withRSA").certificatePem(sampleCertPem)
+                .certNotAfter(Instant.now().plus(30, ChronoUnit.DAYS))
+                .signingCertificateId(51L).active(true).build();
+        signer1.getTokens().add(lu.incert.ocsp.signing.entity.OcspSignerTokenEntity.builder()
+                .id(1L).signer(signer1).tokenDevice(tokenPrimary).priorityOrder(0).role("PRIMARY").build());
+
+        OcspSignerEntity signer2 = OcspSignerEntity.builder()
+                .id(2L).code("s2").name("Signer 2").status("CERT_IMPORTED").subjectDn("CN=S2")
+                .key(key2).keyLabel("key-2").keyAlgorithm("RSA").keySize(2048)
+                .signatureAlgorithm("SHA256withRSA").certificatePem(sampleCertPem)
+                .certNotAfter(Instant.now().plus(30, ChronoUnit.DAYS))
+                .signingCertificateId(52L).active(false).build();
+        signer2.getTokens().add(lu.incert.ocsp.signing.entity.OcspSignerTokenEntity.builder()
+                .id(2L).signer(signer2).tokenDevice(tokenPrimary).priorityOrder(0).role("PRIMARY").build());
+
+        when(keyRepository.findAllByOrderByIdDesc()).thenReturn(List.of(key2, key1));
+        when(signerRepository.findAllByOrderByIdAsc()).thenReturn(List.of(signer1, signer2));
+        when(signerRepository.findAll()).thenReturn(List.of(signer1, signer2));
+        when(signerRepository.findById(2L)).thenReturn(Optional.of(signer2));
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 1. When token is DEACTIVATED (LOCKED), all keys in that token are UNAVAILABLE and activation is rejected
+        when(ocspSigner.listProviders()).thenReturn(List.of(
+                new ProviderDeviceInfo("softhsm-primary", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", null,
+                        "ocsp-signing", 101L, "LOCKED", false, "LOCKED", List.of(), Map.of())
+        ));
+        var lockedKeys = service.listKeys();
+        assertThat(lockedKeys).hasSize(2);
+        assertThat(lockedKeys).allSatisfy(k -> {
+            assertThat(k.tokenActive()).isFalse();
+            assertThat(k.status()).isEqualTo("UNAVAILABLE");
+        });
+        assertThatThrownBy(() -> service.activateSigner(2L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("deactivated/LOCKED");
+
+        // 2. When token is ACTIVE, activating signer2 auto-deactivates signer1 (max 1 active key per token)
+        when(ocspSigner.listProviders()).thenReturn(List.of(
+                new ProviderDeviceInfo("softhsm-primary", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", null,
+                        "ocsp-signing", 101L, "ACTIVE", true, "ACTIVE", List.of(), Map.of())
+        ));
+        when(signingCertificateService.activate(52L)).thenReturn(SigningCertificateDto.builder()
+                .id(52L).alias("s2").active(true).activatedAt(Instant.now()).build());
+
+        SignerDto activated = service.activateSigner(2L);
+        assertThat(activated.active()).isTrue();
+        assertThat(activated.status()).isEqualTo("ACTIVE");
+        assertThat(signer1.isActive()).isFalse();
+        assertThat(signer1.getStatus()).isEqualTo("INACTIVE");
+
+        var activeKeys = service.listKeys();
+        assertThat(activeKeys.stream().filter(k -> "ACTIVE".equals(k.status())).count()).isEqualTo(1);
+        assertThat(activeKeys.stream().filter(k -> "INACTIVE".equals(k.status())).count()).isEqualTo(1);
     }
 }
