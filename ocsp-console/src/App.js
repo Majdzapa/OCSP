@@ -12,6 +12,7 @@ import { UserManagementPage } from './pages/UserManagementPage';
 import { TrustedCasPage } from './pages/TrustedCasPage';
 import { CryptoDevicesPage } from './pages/CryptoDevicesPage';
 import { SignersPage } from './pages/SignersPage';
+import { SignerDetailPage } from './pages/SignerDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -389,6 +390,7 @@ function MainLayout() {
                     <Route path="/signing-cert" element={<SigningCertificatesPage />} />
                     <Route path="/signing-certificates" element={<SigningCertificatesPage />} />
                     <Route path="/signers" element={<SignersPage />} />
+                    <Route path="/signers/:id" element={<SignerDetailPage />} />
                     <Route path="/hsm-devices" element={<CryptoDevicesPage />} />
                     <Route path="/signing-validity" element={<SigningCertValidityPage />} />
                     <Route path="/cert-checker" element={<CertCheckerPage />} />

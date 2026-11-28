@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Container,
     Paper,
@@ -54,6 +55,7 @@ import {
     IconDatabaseImport,
     IconChevronDown,
     IconChevronRight,
+    IconHierarchy2,
 } from '@tabler/icons-react';
 import {
     getSigners,
@@ -131,6 +133,7 @@ function SignerStatusBadge({ status }) {
 }
 
 export const SignersPage = () => {
+    const navigate = useNavigate();
     const { user } = useAuth();
     const roleNames = (user?.roles ?? []).map((r) => (typeof r === 'string' ? r : r?.authority ?? ''));
     const isAdmin = roleNames.includes('ROLE_ADMIN');
@@ -868,7 +871,15 @@ export const SignersPage = () => {
                                                             </Table.Td>
 
                                                             <Table.Td>
-                                                                <Text fw={700} size="sm" c="white">{s.name}</Text>
+                                                                <Text
+                                                                    fw={700}
+                                                                    size="sm"
+                                                                    c="indigo.3"
+                                                                    style={{ cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}
+                                                                    onClick={() => navigate(`/signers/${s.id}`)}
+                                                                >
+                                                                    {s.name}
+                                                                </Text>
                                                                 <Text size="xs" c="dimmed" lineClamp={1}>{s.subjectDn}</Text>
                                                                 <Code fz={10}>{s.code}</Code>
                                                             </Table.Td>
@@ -938,6 +949,17 @@ export const SignersPage = () => {
 
                                                             <Table.Td style={{ textAlign: 'right' }}>
                                                                 <Group justify="flex-end" gap={6} wrap="nowrap">
+                                                                    <Tooltip label="Open Signer Architecture Graph & Detail View">
+                                                                        <Button
+                                                                            size="compact-xs"
+                                                                            variant="light"
+                                                                            color="violet"
+                                                                            leftSection={<IconHierarchy2 size={13} />}
+                                                                            onClick={() => navigate(`/signers/${s.id}`)}
+                                                                        >
+                                                                            Graph
+                                                                        </Button>
+                                                                    </Tooltip>
                                                                     <Tooltip label={s.active ? 'Generate Next Key & CSR (zero-downtime rollover)' : (s.hasCsr ? 'View or Re-generate Key & CSR' : 'Step 1: Generate Key & CSR')}>
                                                                         <Button
                                                                             size="compact-xs"
