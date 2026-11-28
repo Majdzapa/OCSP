@@ -471,6 +471,8 @@ export const SignerDetailPage = () => {
     const [attachKeyId, setAttachKeyId] = useState('');
     const [linkTokenModalOpen, setLinkTokenModalOpen] = useState(false);
     const [linkTokenDeviceId, setLinkTokenDeviceId] = useState('');
+    const [csrTokenPickerOpen, setCsrTokenPickerOpen] = useState(false);
+    const [csrTargetTokenId, setCsrTargetTokenId] = useState('');
     const [viewKeyModal, setViewKeyModal] = useState(null);
     const [csrModalData, setCsrModalData] = useState(null);
     const [certModalKey, setCertModalKey] = useState(null);
@@ -516,12 +518,17 @@ export const SignerDetailPage = () => {
         [signer]
     );
 
-    const handleGenerateNextKeyCsr = async () => {
+    const runGenerateNextKeyCsr = async (chosenTokenDeviceId = null) => {
         if (!signer) return;
         try {
             setSaving(true);
             setError(null);
-            const res = await generateSignerCsr(signer.id, { reuseExistingKey: false });
+            const payload = { reuseExistingKey: false };
+            if (chosenTokenDeviceId) {
+                payload.tokenDeviceId = chosenTokenDeviceId;
+            }
+            const res = await generateSignerCsr(signer.id, payload);
+            setCsrTokenPickerOpen(false);
             setCsrModalData(res);
             setSuccess(`Generated new key '${res.keyLabel}' (Key #${res.keyId}) & CSR on Token '${res.tokenDeviceId}'.`);
             await fetchSigner();
@@ -531,6 +538,18 @@ export const SignerDetailPage = () => {
         } finally {
             setSaving(false);
         }
+    };
+
+    const handleGenerateNextKeyCsr = () => {
+        if (!signer) return;
+        const boundTokens = signer.tokens || [];
+        if (boundTokens.length > 1) {
+            const firstActive = boundTokens.find((t) => t.activationState === 'ACTIVE') || boundTokens[0];
+            setCsrTargetTokenId(firstActive?.deviceId || '');
+            setCsrTokenPickerOpen(true);
+            return;
+        }
+        runGenerateNextKeyCsr(boundTokens[0]?.deviceId || null);
     };
 
     const handleImportKeyCert = async (e) => {
@@ -1356,6 +1375,45 @@ export const SignerDetailPage = () => {
                         )}
                     </Stack>
                 )}
+            </Modal>
+
+            {/* Modal: Select Target HSM Token for Key & CSR Generation */}
+            <Modal
+                opened={csrTokenPickerOpen}
+                onClose={() => setCsrTokenPickerOpen(false)}
+                title={<Group gap="xs"><IconFileCertificate size={20} color="#38bdf8" /><Text fw={700}>Select HSM Token for Key &amp; CSR</Text></Group>}
+                size="md"
+            >
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        if (csrTargetTokenId) runGenerateNextKeyCsr(csrTargetTokenId);
+                    }}
+                >
+                    <Stack gap="md">
+                        <Alert color="cyan" variant="light">
+                            This signer is linked to <b>{(signer.tokens || []).length} HSM Tokens</b>. Choose which unlocked token should generate the new non-extractable keypair and sign the PKCS#10 CSR.
+                        </Alert>
+                        <Select
+                            label="Target HSM Crypto Token"
+                            placeholder="Select an active HSM Token"
+                            data={(signer.tokens || []).map((t) => ({
+                                value: t.deviceId,
+                                label: `${t.deviceId} [${t.role}] · ${t.tokenLabel || 'slot ' + t.slotId} (${t.activationState === 'ACTIVE' ? 'ACTIVE' : 'DEACTIVATED / LOCKED'})`,
+                                disabled: t.activationState !== 'ACTIVE',
+                            }))}
+                            value={csrTargetTokenId}
+                            onChange={(val) => setCsrTargetTokenId(val || '')}
+                            required
+                        />
+                        <Group justify="flex-end">
+                            <Button variant="default" onClick={() => setCsrTokenPickerOpen(false)}>Cancel</Button>
+                            <Button type="submit" color="cyan" loading={saving} disabled={!csrTargetTokenId} leftSection={<IconFileCertificate size={15} />}>
+                                Generate Key &amp; CSR
+                            </Button>
+                        </Group>
+                    </Stack>
+                </form>
             </Modal>
 
             {/* Modal: Attach Existing Key to Signer */}

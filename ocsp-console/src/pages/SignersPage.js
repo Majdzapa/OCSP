@@ -168,10 +168,12 @@ export const SignersPage = () => {
     // View Persisted Key Modal
     const [viewKeyModal, setViewKeyModal] = useState(null);
 
-    // CSR Modal
+    // CSR Modal (includes target token selection when signer has multiple tokens)
     const [csrModalSigner, setCsrModalSigner] = useState(null);
     const [csrData, setCsrData] = useState(null);
     const [csrLoading, setCsrLoading] = useState(false);
+    const [csrTargetTokenId, setCsrTargetTokenId] = useState('');
+    const [csrAwaitingTokenChoice, setCsrAwaitingTokenChoice] = useState(false);
 
     // Certificate Modal (supports both signer-level and per-key zero-downtime rollover import)
     const [certModalSigner, setCertModalSigner] = useState(null);
@@ -382,24 +384,48 @@ export const SignersPage = () => {
         }
     };
 
+    const executeCsrGeneration = async (s, chosenTokenDeviceId = null) => {
+        try {
+            setCsrLoading(true);
+            setCsrAwaitingTokenChoice(false);
+            setError(null);
+            const reqBody = s.hasCsr ? { reuseExistingKey: false } : {};
+            if (chosenTokenDeviceId) {
+                reqBody.tokenDeviceId = chosenTokenDeviceId;
+            }
+            const generated = await generateSignerCsr(s.id, reqBody);
+            setCsrData(generated);
+            setSuccess(`Generated key '${generated.keyLabel}' & signed CSR on Token '${generated.tokenDeviceId}'.`);
+            await fetchAll();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to generate/load CSR');
+        } finally {
+            setCsrLoading(false);
+        }
+    };
+
     const openCsrModal = async (s, generateNow = false) => {
         setCsrModalSigner(s);
         setCsrData(null);
+        setCsrAwaitingTokenChoice(false);
         setError(null);
+        const boundTokens = s.tokens || [];
+        if (generateNow || !s.hasCsr) {
+            if (boundTokens.length > 1) {
+                const firstActive = boundTokens.find((t) => t.activationState === 'ACTIVE') || boundTokens[0];
+                setCsrTargetTokenId(firstActive?.deviceId || '');
+                setCsrAwaitingTokenChoice(true);
+                return;
+            }
+            await executeCsrGeneration(s, boundTokens[0]?.deviceId || null);
+            return;
+        }
         try {
             setCsrLoading(true);
-            if (generateNow || !s.hasCsr) {
-                const reqBody = s.hasCsr ? { reuseExistingKey: false } : {};
-                const generated = await generateSignerCsr(s.id, reqBody);
-                setCsrData(generated);
-                setSuccess(`Generated key '${generated.keyLabel}' & signed CSR on Token '${generated.tokenDeviceId}'.`);
-                await fetchAll();
-            } else {
-                const existing = await getSignerCsr(s.id, false);
-                setCsrData(existing);
-            }
+            const existing = await getSignerCsr(s.id, false);
+            setCsrData(existing);
         } catch (err) {
-            setError(err?.response?.data?.error || err?.message || 'Failed to generate/load CSR');
+            setError(err?.response?.data?.error || err?.message || 'Failed to load CSR');
         } finally {
             setCsrLoading(false);
         }
@@ -1575,12 +1601,43 @@ export const SignersPage = () => {
             {/* Modal: View / Generate CSR */}
             <Modal
                 opened={Boolean(csrModalSigner)}
-                onClose={() => { setCsrModalSigner(null); setCsrData(null); }}
+                onClose={() => { setCsrModalSigner(null); setCsrData(null); setCsrAwaitingTokenChoice(false); }}
                 title={<Group gap="xs"><IconFileCertificate size={20} color="#38bdf8" /><Text fw={700}>Signer CSR: {csrModalSigner?.name}</Text></Group>}
                 size="lg"
             >
                 {csrLoading ? (
                     <Group justify="center" p="xl"><Loader size="md" /></Group>
+                ) : csrAwaitingTokenChoice && csrModalSigner ? (
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (csrTargetTokenId) executeCsrGeneration(csrModalSigner, csrTargetTokenId);
+                        }}
+                    >
+                        <Stack gap="md">
+                            <Alert color="cyan" variant="light">
+                                Signer <b>{csrModalSigner.name}</b> is linked to <b>{(csrModalSigner.tokens || []).length} HSM Tokens</b>. Choose which unlocked token should generate the new keypair and sign the CSR.
+                            </Alert>
+                            <Select
+                                label="Target HSM Crypto Token"
+                                placeholder="Select an active HSM Token"
+                                data={(csrModalSigner.tokens || []).map((t) => ({
+                                    value: t.deviceId,
+                                    label: `${t.deviceId} [${t.role}] · ${t.tokenLabel || 'slot ' + t.slotId} (${t.activationState === 'ACTIVE' ? 'ACTIVE' : 'DEACTIVATED / LOCKED'})`,
+                                    disabled: t.activationState !== 'ACTIVE',
+                                }))}
+                                value={csrTargetTokenId}
+                                onChange={(val) => setCsrTargetTokenId(val || '')}
+                                required
+                            />
+                            <Group justify="flex-end">
+                                <Button variant="default" onClick={() => { setCsrModalSigner(null); setCsrAwaitingTokenChoice(false); }}>Cancel</Button>
+                                <Button type="submit" color="cyan" disabled={!csrTargetTokenId} leftSection={<IconFileCertificate size={15} />}>
+                                    Generate Key &amp; CSR
+                                </Button>
+                            </Group>
+                        </Stack>
+                    </form>
                 ) : csrData ? (
                     <Stack gap="md">
                         <Alert color="teal" variant="light">
