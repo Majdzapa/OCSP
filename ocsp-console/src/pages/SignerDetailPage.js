@@ -1242,3 +1242,4 @@ export const SignerDetailPage = () => {
         </Container>
     );
 };
+
