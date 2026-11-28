@@ -39,3 +39,4 @@ WHERE k.signer_id IS NULL;
 ALTER TABLE ocsp_keys
     ADD CONSTRAINT fk_ocsp_keys_signer FOREIGN KEY (signer_id)
         REFERENCES ocsp_signers (id) ON DELETE SET NULL ON UPDATE CASCADE;
+
