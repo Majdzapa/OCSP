@@ -15,5 +15,8 @@ public interface OcspKeyRepository extends JpaRepository<OcspKeyEntity, Long> {
     List<OcspKeyEntity> findAllByOrderByIdDesc();
 
     List<OcspKeyEntity> findAllByTokenDevice_IdOrderByIdDesc(Long tokenDeviceId);
-}
 
+    List<OcspKeyEntity> findAllBySigner_IdOrderByIdDesc(Long signerId);
+
+    Optional<OcspKeyEntity> findBySigningCertificateId(Long signingCertificateId);
+}

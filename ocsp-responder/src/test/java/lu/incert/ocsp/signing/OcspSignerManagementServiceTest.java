@@ -423,6 +423,54 @@ class OcspSignerManagementServiceTest {
 
         var activeKeys = service.listKeys();
         assertThat(activeKeys.stream().filter(k -> "ACTIVE".equals(k.status())).count()).isEqualTo(1);
-        assertThat(activeKeys.stream().filter(k -> "INACTIVE".equals(k.status())).count()).isEqualTo(1);
+        assertThat(activeKeys.stream().filter(k -> "READY".equals(k.status())).count()).isEqualTo(1);
+    }
+
+    @Test
+    void zeroDowntimeMultiKeyRolloverUnderSingleSignerSwitchesActiveKeyAtomically() {
+        OcspKeyEntity key1 = OcspKeyEntity.builder()
+                .id(301L).keyLabel("key-active-1").tokenDevice(tokenPrimary)
+                .keyAlgorithm("RSA").keySize(2048).publicKeyPem("PEM1").publicKeySha1("111")
+                .certificatePem(sampleCertPem).certNotAfter(Instant.now().plus(30, ChronoUnit.DAYS))
+                .signingCertificateId(61L).active(true).build();
+        OcspKeyEntity key2 = OcspKeyEntity.builder()
+                .id(302L).keyLabel("key-next-2").tokenDevice(tokenPrimary)
+                .keyAlgorithm("RSA").keySize(2048).publicKeyPem("PEM2").publicKeySha1("222")
+                .certificatePem(sampleCertPem).certNotAfter(Instant.now().plus(90, ChronoUnit.DAYS))
+                .signingCertificateId(62L).active(false).build();
+
+        OcspSignerEntity signer = OcspSignerEntity.builder()
+                .id(7L).code("rollover-signer").name("Rollover Signer").status("ACTIVE").subjectDn("CN=Rollover")
+                .key(key1).keyLabel("key-active-1").keyAlgorithm("RSA").keySize(2048)
+                .signatureAlgorithm("SHA256withRSA").certificatePem(sampleCertPem)
+                .certNotAfter(Instant.now().plus(30, ChronoUnit.DAYS))
+                .signingCertificateId(61L).active(true).build();
+        signer.getTokens().add(lu.incert.ocsp.signing.entity.OcspSignerTokenEntity.builder()
+                .id(70L).signer(signer).tokenDevice(tokenPrimary).priorityOrder(0).role("PRIMARY").build());
+        key1.setSigner(signer);
+        key2.setSigner(signer);
+
+        when(signerRepository.findById(7L)).thenReturn(Optional.of(signer));
+        when(signerRepository.findAll()).thenReturn(List.of(signer));
+        when(signerRepository.save(any(OcspSignerEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(keyRepository.findById(302L)).thenReturn(Optional.of(key2));
+        when(keyRepository.findAllBySigner_IdOrderByIdDesc(7L)).thenReturn(List.of(key2, key1));
+        when(keyRepository.save(any(OcspKeyEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ocspSigner.listProviders()).thenReturn(List.of(
+                new ProviderDeviceInfo("softhsm-primary", "PKCS11J", "/usr/lib/softhsm/libsofthsm2.so", null,
+                        "ocsp-signing", 101L, "ACTIVE", true, "ACTIVE", List.of(), Map.of())
+        ));
+        when(signingCertificateService.activate(62L)).thenReturn(SigningCertificateDto.builder()
+                .id(62L).alias("rollover-signer-k302").signatureAlgorithm("SHA256withRSA")
+                .active(true).activatedAt(Instant.now()).build());
+
+        SignerDto switched = service.activateKey(7L, 302L);
+        assertThat(switched.keyId()).isEqualTo(302L);
+        assertThat(switched.keyLabel()).isEqualTo("key-next-2");
+        assertThat(key2.isActive()).isTrue();
+        assertThat(key1.isActive()).isFalse();
+        assertThat(switched.keys()).hasSize(2);
+        assertThat(switched.keys().stream().filter(k -> "ACTIVE".equals(k.status())).count()).isEqualTo(1);
+        assertThat(switched.keys().stream().filter(k -> "READY".equals(k.status())).count()).isEqualTo(1);
     }
 }

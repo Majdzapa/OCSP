@@ -318,33 +318,48 @@ public class OcspSignerManagementService {
                         .keyLabel(targetKeyLabel)
                         .ckaIdHex(HexFormat.of().formatHex(targetKeyLabel.getBytes(StandardCharsets.UTF_8)))
                         .tokenDevice(targetTokenEntity)
+                        .signer(signer)
                         .keyAlgorithm(keyAlg)
                         .keySize(keySize)
                         .publicKeyPem(SigningCertificateService.toPublicKeyPem(spki))
                         .publicKeySha1(SigningCertificateService.computePublicKeySha1Hex(spki))
+                        .csrPem(csrRes.csrPem())
+                        .csrGeneratedAt(now)
+                        .active(false)
                         .generatedAt(now)
                         .build());
             }
+        } else {
+            persistedKey.setSigner(signer);
+            persistedKey.setCsrPem(csrRes.csrPem());
+            persistedKey.setCsrGeneratedAt(now);
+            persistedKey = keyRepository.save(persistedKey);
         }
 
-        // If a brand-new key was generated on an inactive signer, clear any stale unactivated certificate
-        if (!reuse && !signer.isActive() && signer.getCertificatePem() != null) {
-            if (signer.getSigningCertificateId() != null) {
-                signingCertRepository.findById(signer.getSigningCertificateId()).ifPresent(sc -> {
-                    if (!sc.isActive()) {
-                        signingCertRepository.delete(sc);
-                    }
-                });
-            }
-            signer.setSigningCertificateId(null);
-            signer.setCertificatePem(null);
-            signer.setCertSubjectDn(null);
-            signer.setCertIssuerDn(null);
-            signer.setCertSerialNumber(null);
-            signer.setCertNotBefore(null);
-            signer.setCertNotAfter(null);
+        // EJBCA Zero-Downtime Key Rollover:
+        // If the signer is ALREADY ACTIVE and we generated a new keypair (!reuse), keep the currently
+        // active key & certificate untouched on the signer while staging the new key as CSR_PENDING!
+        if (signer.isActive() && !reuse) {
+            log.info("Staged next keypair & CSR for ACTIVE Signer '{}' (id={}) on Token '{}' (nextKeyId={}, keyLabel='{}') without disrupting active signing",
+                    signer.getCode(), signer.getId(), targetTokenId,
+                    persistedKey != null ? persistedKey.getId() : null, targetKeyLabel);
+            return new SignerCsrRequest.SignerCsrResponse(
+                    signer.getId(),
+                    signer.getCode(),
+                    targetTokenId,
+                    persistedKey != null ? persistedKey.getId() : null,
+                    targetKeyLabel,
+                    keyAlg,
+                    keySize,
+                    persistedKey != null ? persistedKey.getPublicKeySha1() : null,
+                    sigAlg,
+                    subjectDn,
+                    csrRes.csrPem(),
+                    now
+            );
         }
 
+        // Inactive signer: point the signer to the newly generated key/CSR
         signer.setKey(persistedKey);
         signer.setKeyLabel(targetKeyLabel);
         signer.setSubjectDn(subjectDn);
@@ -473,10 +488,261 @@ public class OcspSignerManagementService {
         signer.setStatus("CERT_IMPORTED");
         signerRepository.save(signer);
 
+        if (signer.getKey() != null) {
+            OcspKeyEntity k = signer.getKey();
+            k.setSigner(signer);
+            k.setCertificatePem(imported.certificatePem());
+            k.setCertSubjectDn(imported.subjectDn());
+            k.setCertIssuerDn(imported.issuerDn());
+            k.setCertSerialNumber(imported.serialNumber());
+            k.setCertNotBefore(imported.notBefore());
+            k.setCertNotAfter(imported.notAfter());
+            k.setSigningCertificateId(imported.id());
+            keyRepository.save(k);
+        }
+
         if (activateNow) {
             return activateSigner(signer.getId());
         }
         return toDto(signer, mapLiveDevices());
+    }
+
+    /**
+     * Imports a CA-signed X.509 certificate onto a specific key owned by the Signer (EJBCA zero-downtime
+     * rollover). Zero PKCS#11 calls — public-key ownership is verified directly against {@code ocsp_keys}.
+     * If the signer is already active on another key, that active key stays live until {@link #activateKey} is called.
+     */
+    @Transactional
+    public SignerDto importCertificateForKey(Long signerId, Long keyId, SignerCertImportRequest request) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        OcspKeyEntity key = keyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalArgumentException("Key not found: " + keyId));
+        if (key.getSigner() != null && !key.getSigner().getId().equals(signerId)) {
+            throw new IllegalArgumentException("Key #" + keyId + " belongs to a different signer");
+        }
+        key.setSigner(signer);
+
+        Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
+        String tokenDeviceId = key.getTokenDevice() != null
+                ? key.getTokenDevice().getDeviceId()
+                : (signer.getTokens().isEmpty()
+                        ? ocspSigner.getDefaultProviderId()
+                        : signer.getTokens().get(0).getTokenDevice().getDeviceId());
+
+        String sigAlg = (request.signatureAlgorithm() != null && !request.signatureAlgorithm().isBlank())
+                ? request.signatureAlgorithm().trim()
+                : signer.getSignatureAlgorithm();
+        boolean activateNow = Boolean.TRUE.equals(request.activateImmediately());
+
+        if (key.getSigningCertificateId() != null) {
+            signingCertRepository.findById(key.getSigningCertificateId()).ifPresent(existing -> {
+                if (!existing.isActive()) {
+                    signingCertRepository.delete(existing);
+                    signingCertRepository.flush();
+                }
+            });
+        }
+
+        String certAlias = signer.getCode() + "-k" + key.getId();
+        if (signingCertRepository.existsByAlias(certAlias)) {
+            certAlias = certAlias + "-" + (System.currentTimeMillis() % 100000);
+        }
+
+        // Verify & register SigningCertificate without overwriting an already-active signer's live cert
+        boolean mirrorToSignerNow = !signer.isActive() || (signer.getKey() != null && signer.getKey().getId().equals(key.getId()));
+        SigningCertificateDto imported = signingCertificateService.addCertificate(new AddSigningCertificateRequest(
+                certAlias,
+                key.getKeyLabel(),
+                request.certificatePem().trim(),
+                false,
+                sigAlg,
+                tokenDeviceId,
+                mirrorToSignerNow ? signer.getId() : null
+        ));
+
+        key.setCertificatePem(imported.certificatePem());
+        key.setCertSubjectDn(imported.subjectDn());
+        key.setCertIssuerDn(imported.issuerDn());
+        key.setCertSerialNumber(imported.serialNumber());
+        key.setCertNotBefore(imported.notBefore());
+        key.setCertNotAfter(imported.notAfter());
+        key.setSigningCertificateId(imported.id());
+        keyRepository.save(key);
+
+        if (mirrorToSignerNow) {
+            signer.setKey(key);
+            signer.setKeyLabel(key.getKeyLabel());
+            signer.setSignatureAlgorithm(imported.signatureAlgorithm());
+            signer.setCertificatePem(imported.certificatePem());
+            signer.setCertSubjectDn(imported.subjectDn());
+            signer.setCertIssuerDn(imported.issuerDn());
+            signer.setCertSerialNumber(imported.serialNumber());
+            signer.setCertNotBefore(imported.notBefore());
+            signer.setCertNotAfter(imported.notAfter());
+            signer.setSigningCertificateId(imported.id());
+            if (!signer.isActive()) {
+                signer.setStatus("CERT_IMPORTED");
+            }
+            signerRepository.save(signer);
+        }
+
+        if (activateNow) {
+            return activateKey(signerId, keyId);
+        }
+        return toDto(signer, liveDevices);
+    }
+
+    /**
+     * Atomically activates a specific key under the Signer (EJBCA zero-downtime key switch):
+     * enforces at most ONE active key per Signer AND at most ONE active key per HSM Token,
+     * and refuses activation if the key's HSM Token is deactivated/LOCKED.
+     */
+    @Transactional
+    public SignerDto activateKey(Long signerId, Long keyId) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        OcspKeyEntity key = keyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalArgumentException("Key not found: " + keyId));
+        if (key.getSigner() != null && !key.getSigner().getId().equals(signerId)) {
+            throw new IllegalArgumentException("Key #" + keyId + " does not belong to signer " + signerId);
+        }
+        if (key.getSigningCertificateId() == null || key.getCertificatePem() == null || key.getCertificatePem().isBlank()) {
+            throw new IllegalStateException("Cannot activate key '" + key.getKeyLabel()
+                    + "': import a CA-signed X.509 certificate for this key first.");
+        }
+
+        Map<String, ProviderDeviceInfo> liveDevices = mapLiveDevices();
+        if (!liveDevices.isEmpty()) {
+            boolean tokenActive;
+            if (key.getTokenDevice() != null) {
+                ProviderDeviceInfo info = liveDevices.get(key.getTokenDevice().getDeviceId());
+                tokenActive = info != null && DeviceActivationState.ACTIVE.name().equals(info.activationState());
+            } else {
+                tokenActive = signer.getTokens().stream().anyMatch(t -> {
+                    ProviderDeviceInfo info = liveDevices.get(t.getTokenDevice().getDeviceId());
+                    return info != null && DeviceActivationState.ACTIVE.name().equals(info.activationState());
+                });
+            }
+            if (!tokenActive) {
+                String tokName = key.getTokenDevice() != null ? key.getTokenDevice().getDeviceId() : "bound token";
+                throw new IllegalStateException("Cannot activate key '" + key.getKeyLabel()
+                        + "': HSM token '" + tokName + "' is deactivated/LOCKED. Activate the token first.");
+            }
+        }
+
+        SigningCertificateDto activated = signingCertificateService.activate(key.getSigningCertificateId());
+        Instant activatedAt = activated.activatedAt() != null ? activated.activatedAt() : Instant.now();
+
+        // 1. Deactivate all other keys under the SAME Signer (max 1 active key per Signer)
+        for (OcspKeyEntity sibling : keyRepository.findAllBySigner_IdOrderByIdDesc(signerId)) {
+            if (!sibling.getId().equals(key.getId()) && sibling.isActive()) {
+                sibling.setActive(false);
+                keyRepository.save(sibling);
+                if (sibling.getSigningCertificateId() != null) {
+                    signingCertRepository.findById(sibling.getSigningCertificateId()).ifPresent(sc -> {
+                        if (sc.isActive()) {
+                            sc.setActive(false);
+                            signingCertRepository.save(sc);
+                        }
+                    });
+                }
+            }
+        }
+
+        // 2. Deactivate any other active Signer / Key sharing the SAME HSM Token (max 1 active key per Token)
+        Set<Long> targetTokenIds = new LinkedHashSet<>();
+        if (key.getTokenDevice() != null && key.getTokenDevice().getId() != null) {
+            targetTokenIds.add(key.getTokenDevice().getId());
+        }
+        if (signer.getTokens() != null) {
+            signer.getTokens().stream()
+                    .filter(t -> t.getTokenDevice() != null && t.getTokenDevice().getId() != null)
+                    .map(t -> t.getTokenDevice().getId())
+                    .forEach(targetTokenIds::add);
+        }
+        for (OcspSignerEntity other : signerRepository.findAll()) {
+            if (!other.getId().equals(signer.getId()) && other.isActive()) {
+                boolean sharesToken = other.getTokens() != null && other.getTokens().stream()
+                        .anyMatch(t -> t.getTokenDevice() != null && targetTokenIds.contains(t.getTokenDevice().getId()));
+                boolean certStillActive = other.getSigningCertificateId() != null
+                        && signingCertRepository.findById(other.getSigningCertificateId())
+                                .map(SigningCertificate::isActive)
+                                .orElse(false);
+                if (sharesToken || !certStillActive) {
+                    if (sharesToken && certStillActive && other.getSigningCertificateId() != null) {
+                        signingCertRepository.findById(other.getSigningCertificateId()).ifPresent(sc -> {
+                            sc.setActive(false);
+                            signingCertRepository.save(sc);
+                        });
+                    }
+                    other.setActive(false);
+                    other.setStatus("INACTIVE");
+                    signerRepository.save(other);
+                    for (OcspKeyEntity otherKey : keyRepository.findAllBySigner_IdOrderByIdDesc(other.getId())) {
+                        if (otherKey.isActive()) {
+                            otherKey.setActive(false);
+                            keyRepository.save(otherKey);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Mark this key & signer ACTIVE
+        key.setSigner(signer);
+        key.setActive(true);
+        key.setActivatedAt(activatedAt);
+        keyRepository.save(key);
+
+        signer.setKey(key);
+        signer.setKeyLabel(key.getKeyLabel());
+        signer.setKeyAlgorithm(key.getKeyAlgorithm());
+        signer.setKeySize(key.getKeySize());
+        signer.setSignatureAlgorithm(activated.signatureAlgorithm() != null ? activated.signatureAlgorithm() : signer.getSignatureAlgorithm());
+        signer.setCertificatePem(key.getCertificatePem());
+        signer.setCertSubjectDn(key.getCertSubjectDn());
+        signer.setCertIssuerDn(key.getCertIssuerDn());
+        signer.setCertSerialNumber(key.getCertSerialNumber());
+        signer.setCertNotBefore(key.getCertNotBefore());
+        signer.setCertNotAfter(key.getCertNotAfter());
+        signer.setSigningCertificateId(key.getSigningCertificateId());
+        signer.setActive(true);
+        signer.setActivatedAt(activatedAt);
+        signer.setStatus("ACTIVE");
+        OcspSignerEntity saved = signerRepository.save(signer);
+
+        log.info("Switched active key for Signer '{}' (id={}) to Key #{} ('{}')",
+                saved.getCode(), saved.getId(), key.getId(), key.getKeyLabel());
+        return toDto(saved, liveDevices);
+    }
+
+    /**
+     * Deletes a non-active (retired or pending) key under a Signer. Active keys cannot be deleted.
+     */
+    @Transactional
+    public void deleteSignerKey(Long signerId, Long keyId) {
+        OcspSignerEntity signer = requireSigner(signerId);
+        OcspKeyEntity key = keyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalArgumentException("Key not found: " + keyId));
+        if (key.getSigner() != null && !key.getSigner().getId().equals(signerId)) {
+            throw new IllegalArgumentException("Key #" + keyId + " does not belong to signer " + signerId);
+        }
+        if (key.isActive() || (signer.isActive() && signer.getKey() != null && signer.getKey().getId().equals(key.getId()))) {
+            throw new IllegalStateException("Cannot delete an ACTIVE key ('" + key.getKeyLabel() + "'). Activate another key or deactivate the signer first.");
+        }
+        if (signer.getKey() != null && signer.getKey().getId().equals(key.getId())) {
+            signer.setKey(null);
+            signerRepository.save(signer);
+        }
+        Long scId = key.getSigningCertificateId();
+        keyRepository.delete(key);
+        if (scId != null) {
+            signingCertRepository.findById(scId).ifPresent(sc -> {
+                if (!sc.isActive()) {
+                    signingCertRepository.delete(sc);
+                }
+            });
+        }
+        log.info("Deleted inactive key #{} ('{}') from Signer '{}' (id={})", keyId, key.getKeyLabel(), signer.getCode(), signerId);
     }
 
     @Transactional
@@ -536,6 +802,19 @@ public class OcspSignerManagementService {
         signer.setActive(true);
         signer.setActivatedAt(activated.activatedAt() != null ? activated.activatedAt() : Instant.now());
         signer.setStatus("ACTIVE");
+        if (signer.getKey() != null) {
+            OcspKeyEntity activeKey = signer.getKey();
+            for (OcspKeyEntity sibling : keyRepository.findAllBySigner_IdOrderByIdDesc(signer.getId())) {
+                if (!sibling.getId().equals(activeKey.getId()) && sibling.isActive()) {
+                    sibling.setActive(false);
+                    keyRepository.save(sibling);
+                }
+            }
+            activeKey.setSigner(signer);
+            activeKey.setActive(true);
+            activeKey.setActivatedAt(signer.getActivatedAt());
+            keyRepository.save(activeKey);
+        }
         OcspSignerEntity saved = signerRepository.save(signer);
         return toDto(saved, liveDevices);
     }
@@ -548,6 +827,16 @@ public class OcspSignerManagementService {
         }
         if (signer.getSigningCertificateId() != null) {
             signingCertificateService.deactivate(signer.getSigningCertificateId());
+        }
+        for (OcspKeyEntity k : keyRepository.findAllBySigner_IdOrderByIdDesc(signer.getId())) {
+            if (k.isActive()) {
+                k.setActive(false);
+                keyRepository.save(k);
+            }
+        }
+        if (signer.getKey() != null && signer.getKey().isActive()) {
+            signer.getKey().setActive(false);
+            keyRepository.save(signer.getKey());
         }
         signer.setActive(false);
         signer.setStatus("INACTIVE");
@@ -656,6 +945,18 @@ public class OcspSignerManagementService {
         OcspKeyEntity keyEntity = entity.getKey();
         OcspKeyDto keyDto = keyEntity != null ? toKeyDto(keyEntity, liveDevices, entity) : null;
 
+        List<OcspKeyEntity> ownedKeys = entity.getId() != null
+                ? keyRepository.findAllBySigner_IdOrderByIdDesc(entity.getId())
+                : List.of();
+        List<OcspKeyDto> keyDtos = new ArrayList<>();
+        if (ownedKeys != null && !ownedKeys.isEmpty()) {
+            for (OcspKeyEntity k : ownedKeys) {
+                keyDtos.add(toKeyDto(k, liveDevices, entity));
+            }
+        } else if (keyDto != null) {
+            keyDtos.add(keyDto);
+        }
+
         List<SignerDto.SignerTokenDto> tokenDtos = new ArrayList<>();
         boolean anyTokenActive = false;
         if (entity.getTokens() != null) {
@@ -720,6 +1021,7 @@ public class OcspSignerManagementService {
                 entity.getSubjectDn(),
                 keyEntity != null ? keyEntity.getId() : null,
                 keyDto,
+                List.copyOf(keyDtos),
                 entity.getKeyLabel(),
                 entity.getKeyAlgorithm(),
                 entity.getKeySize(),
@@ -741,6 +1043,7 @@ public class OcspSignerManagementService {
             OcspKeyEntity entity,
             Map<String, ProviderDeviceInfo> liveDevices,
             OcspSignerEntity boundSigner) {
+        OcspSignerEntity effectiveSigner = entity.getSigner() != null ? entity.getSigner() : boundSigner;
         CryptoDeviceEntity td = entity.getTokenDevice();
         ProviderDeviceInfo live = td != null && liveDevices != null ? liveDevices.get(td.getDeviceId()) : null;
         String tokenState;
@@ -753,29 +1056,61 @@ public class OcspSignerManagementService {
         }
         boolean tokenActive = DeviceActivationState.ACTIVE.name().equals(tokenState);
 
-        boolean hasCert = boundSigner != null
-                && boundSigner.getCertificatePem() != null
-                && !boundSigner.getCertificatePem().isBlank();
+        boolean isCurrentSignerKey = effectiveSigner != null
+                && effectiveSigner.getKey() != null
+                && effectiveSigner.getKey().getId() != null
+                && effectiveSigner.getKey().getId().equals(entity.getId());
+
+        String resolvedCsrPem = (entity.getCsrPem() != null && !entity.getCsrPem().isBlank())
+                ? entity.getCsrPem()
+                : (isCurrentSignerKey ? effectiveSigner.getCsrPem() : null);
+        Instant resolvedCsrAt = entity.getCsrGeneratedAt() != null
+                ? entity.getCsrGeneratedAt()
+                : (isCurrentSignerKey ? effectiveSigner.getCsrGeneratedAt() : null);
+        boolean hasCsr = resolvedCsrPem != null && !resolvedCsrPem.isBlank();
+
+        String resolvedCertPem = (entity.getCertificatePem() != null && !entity.getCertificatePem().isBlank())
+                ? entity.getCertificatePem()
+                : (isCurrentSignerKey ? effectiveSigner.getCertificatePem() : null);
+        String resolvedSerial = (entity.getCertSerialNumber() != null && !entity.getCertSerialNumber().isBlank())
+                ? entity.getCertSerialNumber()
+                : (isCurrentSignerKey ? effectiveSigner.getCertSerialNumber() : null);
+        String resolvedIssuer = (entity.getCertIssuerDn() != null && !entity.getCertIssuerDn().isBlank())
+                ? entity.getCertIssuerDn()
+                : (isCurrentSignerKey ? effectiveSigner.getCertIssuerDn() : null);
+        Instant resolvedNotAfter = entity.getCertNotAfter() != null
+                ? entity.getCertNotAfter()
+                : (isCurrentSignerKey ? effectiveSigner.getCertNotAfter() : null);
+        boolean hasCert = resolvedCertPem != null && !resolvedCertPem.isBlank();
+
         Long daysLeft = null;
         boolean certExpired = false;
-        if (hasCert && boundSigner.getCertNotAfter() != null) {
+        if (hasCert && resolvedNotAfter != null) {
             Instant now = Instant.now();
-            daysLeft = ChronoUnit.DAYS.between(now, boundSigner.getCertNotAfter());
-            certExpired = now.isAfter(boundSigner.getCertNotAfter());
+            daysLeft = ChronoUnit.DAYS.between(now, resolvedNotAfter);
+            certExpired = now.isAfter(resolvedNotAfter);
         }
 
-        // EJBCA key status:
+        boolean keyActive = entity.isActive() || (isCurrentSignerKey && effectiveSigner.isActive());
+
+        // EJBCA per-key lifecycle status:
         // - UNAVAILABLE when its HSM token is deactivated / LOCKED / DISABLED
-        // - EXPIRED when its bound certificate is expired
-        // - ACTIVE when token is ACTIVE and its bound signer is active (at most 1 per token)
-        // - INACTIVE when token is ACTIVE and key is standby / ready
+        // - EXPIRED when its certificate is expired
+        // - ACTIVE when token is ACTIVE and this is the single active key (max 1 per signer & per token)
+        // - READY when token is ACTIVE and CA-signed certificate is imported (ready for 1-click cutover)
+        // - CSR_PENDING when token is ACTIVE and CSR is generated awaiting CA certificate
+        // - INACTIVE when token is ACTIVE and key is unbound/standby
         String keyStatus;
         if (!tokenActive) {
             keyStatus = "UNAVAILABLE";
         } else if (certExpired) {
             keyStatus = "EXPIRED";
-        } else if (boundSigner != null && boundSigner.isActive()) {
+        } else if (keyActive) {
             keyStatus = "ACTIVE";
+        } else if (hasCert) {
+            keyStatus = "READY";
+        } else if (hasCsr) {
+            keyStatus = "CSR_PENDING";
         } else {
             keyStatus = "INACTIVE";
         }
@@ -796,11 +1131,18 @@ public class OcspSignerManagementService {
                 tokenState,
                 tokenActive,
                 keyStatus,
-                boundSigner != null ? boundSigner.getId() : null,
-                boundSigner != null ? boundSigner.getCode() : null,
-                boundSigner != null ? boundSigner.getName() : null,
+                keyActive,
+                effectiveSigner != null ? effectiveSigner.getId() : null,
+                effectiveSigner != null ? effectiveSigner.getCode() : null,
+                effectiveSigner != null ? effectiveSigner.getName() : null,
+                hasCsr,
+                resolvedCsrPem,
+                resolvedCsrAt,
                 hasCert,
-                daysLeft
+                resolvedSerial,
+                resolvedIssuer,
+                daysLeft,
+                resolvedCertPem
         );
     }
 

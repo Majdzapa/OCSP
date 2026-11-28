@@ -178,6 +178,58 @@ public class OcspSignerController {
         }
     }
 
+    @Operation(summary = "Import a CA-signed X.509 certificate for a specific key under an OCSP Signer (zero-downtime rollover, 0 HSM calls)")
+    @PostMapping("/{id}/keys/{keyId}/cert")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_IMPORT')")
+    public ResponseEntity<?> importKeyCertificate(
+            @PathVariable Long id,
+            @PathVariable Long keyId,
+            @Valid @RequestBody SignerCertImportRequest request,
+            Authentication auth) {
+        if (Boolean.TRUE.equals(request.activateImmediately()) && !isAdmin(auth)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Only ROLE_ADMIN can activate a key immediately on certificate import"));
+        }
+        try {
+            return ResponseEntity.ok(signerService.importCertificateForKey(id, keyId, request));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = e.getMessage() != null && (e.getMessage().startsWith("Signer not found") || e.getMessage().startsWith("Key not found"))
+                    ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Atomically activate a specific key under an OCSP Signer (max 1 active key per Signer & per Token)")
+    @PutMapping("/{id}/keys/{keyId}/activate")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_ACTIVATE')")
+    public ResponseEntity<?> activateSignerKey(@PathVariable Long id, @PathVariable Long keyId) {
+        try {
+            return ResponseEntity.ok(signerService.activateKey(id, keyId));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = e.getMessage() != null && (e.getMessage().startsWith("Signer not found") || e.getMessage().startsWith("Key not found"))
+                    ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Delete a non-active (retired or pending) key from an OCSP Signer")
+    @DeleteMapping("/{id}/keys/{keyId}")
+    @PreAuthorize("hasPermission(null, 'SIGNING_CERT_DELETE')")
+    public ResponseEntity<?> deleteSignerKey(@PathVariable Long id, @PathVariable Long keyId) {
+        try {
+            signerService.deleteSignerKey(id, keyId);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @Operation(summary = "Activate an OCSP Signer for live RFC 6960 signing")
     @PutMapping("/{id}/activate")
     @PreAuthorize("hasPermission(null, 'SIGNING_CERT_ACTIVATE')")

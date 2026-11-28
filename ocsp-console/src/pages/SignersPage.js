@@ -52,6 +52,8 @@ import {
     IconPlayerPlay,
     IconPlayerPause,
     IconDatabaseImport,
+    IconChevronDown,
+    IconChevronRight,
 } from '@tabler/icons-react';
 import {
     getSigners,
@@ -63,6 +65,9 @@ import {
     getSignerCsr,
     getSignerCertificate,
     importSignerCertificate,
+    importSignerKeyCertificate,
+    activateSignerKey,
+    deleteSignerKey,
     activateSigner,
     deactivateSigner,
     getCryptoDevices,
@@ -101,8 +106,14 @@ function KeyStatusBadge({ status }) {
     if (status === 'ACTIVE') {
         return <Badge color="green" variant="filled" size="sm">ACTIVE</Badge>;
     }
+    if (status === 'READY') {
+        return <Badge color="teal" variant="light" size="sm">READY</Badge>;
+    }
+    if (status === 'CSR_PENDING') {
+        return <Badge color="cyan" variant="outline" size="sm">CSR PENDING</Badge>;
+    }
     if (status === 'INACTIVE') {
-        return <Badge color="cyan" variant="light" size="sm">STANDBY</Badge>;
+        return <Badge color="gray" variant="light" size="sm">STANDBY</Badge>;
     }
     if (status === 'EXPIRED') {
         return <Badge color="red" variant="filled" size="sm">EXPIRED</Badge>;
@@ -159,12 +170,19 @@ export const SignersPage = () => {
     const [csrData, setCsrData] = useState(null);
     const [csrLoading, setCsrLoading] = useState(false);
 
-    // Certificate Modal
+    // Certificate Modal (supports both signer-level and per-key zero-downtime rollover import)
     const [certModalSigner, setCertModalSigner] = useState(null);
+    const [certModalKey, setCertModalKey] = useState(null);
     const [certData, setCertData] = useState(null);
     const [certPemInput, setCertPemInput] = useState('');
     const [certActivateNow, setCertActivateNow] = useState(true);
     const [certLoading, setCertLoading] = useState(false);
+
+    // Expanded signer rows showing per-signer key list
+    const [expandedSignerIds, setExpandedSignerIds] = useState({});
+    const toggleSignerExpanded = (id) => {
+        setExpandedSignerIds((prev) => ({ ...prev, [id]: !prev[id] }));
+    };
 
     // Quick Unlock Modal
     const [unlockDeviceId, setUnlockDeviceId] = useState(null);
@@ -384,13 +402,28 @@ export const SignersPage = () => {
         }
     };
 
-    const openCertModal = async (s) => {
+    const openCertModal = async (s, targetKey = null) => {
         setCertModalSigner(s);
+        setCertModalKey(targetKey);
         setCertData(null);
         setCertPemInput('');
         const hasActiveToken = (s.tokens || []).some((t) => t.activationState === 'ACTIVE');
-        setCertActivateNow(isAdmin && hasActiveToken);
+        setCertActivateNow(isAdmin && hasActiveToken && !s.active);
         setError(null);
+        if (targetKey) {
+            if (targetKey.hasCertificate && targetKey.certificatePem) {
+                setCertData({
+                    serialNumber: targetKey.certSerialNumber,
+                    issuerDn: targetKey.certIssuerDn,
+                    subjectDn: s.subjectDn,
+                    daysUntilExpiry: targetKey.certDaysUntilExpiry ?? 0,
+                    expired: targetKey.status === 'EXPIRED',
+                    signatureAlgorithm: s.signatureAlgorithm,
+                    certificatePem: targetKey.certificatePem,
+                });
+            }
+            return;
+        }
         if (s.hasCertificate) {
             try {
                 setCertLoading(true);
@@ -410,21 +443,86 @@ export const SignersPage = () => {
         try {
             setCertLoading(true);
             setError(null);
-            const updated = await importSignerCertificate(certModalSigner.id, {
+            const payload = {
                 certificatePem: certPemInput.trim(),
                 signatureAlgorithm: certModalSigner.signatureAlgorithm,
                 activateImmediately: isAdmin ? certActivateNow : false,
-            });
-            setCertData(updated.certificate);
+            };
+            const updated = certModalKey
+                ? await importSignerKeyCertificate(certModalSigner.id, certModalKey.id, payload)
+                : await importSignerCertificate(certModalSigner.id, payload);
             setCertModalSigner(updated);
+            if (certModalKey) {
+                const updatedKey = (updated.keys || []).find((k) => k.id === certModalKey.id);
+                setCertModalKey(updatedKey || null);
+                setCertData(updatedKey?.certificatePem ? {
+                    serialNumber: updatedKey.certSerialNumber,
+                    issuerDn: updatedKey.certIssuerDn,
+                    subjectDn: updated.subjectDn,
+                    daysUntilExpiry: updatedKey.certDaysUntilExpiry ?? 0,
+                    expired: updatedKey.status === 'EXPIRED',
+                    signatureAlgorithm: updated.signatureAlgorithm,
+                    certificatePem: updatedKey.certificatePem,
+                } : null);
+                setSuccess(`Imported X.509 certificate for Key #${certModalKey.id} ('${certModalKey.keyLabel}') under signer '${updated.name}'${payload.activateImmediately ? ' and activated' : ' (status: READY for 1-click cutover)'}.`);
+            } else {
+                setCertData(updated.certificate);
+                setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.name}'.`);
+            }
             setCertPemInput('');
-            setSuccess(`Imported X.509 certificate (serial ${updated.certificate?.serialNumber}) into signer '${updated.name}'.`);
             await fetchAll();
         } catch (err) {
             setError(err?.response?.data?.error || err?.message || 'Failed to import certificate into signer');
         } finally {
             setCertLoading(false);
         }
+    };
+
+    const handleActivateKey = async (signerId, keyId, keyAlias) => {
+        try {
+            setSaving(true);
+            setError(null);
+            await activateSignerKey(signerId, keyId);
+            setSuccess(`Switched active key to '${keyAlias}' (Key #${keyId}). Previous active key was automatically deactivated.`);
+            await fetchAll();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to activate key');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteKey = async (signerId, keyId, keyAlias) => {
+        if (!window.confirm(`Delete inactive key '${keyAlias}' (Key #${keyId}) from this signer?`)) return;
+        try {
+            setSaving(true);
+            setError(null);
+            await deleteSignerKey(signerId, keyId);
+            setSuccess(`Deleted inactive key '${keyAlias}' (Key #${keyId}).`);
+            await fetchAll();
+        } catch (err) {
+            setError(err?.response?.data?.error || err?.message || 'Failed to delete key');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const openKeyCsrModal = (signer, keyObj) => {
+        setCsrModalSigner(signer);
+        setCsrData({
+            signerId: signer.id,
+            signerCode: signer.code,
+            tokenDeviceId: keyObj.tokenDeviceCode || signer.tokens?.[0]?.deviceId || 'HSM',
+            keyId: keyObj.id,
+            keyLabel: keyObj.keyLabel,
+            keyAlgorithm: keyObj.keyAlgorithm,
+            keySize: keyObj.keySize,
+            publicKeySha1: keyObj.publicKeySha1,
+            signatureAlgorithm: signer.signatureAlgorithm,
+            subjectDn: signer.subjectDn,
+            csrPem: keyObj.csrPem,
+            generatedAt: keyObj.csrGeneratedAt,
+        });
     };
 
     const handleCertFileUpload = (file) => {
@@ -750,153 +848,293 @@ export const SignersPage = () => {
                                         <Table.Tbody>
                                             {signers.map((s) => {
                                                 const anyTokenActive = (s.tokens || []).some((t) => t.activationState === 'ACTIVE');
+                                                const signerKeys = s.keys || (s.key ? [s.key] : []);
+                                                const isExpanded = Boolean(expandedSignerIds[s.id]);
                                                 const keyStatus = s.key?.status || (anyTokenActive ? 'INACTIVE' : 'UNAVAILABLE');
                                                 return (
-                                                    <Table.Tr
-                                                        key={s.id}
-                                                        style={s.status === 'ACTIVE'
-                                                            ? { backgroundColor: 'rgba(34, 197, 94, 0.06)' }
-                                                            : s.status === 'TOKEN_LOCKED'
-                                                                ? { backgroundColor: 'rgba(249, 115, 22, 0.06)' }
-                                                                : undefined}
-                                                    >
-                                                        <Table.Td>
-                                                            <Stack gap={4}>
-                                                                <SignerStatusBadge status={s.status} />
-                                                                <Text size="10px" c="dimmed">ID #{s.id}</Text>
-                                                            </Stack>
-                                                        </Table.Td>
+                                                    <React.Fragment key={s.id}>
+                                                        <Table.Tr
+                                                            style={s.status === 'ACTIVE'
+                                                                ? { backgroundColor: 'rgba(34, 197, 94, 0.06)' }
+                                                                : s.status === 'TOKEN_LOCKED'
+                                                                    ? { backgroundColor: 'rgba(249, 115, 22, 0.06)' }
+                                                                    : undefined}
+                                                        >
+                                                            <Table.Td>
+                                                                <Stack gap={4}>
+                                                                    <SignerStatusBadge status={s.status} />
+                                                                    <Text size="10px" c="dimmed">ID #{s.id}</Text>
+                                                                </Stack>
+                                                            </Table.Td>
 
-                                                        <Table.Td>
-                                                            <Text fw={700} size="sm" c="white">{s.name}</Text>
-                                                            <Text size="xs" c="dimmed" lineClamp={1}>{s.subjectDn}</Text>
-                                                            <Code fz={10}>{s.code}</Code>
-                                                        </Table.Td>
+                                                            <Table.Td>
+                                                                <Text fw={700} size="sm" c="white">{s.name}</Text>
+                                                                <Text size="xs" c="dimmed" lineClamp={1}>{s.subjectDn}</Text>
+                                                                <Code fz={10}>{s.code}</Code>
+                                                            </Table.Td>
 
-                                                        <Table.Td>
-                                                            <Stack gap={4}>
-                                                                {(s.tokens || []).map((t) => {
-                                                                    const isUp = t.activationState === 'ACTIVE';
-                                                                    return (
-                                                                        <Group key={t.deviceId} gap={5} wrap="nowrap">
-                                                                            <Badge size="xs" color={t.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
-                                                                                {t.role === 'PRIMARY' ? '1°' : 'HA'}
+                                                            <Table.Td>
+                                                                <Stack gap={4}>
+                                                                    {(s.tokens || []).map((t) => {
+                                                                        const isUp = t.activationState === 'ACTIVE';
+                                                                        return (
+                                                                            <Group key={t.deviceId} gap={5} wrap="nowrap">
+                                                                                <Badge size="xs" color={t.role === 'PRIMARY' ? 'blue' : 'gray'} variant="filled">
+                                                                                    {t.role === 'PRIMARY' ? '1°' : 'HA'}
+                                                                                </Badge>
+                                                                                <Code fz={11}>{t.deviceId}</Code>
+                                                                                <Badge size="xs" color={isUp ? 'green' : 'orange'} variant="dot">
+                                                                                    {isUp ? 'ACTIVE' : 'LOCKED'}
+                                                                                </Badge>
+                                                                            </Group>
+                                                                        );
+                                                                    })}
+                                                                </Stack>
+                                                            </Table.Td>
+
+                                                            <Table.Td>
+                                                                <Stack gap={4}>
+                                                                    <Group gap={5} wrap="nowrap">
+                                                                        <KeyStatusBadge status={s.key ? keyStatus : 'UNAVAILABLE'} />
+                                                                        <Badge size="xs" color="cyan" variant="light">
+                                                                            {s.keyAlgorithm} {s.keySize}
+                                                                        </Badge>
+                                                                        <Button
+                                                                            size="compact-xs"
+                                                                            variant={isExpanded ? 'filled' : 'light'}
+                                                                            color="indigo"
+                                                                            leftSection={isExpanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                                                                            onClick={() => toggleSignerExpanded(s.id)}
+                                                                        >
+                                                                            Keys ({signerKeys.length})
+                                                                        </Button>
+                                                                    </Group>
+                                                                    <Text size="11px" c="dimmed" ff="monospace" lineClamp={1} title={s.keyLabel}>
+                                                                        {s.keyLabel}
+                                                                    </Text>
+                                                                    <Text size="10px" c="dimmed">{s.signatureAlgorithm}</Text>
+                                                                </Stack>
+                                                            </Table.Td>
+
+                                                            <Table.Td>
+                                                                {s.certificate ? (
+                                                                    <Stack gap={2}>
+                                                                        <Group gap={5}>
+                                                                            <Badge size="xs" color={s.certificate.expired ? 'red' : 'teal'} variant="light">
+                                                                                {s.certificate.expired ? 'EXPIRED' : `${s.certificate.daysUntilExpiry}d left`}
                                                                             </Badge>
-                                                                            <Code fz={11}>{t.deviceId}</Code>
-                                                                            <Badge size="xs" color={isUp ? 'green' : 'orange'} variant="dot">
-                                                                                {isUp ? 'ACTIVE' : 'LOCKED'}
-                                                                            </Badge>
+                                                                            <Code fz={10}>{s.certificate.serialNumber}</Code>
                                                                         </Group>
-                                                                    );
-                                                                })}
-                                                            </Stack>
-                                                        </Table.Td>
+                                                                        <Text size="11px" c="dimmed" lineClamp={1} title={s.certificate.issuerDn}>
+                                                                            Issuer: {s.certificate.issuerDn}
+                                                                        </Text>
+                                                                    </Stack>
+                                                                ) : s.hasCsr ? (
+                                                                    <Badge color="cyan" variant="outline" size="xs">Awaiting CA-Signed Cert</Badge>
+                                                                ) : (
+                                                                    <Text size="xs" c="dimmed">No CSR / Cert yet</Text>
+                                                                )}
+                                                            </Table.Td>
 
-                                                        <Table.Td>
-                                                            <Stack gap={4}>
-                                                                <Group gap={5} wrap="nowrap">
-                                                                    <KeyStatusBadge status={s.key ? keyStatus : 'UNAVAILABLE'} />
-                                                                    <Badge size="xs" color="cyan" variant="light">
-                                                                        {s.keyAlgorithm} {s.keySize}
-                                                                    </Badge>
-                                                                    {s.key && (
-                                                                        <Tooltip label="Inspect persisted Public Key (0 HSM calls)">
-                                                                            <ActionIcon size="xs" variant="subtle" color="cyan" onClick={() => setViewKeyModal(s.key)}>
-                                                                                <IconEye size={13} />
+                                                            <Table.Td style={{ textAlign: 'right' }}>
+                                                                <Group justify="flex-end" gap={6} wrap="nowrap">
+                                                                    <Tooltip label={s.active ? 'Generate Next Key & CSR (zero-downtime rollover)' : (s.hasCsr ? 'View or Re-generate Key & CSR' : 'Step 1: Generate Key & CSR')}>
+                                                                        <Button
+                                                                            size="compact-xs"
+                                                                            variant={s.hasCsr ? 'light' : 'filled'}
+                                                                            color="cyan"
+                                                                            leftSection={<IconFileCertificate size={13} />}
+                                                                            disabled={!anyTokenActive && !s.hasCsr}
+                                                                            onClick={() => openCsrModal(s, s.active || !s.hasCsr)}
+                                                                        >
+                                                                            {s.active ? '+ Next Key' : 'CSR'}
+                                                                        </Button>
+                                                                    </Tooltip>
+                                                                    <Tooltip label={s.hasCertificate ? 'View or Replace Certificate' : 'Step 2: Import CA-Signed Certificate'}>
+                                                                        <Button
+                                                                            size="compact-xs"
+                                                                            variant={s.hasCertificate ? 'light' : 'filled'}
+                                                                            color="indigo"
+                                                                            leftSection={<IconCertificate size={13} />}
+                                                                            onClick={() => openCertModal(s)}
+                                                                        >
+                                                                            Cert
+                                                                        </Button>
+                                                                    </Tooltip>
+                                                                    {isAdmin && s.hasCertificate && (
+                                                                        <Tooltip
+                                                                            label={!s.active && !anyTokenActive
+                                                                                ? 'Unlock a bound Crypto Token first to activate this signer'
+                                                                                : s.active
+                                                                                    ? 'Deactivate signer'
+                                                                                    : 'Activate signer (deactivates any other active key in the same token)'}
+                                                                        >
+                                                                            <Button
+                                                                                size="compact-xs"
+                                                                                variant={s.active ? 'light' : 'filled'}
+                                                                                color={s.active ? 'orange' : 'green'}
+                                                                                leftSection={s.active ? <IconPlayerPause size={13} /> : <IconPlayerPlay size={13} />}
+                                                                                loading={saving}
+                                                                                disabled={!s.active && !anyTokenActive}
+                                                                                onClick={() => handleToggleSignerActive(s.id, s.active, s.name)}
+                                                                            >
+                                                                                {s.active ? 'Deactivate' : 'Activate'}
+                                                                            </Button>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    {canOperate && (
+                                                                        <Tooltip label="Edit Signer, Key & Tokens">
+                                                                            <ActionIcon variant="light" color="blue" size="sm" onClick={() => openEdit(s)}>
+                                                                                <IconEdit size={14} />
+                                                                            </ActionIcon>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    {isAdmin && !s.active && (
+                                                                        <Tooltip label="Delete Signer">
+                                                                            <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDeleteSigner(s)}>
+                                                                                <IconTrash size={14} />
                                                                             </ActionIcon>
                                                                         </Tooltip>
                                                                     )}
                                                                 </Group>
-                                                                <Text size="11px" c="dimmed" ff="monospace" lineClamp={1} title={s.keyLabel}>
-                                                                    {s.keyLabel}
-                                                                </Text>
-                                                                <Text size="10px" c="dimmed">{s.signatureAlgorithm}</Text>
-                                                            </Stack>
-                                                        </Table.Td>
+                                                            </Table.Td>
+                                                        </Table.Tr>
 
-                                                        <Table.Td>
-                                                            {s.certificate ? (
-                                                                <Stack gap={2}>
-                                                                    <Group gap={5}>
-                                                                        <Badge size="xs" color={s.certificate.expired ? 'red' : 'teal'} variant="light">
-                                                                            {s.certificate.expired ? 'EXPIRED' : `${s.certificate.daysUntilExpiry}d left`}
-                                                                        </Badge>
-                                                                        <Code fz={10}>{s.certificate.serialNumber}</Code>
-                                                                    </Group>
-                                                                    <Text size="11px" c="dimmed" lineClamp={1} title={s.certificate.issuerDn}>
-                                                                        Issuer: {s.certificate.issuerDn}
-                                                                    </Text>
-                                                                </Stack>
-                                                            ) : s.hasCsr ? (
-                                                                <Badge color="cyan" variant="outline" size="xs">Awaiting CA-Signed Cert</Badge>
-                                                            ) : (
-                                                                <Text size="xs" c="dimmed">No CSR / Cert yet</Text>
-                                                            )}
-                                                        </Table.Td>
+                                                        {/* Expandable EJBCA Per-Signer Keys Panel (max 1 ACTIVE key per Signer) */}
+                                                        {isExpanded && (
+                                                            <Table.Tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.78)' }}>
+                                                                <Table.Td colSpan={6} p="sm">
+                                                                    <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
+                                                                        <Group justify="space-between" mb="xs">
+                                                                            <Group gap="xs">
+                                                                                <IconKey size={15} color="#818cf8" />
+                                                                                <Text size="xs" fw={700} tt="uppercase" c="indigo.3">
+                                                                                    Keys Owned by Signer &apos;{s.name}&apos; ({signerKeys.length}) — Only 1 Key Active at a Time
+                                                                                </Text>
+                                                                            </Group>
+                                                                            {canOperate && (
+                                                                                <Button
+                                                                                    size="compact-xs"
+                                                                                    variant="light"
+                                                                                    color="cyan"
+                                                                                    leftSection={<IconPlus size={12} />}
+                                                                                    disabled={!anyTokenActive}
+                                                                                    onClick={() => openCsrModal(s, true)}
+                                                                                >
+                                                                                    Generate Next Key &amp; CSR
+                                                                                </Button>
+                                                                            )}
+                                                                        </Group>
 
-                                                        <Table.Td style={{ textAlign: 'right' }}>
-                                                            <Group justify="flex-end" gap={6} wrap="nowrap">
-                                                                <Tooltip label={s.hasCsr ? 'View or Re-generate Key & CSR' : 'Step 1: Generate Key & CSR'}>
-                                                                    <Button
-                                                                        size="compact-xs"
-                                                                        variant={s.hasCsr ? 'light' : 'filled'}
-                                                                        color="cyan"
-                                                                        leftSection={<IconFileCertificate size={13} />}
-                                                                        disabled={!anyTokenActive && !s.hasCsr}
-                                                                        onClick={() => openCsrModal(s, !s.hasCsr)}
-                                                                    >
-                                                                        CSR
-                                                                    </Button>
-                                                                </Tooltip>
-                                                                <Tooltip label={s.hasCertificate ? 'View or Replace Certificate' : 'Step 2: Import CA-Signed Certificate'}>
-                                                                    <Button
-                                                                        size="compact-xs"
-                                                                        variant={s.hasCertificate ? 'light' : 'filled'}
-                                                                        color="indigo"
-                                                                        leftSection={<IconCertificate size={13} />}
-                                                                        onClick={() => openCertModal(s)}
-                                                                    >
-                                                                        Cert
-                                                                    </Button>
-                                                                </Tooltip>
-                                                                {isAdmin && s.hasCertificate && (
-                                                                    <Tooltip
-                                                                        label={!s.active && !anyTokenActive
-                                                                            ? 'Unlock a bound Crypto Token first to activate this signer'
-                                                                            : s.active
-                                                                                ? 'Deactivate signer'
-                                                                                : 'Activate signer (deactivates any other active key in the same token)'}
-                                                                    >
-                                                                        <Button
-                                                                            size="compact-xs"
-                                                                            variant={s.active ? 'light' : 'filled'}
-                                                                            color={s.active ? 'orange' : 'green'}
-                                                                            leftSection={s.active ? <IconPlayerPause size={13} /> : <IconPlayerPlay size={13} />}
-                                                                            loading={saving}
-                                                                            disabled={!s.active && !anyTokenActive}
-                                                                            onClick={() => handleToggleSignerActive(s.id, s.active, s.name)}
-                                                                        >
-                                                                            {s.active ? 'Deactivate' : 'Activate'}
-                                                                        </Button>
-                                                                    </Tooltip>
-                                                                )}
-                                                                {canOperate && (
-                                                                    <Tooltip label="Edit Signer, Key & Tokens">
-                                                                        <ActionIcon variant="light" color="blue" size="sm" onClick={() => openEdit(s)}>
-                                                                            <IconEdit size={14} />
-                                                                        </ActionIcon>
-                                                                    </Tooltip>
-                                                                )}
-                                                                {isAdmin && !s.active && (
-                                                                    <Tooltip label="Delete Signer">
-                                                                        <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDeleteSigner(s)}>
-                                                                            <IconTrash size={14} />
-                                                                        </ActionIcon>
-                                                                    </Tooltip>
-                                                                )}
-                                                            </Group>
-                                                        </Table.Td>
-                                                    </Table.Tr>
+                                                                        {signerKeys.length === 0 ? (
+                                                                            <Text size="xs" c="dimmed">
+                                                                                No keys generated for this signer yet. Click <b>Generate Next Key &amp; CSR</b> to create the first keypair on an active HSM Token.
+                                                                            </Text>
+                                                                        ) : (
+                                                                            <Table verticalSpacing={6} fz="xs">
+                                                                                <Table.Thead>
+                                                                                    <Table.Tr>
+                                                                                        <Table.Th>Key Status</Table.Th>
+                                                                                        <Table.Th>Key Alias</Table.Th>
+                                                                                        <Table.Th>Token</Table.Th>
+                                                                                        <Table.Th>Algorithm</Table.Th>
+                                                                                        <Table.Th>Certificate</Table.Th>
+                                                                                        <Table.Th style={{ textAlign: 'right' }}>Key Actions</Table.Th>
+                                                                                    </Table.Tr>
+                                                                                </Table.Thead>
+                                                                                <Table.Tbody>
+                                                                                    {signerKeys.map((k) => {
+                                                                                        const isKeyActive = k.status === 'ACTIVE' || k.active;
+                                                                                        const disabledByToken = !k.tokenActive;
+                                                                                        return (
+                                                                                            <Table.Tr
+                                                                                                key={k.id}
+                                                                                                style={{
+                                                                                                    opacity: disabledByToken ? 0.6 : 1,
+                                                                                                    backgroundColor: isKeyActive ? 'rgba(34, 197, 94, 0.08)' : undefined,
+                                                                                                }}
+                                                                                            >
+                                                                                                <Table.Td><KeyStatusBadge status={k.status} /></Table.Td>
+                                                                                                <Table.Td>
+                                                                                                    <Code fz={11}>{k.keyLabel}</Code>
+                                                                                                    <Text span size="10px" c="dimmed" ml={6}>#{k.id}</Text>
+                                                                                                </Table.Td>
+                                                                                                <Table.Td>
+                                                                                                    <Group gap={4} wrap="nowrap">
+                                                                                                        <Code fz={10}>{k.tokenDeviceCode || 'HSM'}</Code>
+                                                                                                        <Badge size="xs" color={k.tokenActive ? 'green' : 'orange'} variant="dot">
+                                                                                                            {k.tokenState}
+                                                                                                        </Badge>
+                                                                                                    </Group>
+                                                                                                </Table.Td>
+                                                                                                <Table.Td>
+                                                                                                    <Badge size="xs" color="cyan" variant="light">{k.keyAlgorithm} {k.keySize}</Badge>
+                                                                                                </Table.Td>
+                                                                                                <Table.Td>
+                                                                                                    {k.hasCertificate ? (
+                                                                                                        <Group gap={4}>
+                                                                                                            <Badge size="xs" color={k.certDaysUntilExpiry != null && k.certDaysUntilExpiry < 0 ? 'red' : 'teal'} variant="light">
+                                                                                                                {k.certDaysUntilExpiry != null && k.certDaysUntilExpiry < 0 ? 'Expired' : `${k.certDaysUntilExpiry}d left`}
+                                                                                                            </Badge>
+                                                                                                            {k.certSerialNumber && <Code fz={10}>{k.certSerialNumber}</Code>}
+                                                                                                        </Group>
+                                                                                                    ) : k.hasCsr ? (
+                                                                                                        <Text size="xs" c="cyan.3">CSR ready · awaiting cert</Text>
+                                                                                                    ) : (
+                                                                                                        <Text size="xs" c="dimmed">No cert</Text>
+                                                                                                    )}
+                                                                                                </Table.Td>
+                                                                                                <Table.Td style={{ textAlign: 'right' }}>
+                                                                                                    <Group justify="flex-end" gap={4} wrap="nowrap">
+                                                                                                        <Tooltip label="Inspect Public Key">
+                                                                                                            <ActionIcon size="xs" variant="subtle" color="cyan" onClick={() => setViewKeyModal(k)}>
+                                                                                                                <IconEye size={13} />
+                                                                                                            </ActionIcon>
+                                                                                                        </Tooltip>
+                                                                                                        {k.hasCsr && (
+                                                                                                            <Button size="compact-xs" variant="subtle" color="cyan" onClick={() => openKeyCsrModal(s, k)}>
+                                                                                                                CSR
+                                                                                                            </Button>
+                                                                                                        )}
+                                                                                                        {canOperate && (
+                                                                                                            <Button size="compact-xs" variant="light" color="indigo" onClick={() => openCertModal(s, k)}>
+                                                                                                                {k.hasCertificate ? 'Cert' : 'Import Cert'}
+                                                                                                            </Button>
+                                                                                                        )}
+                                                                                                        {isAdmin && k.hasCertificate && !isKeyActive && (
+                                                                                                            <Tooltip label={disabledByToken ? 'Token is deactivated — activate token first' : 'Switch active key to this key (zero-downtime rollover)'}>
+                                                                                                                <Button
+                                                                                                                    size="compact-xs"
+                                                                                                                    variant="filled"
+                                                                                                                    color="green"
+                                                                                                                    disabled={disabledByToken}
+                                                                                                                    loading={saving}
+                                                                                                                    onClick={() => handleActivateKey(s.id, k.id, k.keyLabel)}
+                                                                                                                >
+                                                                                                                    Set Active
+                                                                                                                </Button>
+                                                                                                            </Tooltip>
+                                                                                                        )}
+                                                                                                        {isAdmin && !isKeyActive && (
+                                                                                                            <Tooltip label="Delete inactive key">
+                                                                                                                <ActionIcon size="xs" variant="subtle" color="red" onClick={() => handleDeleteKey(s.id, k.id, k.keyLabel)}>
+                                                                                                                    <IconTrash size={13} />
+                                                                                                                </ActionIcon>
+                                                                                                            </Tooltip>
+                                                                                                        )}
+                                                                                                    </Group>
+                                                                                                </Table.Td>
+                                                                                            </Table.Tr>
+                                                                                        );
+                                                                                    })}
+                                                                                </Table.Tbody>
+                                                                            </Table>
+                                                                        )}
+                                                                    </Paper>
+                                                                </Table.Td>
+                                                            </Table.Tr>
+                                                        )}
+                                                    </React.Fragment>
                                                 );
                                             })}
                                         </Table.Tbody>
@@ -1093,7 +1331,9 @@ export const SignersPage = () => {
                                                                                                 color={isKeyActive ? 'orange' : 'green'}
                                                                                                 disabled={isDisabled}
                                                                                                 loading={saving}
-                                                                                                onClick={() => handleToggleSignerActive(k.boundSignerId, isKeyActive, k.boundSignerName)}
+                                                                                                 onClick={() => (isKeyActive
+                                                                                                    ? handleToggleSignerActive(k.boundSignerId, true, k.boundSignerName)
+                                                                                                    : handleActivateKey(k.boundSignerId, k.id, k.keyLabel))}
                                                                                             >
                                                                                                 {isKeyActive ? 'Deactivate' : 'Set Active'}
                                                                                             </Button>
@@ -1381,8 +1621,16 @@ export const SignersPage = () => {
             {/* Modal: View / Import Certificate */}
             <Modal
                 opened={Boolean(certModalSigner)}
-                onClose={() => { setCertModalSigner(null); setCertData(null); setCertPemInput(''); }}
-                title={<Group gap="xs"><IconCertificate size={20} color="#6366f1" /><Text fw={700}>Signer Certificate: {certModalSigner?.name}</Text></Group>}
+                onClose={() => { setCertModalSigner(null); setCertModalKey(null); setCertData(null); setCertPemInput(''); }}
+                title={
+                    <Group gap="xs">
+                        <IconCertificate size={20} color="#6366f1" />
+                        <Text fw={700}>
+                            Signer Certificate: {certModalSigner?.name}
+                            {certModalKey ? ` · Key #${certModalKey.id}` : ''}
+                        </Text>
+                    </Group>
+                }
                 size="lg"
             >
                 <Stack gap="md">

@@ -4,9 +4,9 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Full projection of an OCSP Signer aggregate root, including its linked {@link OcspKeyDto}
- * ({@code ocsp_keys}), ordered HSM Tokens ({@code ocsp_signer_tokens}), generated CSR,
- * and imported X.509 certificate.
+ * Full projection of an OCSP Signer aggregate root, including its active {@link OcspKeyDto},
+ * full list of keys owned by this signer ({@code keys} for EJBCA zero-downtime key rotation),
+ * ordered HSM Tokens ({@code ocsp_signer_tokens}), generated CSR, and imported X.509 certificate.
  */
 public record SignerDto(
         Long id,
@@ -16,6 +16,7 @@ public record SignerDto(
         String subjectDn,
         Long keyId,
         OcspKeyDto key,
+        List<OcspKeyDto> keys,
         String keyLabel,
         String keyAlgorithm,
         int keySize,
